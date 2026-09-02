@@ -11,7 +11,7 @@
  * these instead, with no change to either.
  */
 
-import type { BakedImage, DrawCommand, Frame } from './DrawCommand';
+import type { BakedImage, DrawCommand, Frame, SceneMood } from './DrawCommand';
 
 interface GradientStop { at: number; color: string; }
 
@@ -51,10 +51,13 @@ export class RecordingContext {
   /** Rotation is used by two sprite flourishes and is folded into nothing. */
   private rotation = 0;
 
+  private mood: SceneMood = { daylight: 1, underground: false, weather: null, focus: null, inCombat: false };
+
   /** Start a new frame. */
-  begin(clear: string): void {
+  begin(clear: string, mood: SceneMood): void {
     this.commands = [];
     this.clearColor = clear;
+    this.mood = mood;
     this.dx = 0;
     this.dy = 0;
     this.rotation = 0;
@@ -64,7 +67,7 @@ export class RecordingContext {
 
   /** The frame recorded since `begin`. */
   end(): Frame {
-    return { clear: this.clearColor, commands: this.commands };
+    return { clear: this.clearColor, commands: this.commands, mood: this.mood };
   }
 
   private solid(style: string | RecordedGradient): string {

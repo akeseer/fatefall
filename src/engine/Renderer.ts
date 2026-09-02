@@ -11,6 +11,24 @@ export class Renderer {
     window.addEventListener('resize', () => this.resize());
   }
 
+  /**
+   * Swap in a brand-new canvas element in the same place.
+   *
+   * A canvas keeps whichever context type it was first given for life, so a
+   * canvas that has carried WebGL can never return a 2D context. Switching
+   * renderers therefore means replacing the element, not reusing it.
+   */
+  replaceCanvas(): HTMLCanvasElement {
+    const fresh = document.createElement('canvas');
+    fresh.id = this.canvas.id;
+    fresh.className = this.canvas.className;
+    fresh.setAttribute('style', this.canvas.getAttribute('style') ?? '');
+    this.canvas.replaceWith(fresh);
+    this.canvas = fresh;
+    this.resize();
+    return fresh;
+  }
+
   resize() {
     const scale = Math.min(
       window.innerWidth / GAME_WIDTH,

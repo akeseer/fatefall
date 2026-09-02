@@ -33,10 +33,32 @@ export type DrawCommand =
    */
   | { op: 'gradient'; kind: 'linear' | 'radial'; x: number; y: number; w: number; h: number; stops: { at: number; color: string }[]; alpha: number };
 
-/** One frame: what to clear to, and what to draw on top. */
+/**
+ * What the scene feels like, for backends that can light and grade it.
+ *
+ * The renderer knows none of this: it draws the same tiles at noon and at
+ * midnight. The game knows all of it already, so it is passed alongside the
+ * frame and a backend uses as much of it as it can. Backends that cannot
+ * light a scene ignore it entirely and look exactly as they always did.
+ */
+export interface SceneMood {
+  /** Daylight from 0 at midnight to 1 at noon. Meaningless underground. */
+  daylight: number;
+  /** Underground, where the only light is what the party carries. */
+  underground: boolean;
+  /** Current weather id, or null for clear skies. */
+  weather: string | null;
+  /** Where the party's own light sits, in frame pixels. */
+  focus: { x: number; y: number } | null;
+  /** True during a fight, when the scene wants more contrast and less drift. */
+  inCombat: boolean;
+}
+
+/** One frame: what to clear to, what to draw on top, and how it should feel. */
 export interface Frame {
   clear: string;
   commands: DrawCommand[];
+  mood: SceneMood;
 }
 
 /**

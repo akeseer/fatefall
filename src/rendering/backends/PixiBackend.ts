@@ -432,7 +432,7 @@ export class PixiBackend implements RenderBackend {
     align: CanvasTextAlign,
     font: ParsedFont,
   ): Text {
-    const key = `${fontSpec} ${fill} ${align} ${content}`;
+    const key = `${fontSpec}\u0000${fill}\u0000${align}\u0000${content}`;
     let entry = this.textCache.get(key);
     if (!entry) {
       entry = { items: [], used: 0, usedInFrame: -1, lastFrame: this.frameId };

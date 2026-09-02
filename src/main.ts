@@ -7,7 +7,7 @@ import { RoomFeatureController } from './game/RoomFeatureController';
 import { RecordingContext } from './rendering/RecordingContext';
 import { CanvasBackend } from './rendering/backends/CanvasBackend';
 import { createBackend, type RenderBackendId } from './rendering/backends';
-import type { RenderBackend } from './rendering/DrawCommand';
+import type { RenderBackend, SceneMood } from './rendering/DrawCommand';
 import { BulletinBoardController } from './game/BulletinBoardController';
 import { MarketController } from './game/MarketController';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
@@ -1947,7 +1947,18 @@ class Game {
    */
   async useBackend(id: RenderBackendId): Promise<void> {
     const next = await createBackend(id);
-    await next.init(this.renderer.canvas, GAME_WIDTH, GAME_HEIGHT);
+    // A canvas element can only ever hold one kind of context, so a canvas
+    // that has carried WebGL will never give back a 2D one. Each switch gets a
+    // fresh element, and the old backend is torn down only once the new one
+    // has started, so a failure leaves the current renderer untouched.
+    const canvas = this.renderer.replaceCanvas();
+    try {
+      await next.init(canvas, GAME_WIDTH, GAME_HEIGHT);
+    } catch (err) {
+      this.renderer.replaceCanvas();
+      await this.backend.init(this.renderer.canvas, GAME_WIDTH, GAME_HEIGHT);
+      throw err;
+    }
     this.backend.destroy();
     this.backend = next;
     this.backendReady = true;
@@ -1959,12 +1970,31 @@ class Game {
     this.hud.addCombatMessage(`Renderer: ${next.name}.`, '#8cf');
   }
 
+  /**
+   * How the scene should feel, for backends that can light and grade it. The
+   * map renderer draws the same tiles at noon and at midnight; the game knows
+   * the difference, so it says so here rather than teaching the renderer.
+   */
+  private sceneMood(): SceneMood {
+    const leader = this.party.leader;
+    const focus = this.mode === GameMode.Dungeon
+      ? { x: leader.tile.x * TILE_SIZE - this.camera.x + TILE_SIZE / 2, y: leader.tile.y * TILE_SIZE - this.camera.y + TILE_SIZE / 2 }
+      : null;
+    return {
+      daylight: this.clock.light,
+      underground: this.mode === GameMode.Dungeon,
+      weather: this.weather?.type ?? null,
+      focus,
+      inCombat: this.phase === GamePhase.Combat,
+    };
+  }
+
   private render() {
     // The frame is described into a recorder rather than drawn straight to a
     // context, so the same frame can be replayed by any backend. The map
     // renderer and the sprite functions are unchanged; they simply receive a
     // recorder where they used to receive a canvas context.
-    this.recorder.begin('#0a0a12');
+    this.recorder.begin('#0a0a12', this.sceneMood());
     const moveMs = Math.max(140, Math.min(600, this.tickInterval * 0.55));
     if (this.mode === GameMode.Overworld || this.mode === GameMode.Town) {
       const campTiles = this.banditCamps.camps.filter(c => c.discovered && !c.resolved).map(c => c.tile);
