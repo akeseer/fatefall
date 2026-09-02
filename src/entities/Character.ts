@@ -57,6 +57,24 @@ export function magicBonusOf(item: InventoryItem): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
+// ── Weapon & armor proficiency tables (5e-flavored) ─────────────────────────
+
+const SIMPLE_WEAPON_RE = /dagger|staff|quarterstaff|mace|sling|dart|club|javelin|spear|handaxe|hand axe|sickle|light crossbow|torch/i;
+const FINESSE_WEAPON_RE = /dagger|rapier|shortsword|scimitar|whip|dart/i;
+
+/** Classes trained in all martial weapons. */
+const MARTIAL_CLASSES = new Set(['fighter', 'barbarian', 'paladin', 'ranger']);
+/** Classes that also handle finesse martial weapons (5e rogue/bard lists). */
+const FINESSE_CLASSES = new Set(['rogue', 'bard']);
+
+const HEAVY_ARMOR_RE = /chain mail|plate|splint|banded/i;
+const MEDIUM_ARMOR_RE = /scale|breastplate|half plate|hide|chain shirt/i;
+const SHIELD_RE = /shield|buckler/i;
+
+const HEAVY_ARMOR_CLASSES = new Set(['fighter', 'paladin']);
+const MEDIUM_ARMOR_CLASSES = new Set(['fighter', 'paladin', 'ranger', 'cleric', 'barbarian', 'druid']);
+const SHIELD_CLASSES = new Set(['fighter', 'paladin', 'cleric', 'ranger', 'barbarian']);
+
 export interface Personality {
   aggression: number;    // 0-10: likelihood of attacking
   curiosity: number;     // 0-10: exploring, checking things
@@ -186,13 +204,61 @@ export class GameCharacter {
   /** Extra attack bonus from honing a blade at a dungeon forge (persisted). */
   bonusAttackBonus: number = 0;
 
+  /**
+   * Is this character trained with this weapon? Simple weapons for everyone;
+   * full martial lists for fighter/paladin/ranger/barbarian; rogues and bards
+   * add finesse blades; monks add the shortsword.
+   */
+  isProficientWithWeapon(item: InventoryItem): boolean {
+    const name = item.name.toLowerCase();
+    if (SIMPLE_WEAPON_RE.test(name)) return true;
+    const cls = this.charClass.id;
+    if (MARTIAL_CLASSES.has(cls)) return true;
+    if (FINESSE_CLASSES.has(cls) && FINESSE_WEAPON_RE.test(name)) return true;
+    if (cls === 'monk' && /shortsword/.test(name)) return true;
+    return false;
+  }
+
+  /** Why a character can't wear this armor/shield piece, or null if they can. */
+  armorRefusal(item: InventoryItem, slot: 'armor' | 'shield'): string | null {
+    const name = item.name.toLowerCase();
+    const cls = this.charClass.id;
+    if (slot === 'shield') {
+      if (SHIELD_CLASSES.has(cls)) return null;
+      return `${this.name} has never trained with a shield — it would only get in the way.`;
+    }
+    if (HEAVY_ARMOR_RE.test(name)) {
+      if (HEAVY_ARMOR_CLASSES.has(cls)) return null;
+      return `Heavy harness like ${item.name} is fighter's and paladin's steel — ${this.name} refuses it.`;
+    }
+    if (MEDIUM_ARMOR_RE.test(name)) {
+      if (MEDIUM_ARMOR_CLASSES.has(cls)) return null;
+      return `${item.name} is beyond ${this.name}'s training — they'll stick to lighter wear.`;
+    }
+    return null; // light armor and robes suit everyone
+  }
+
   /** Magic weapon bonus (+1/+2/+3 sword etc.) applied to attacks and damage. */
   get weaponMagicBonus(): number {
     return this.equipment.weapon ? magicBonusOf(this.equipment.weapon) : 0;
   }
 
+  /**
+   * Total attack bonus. Swinging a weapon the class never trained with costs
+   * the proficiency bonus — the classic 5e penalty — so a wizard's greataxe
+   * swing lands far less often than the fighter's.
+   */
   get attackBonus(): number {
-    return proficiencyBonus(this.level) + this.bonusAttackBonus + this.weaponMagicBonus;
+    const weapon = this.equipment.weapon;
+    const proficient = !weapon || this.isProficientWithWeapon(weapon);
+    const profPart = proficient ? proficiencyBonus(this.level) : 0;
+    return profPart + this.bonusAttackBonus + this.weaponMagicBonus;
+  }
+
+  /** True when the equipped weapon is outside the class's training. */
+  get hasWeaponProficiencyPenalty(): boolean {
+    const weapon = this.equipment.weapon;
+    return Boolean(weapon) && !this.isProficientWithWeapon(weapon!);
   }
 
   get profBonus(): number {
@@ -241,12 +307,22 @@ export class GameCharacter {
    * Returns a narration line, or null if the item can't be equipped.
    * Any item already in that slot returns to the pack first.
    */
-  equip(itemId: string): string | null {
+  /**
+   * Equip an inventory item by id. Returns { ok, line } — `line` is the
+   * narration on success or the refusal reason on failure.
+   */
+  equip(itemId: string): { ok: boolean; line: string } {
+    const fail = (line: string) => ({ ok: false, line });
     const idx = this.inventory.findIndex(i => i.id === itemId);
-    if (idx < 0) return null;
+    if (idx < 0) return fail(`${this.name} can't find that item.`);
     const item = this.inventory[idx];
     const slot = slotForItem(item);
-    if (!slot) return null;
+    if (!slot) return fail(`The ${item.name} can't be equipped.`);
+    // Armor and shields a class has no training for are refused outright.
+    if (slot === 'armor' || slot === 'shield') {
+      const refusal = this.armorRefusal(item, slot);
+      if (refusal) return fail(refusal);
+    }
     // Swap out whatever currently sits in the slot.
     const previous = this.equipment[slot];
     this.inventory.splice(idx, 1);
@@ -254,7 +330,7 @@ export class GameCharacter {
     if (previous) this.inventory.push(previous);
     this.recomputeAC();
     const slotLabel = { weapon: 'wields', armor: 'dons', shield: 'raises', trinket: 'fastens' }[slot];
-    return `${this.name} ${slotLabel} ${item.name}.`;
+    return { ok: true, line: `${this.name} ${slotLabel} ${item.name}.` };
   }
 
   /** Remove a slot's gear back to the pack. Returns the narration or null. */

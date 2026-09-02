@@ -3,6 +3,8 @@ import { Camera } from './engine/Camera';
 import { TileMap } from './world/TileMap';
 import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
 import { assignFeature, assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
+import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
+import { understand, IntentPredictor } from './ai/DMCommandParser';
 import { Overworld, OverworldEntrance, OverworldTown, entranceAt, generateOverworld, getEntranceById, getTownById, nearestWalkable, ringOverworld, townAt } from './world/Overworld';
 import { OverworldPOI, createMoonForgePOI, discoverNearbyPOIs, poiIcon } from './world/OverworldPOI';
 import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
@@ -43,21 +45,6 @@ import {
 
 const DM_DIR_NAMES: Record<Direction, string> = { up: 'north', down: 'south', left: 'west', right: 'east' };
 
-/** Map free-text compass wording to a grid direction. */
-function extractDirection(cmd: string): Direction | null {
-  const wantsMove = /^(go|move|head|walk|travel|venture|march|continue)\b/.test(cmd)
-    || /^(north|south|east|west|up|down|left|right|n|s|e|w)[!., ]*$/.test(cmd.trim());
-  if (!wantsMove) return null;
-  if (/north|\bn\b/.test(cmd)) return Direction.Up;
-  if (/south|\bs\b/.test(cmd)) return Direction.Down;
-  if (/east|\be\b/.test(cmd)) return Direction.Right;
-  if (/west|\bw\b/.test(cmd)) return Direction.Left;
-  if (/\bup\b/.test(cmd)) return Direction.Up;
-  if (/\bdown\b/.test(cmd)) return Direction.Down;
-  if (/\bleft\b/.test(cmd)) return Direction.Left;
-  if (/\bright\b/.test(cmd)) return Direction.Right;
-  return null;
-}
 import {
   generateRoomDescription,
   generateMonsterDescription,
@@ -2030,177 +2017,144 @@ class Game {
   };
 
   /**
-   * Route a DM order to the current room's feature. Returns true when the
-   * command was consumed by a feature interaction (even a "nothing left" one).
+   * Act on a room-feature intent for the room the party stands in. Returns
+   * true when the feature consumed the order (even a "nothing left" one),
+   * false when the room has no such feature.
    */
-  private interactWithRoomFeature(raw: string): boolean {
-    const cmd = raw.toLowerCase().trim();
-    // Never shadow the dedicated trap commands.
-    if (/\b(search for traps|disarm trap|spring the trap)\b/.test(cmd)) return false;
-
-    const feature = this.currentRoom()?.feature;
-    if (!feature) {
-      if (/\bsearch\b.*\b(room|chamber|area|here)\b|\binvestigate\b/.test(cmd)) {
-        this.hud.addCombatMessage('The room holds nothing of note \u2014 only stone, dust, and silence.', '#888');
-        return true;
-      }
-      return false;
-    }
-
-    const f = feature;
+  private performFeatureIntent(intent: DMIntent): boolean {
     const say = (line: string, color = '#ca8') => this.hud.addCombatMessage(line, color);
+    const feature = this.currentRoom()?.feature;
 
-    switch (f.kind) {
-      case 'altar':
-        if (/\b(pray|kneel|bless|offer|altar|shrine)\b/.test(cmd)) return this.featureAltar(f, say);
-        break;
-      case 'vault':
-        if (/\b(search|rob|loot|open|break)\b.*\b(vault|strongbox|chest|treasure)\b/.test(cmd)) return this.featureVault(f, say);
-        break;
-      case 'prison':
-        if (/\b(free|release|rescue)\b|\b(prison|cell|cage)\b/.test(cmd)) return this.featurePrison(f, say);
-        break;
-      case 'chokepoint':
-        if (/\b(barricade|blockade|fortify|brace|hold the line)\b/.test(cmd)) return this.featureChokepoint(f, say);
-        break;
-      case 'forge':
-        if (/\b(forge|sharpen|whetstone|hone)\b/.test(cmd)) return this.featureForge(f, say);
-        break;
-      case 'library':
-        if (/\b(read|study|library|tomes?|books?|grimoire)\b/.test(cmd)) return this.featureLibrary(f, say);
-        break;
-      case 'fountain':
-        if (/\b(drink|sip|fountain|cistern)\b/.test(cmd)) return this.featureFountain(f, say);
-        break;
-      case 'sarcophagus':
-        if (/\b(open|break|pry)\b.*\b(sarcophagus|tomb|coffin)\b/.test(cmd)) return this.featureSarcophagus(f, say);
-        break;
-      case 'throne':
-        if (/\b(throne|sit)\b/.test(cmd)) return this.featureThrone(f, say);
-        break;
-      case 'trapped_corridor':
-        if (/\b(search|detect|find|scan|check|examine)\b/.test(cmd)) {
-          say('The corridor is rigged with traps! Use \"search for traps\" to detect them safely.', '#c66');
-          return true;
-        }
-        if (/\b(disarm|disable|defuse)\b/.test(cmd)) {
-          say('The traps are complex — use \"disarm trap\" after detecting them.', '#8a8');
-          return true;
-        }
-        break;
-      case 'treasure_room':
-        if (/\b(search|loot|rob|open|take|grab|steal)\b/.test(cmd)) {
-          if (f.used) { say('The treasure room has already been looted.', '#888'); return true; }
-          f.used = true;
-          const goldFound = 20 + Math.floor(Math.random() * 80);
-          this.addGold(goldFound);
-          say('You search the treasure room and find ' + goldFound + ' gp in scattered coins and gems!', '#ffd700');
-          // Chance for a magic item
-          if (Math.random() < 0.25) {
-            const items = ['Potion of Healing', 'Scroll of Fireball', 'Scroll of Shield', 'Antidote'];
-            const item = items[Math.floor(Math.random() * items.length)];
-            this.party.leader.inventory.push({
-              id: 'treasure_' + Date.now(), name: item, type: 'potion',
-              value: 30, description: 'Found in a treasure room.',
-            });
-            say('Among the coins you find a ' + item + '!', '#8cf');
-          }
-          return true;
-        }
-        break;
-      case 'merchant_camp':
-        if (/\b(buy|trade|shop|merchant|talk|speak|hello|greet)\b/.test(cmd)) {
-          if (f.used) { say('The merchant has packed up and left.', '#888'); return true; }
-          say('The weary merchant looks up. \"I have potions, scrolls, and odds and ends. Take a look at the town shops — they have better prices.\"', '#a89');
-          say('Tip: Buy something from the merchant for a discount? He sells Healing Potions for 20 gp and Scrolls for 30 gp.', '#8cf');
-          return true;
-        }
-        if (/\b(loot|rob|attack|steal)\b/.test(cmd)) {
-          if (f.used) { say('The merchant already fled.', '#888'); return true; }
-          f.used = true;
-          say('You attack the merchant! He screams and drops his goods before fleeing.', '#c44');
-          this.addGold(15 + Math.floor(Math.random() * 30));
-          say('Loot: ' + (15 + Math.floor(Math.random() * 30)) + ' gp from his abandoned cart.', '#ffd700');
-          // Lose reputation
-          if (this.currentTown && this.townLife) {
-            const tl = this.townLife.byTown[this.currentTown.id];
-            if (tl) tl.townReputation = Math.max(0, tl.townReputation - 5);
-            say('Your reputation with the town drops.', '#c66');
-          }
-          return true;
-        }
-        break;
-      case 'puzzle_room':
-        if (/\b(solve|puzzle|rotate|align|press|activate|examine|study)\b/.test(cmd)) {
-          if (f.used) { say('The puzzle has already been solved.', '#888'); return true; }
-          f.used = true;
-          const solved = Math.random() < 0.6; // 60% success chance
-          if (solved) {
-            say('You study the puzzle carefully and align the pieces correctly. A hidden door slides open!', '#ffd700');
-            const bonus = 30 + Math.floor(Math.random() * 50);
-            this.addGold(bonus);
-            say('Behind the door: a cache with ' + bonus + ' gp!', '#8cf');
-          } else {
-            say('You attempt the puzzle but fail. The mechanism locks — but you spot a ' + (5 + Math.floor(Math.random() * 10)) + ' gp coin that fell out.', '#a89');
-            this.addGold(5 + Math.floor(Math.random() * 10));
-          }
-          return true;
-        }
-        break;
-      case 'ritual_chamber':
-        if (/\b(pray|meditate|channel|summon|ritual|cast|use)\b/.test(cmd)) {
-          if (f.used) { say('The ritual chamber has already been used.', '#888'); return true; }
-          f.used = true;
-          const blessing = Math.random();
-          if (blessing < 0.5) {
-            // Restore some HP
-            for (const m of this.party.members) {
-              const heal = 5 + Math.floor(Math.random() * 15);
-              m.hp = Math.min(m.maxHp, m.hp + heal);
-            }
-            say('The ritual chamber bathes the party in warm light. Each member recovers 5-20 HP.', '#8cf');
-          } else if (blessing < 0.8) {
-            // Restore a spell slot
-            say('Arcane energy flows through the chamber. The casters feel their magic renewed.', '#a8f');
-            for (const m of this.party.members) {
-              if (m.charClass.id === 'wizard' || m.charClass.id === 'cleric' || m.charClass.id === 'sorcerer' || m.charClass.id === 'warlock') {
-                // Add a spell slot (simplified: just note it)
-                say(m.name + ' feels a spell slot restored.', '#a8f');
-              }
-            }
-          } else {
-            // Bonus XP
-            const xp = 20 + Math.floor(Math.random() * 40);
-            for (const m of this.party.members) m.xp += xp;
-            say('Ancient knowledge floods your mind. Each member gains ' + xp + ' XP.', '#ffd700');
-          }
-          return true;
-        }
-        break;
-      case 'war_room':
-        if (/\b(examine|study|map|plan|strategy|search|look)\b/.test(cmd)) {
-          if (f.used) { say('You have already studied the war room thoroughly.', '#888'); return true; }
-          f.used = true;
-          // Reveals info about the dungeon
-          say('The maps reveal hidden passages and monster patrol routes. You gain tactical advantage.', '#8cf');
-          // Bonus: +2 to next attack rolls
-          say('Your party gains +2 to attack rolls for the next battle (tactical knowledge).', '#a89');
-          // Small gold find
-          const gold = 10 + Math.floor(Math.random() * 25);
-          this.addGold(gold);
-          say('Hidden in a map case: ' + gold + ' gp.', '#ffd700');
-          return true;
-        }
-        break;
+    if (intent === 'search_room') {
+      if (feature) return false;
+      say('The room holds nothing of note \u2014 only stone, dust, and silence.', '#888');
+      return true;
     }
+    if (!feature) return false;
+    const f = feature;
 
-    // Generic search narrates the feature without spending it.
-    if (/\bsearch\b|\binvestigate\b/.test(cmd)) {
+    if (intent === 'feature_inspect') {
+      // Generic search narrates the feature without spending it.
       this.hud.addCombatMessage(
         f.used ? f.inspect : `${f.inspect} Try \u201c${Game.FEATURE_HINT[f.kind]}\u201d.`,
         '#8aa'
       );
       return true;
+    }
+    if (FEATURE_INTENT_KIND[intent] !== f.kind) return false;
+
+    switch (intent) {
+      case 'feature_altar': return this.featureAltar(f, say);
+      case 'feature_vault': return this.featureVault(f, say);
+      case 'feature_prison': return this.featurePrison(f, say);
+      case 'feature_chokepoint': return this.featureChokepoint(f, say);
+      case 'feature_forge': return this.featureForge(f, say);
+      case 'feature_library': return this.featureLibrary(f, say);
+      case 'feature_fountain': return this.featureFountain(f, say);
+      case 'feature_sarcophagus': return this.featureSarcophagus(f, say);
+      case 'feature_throne': return this.featureThrone(f, say);
+      case 'feature_trapped_search':
+        say('The corridor is rigged with traps! Use \"search for traps\" to detect them safely.', '#c66');
+        return true;
+      case 'feature_trapped_disarm':
+        say('The traps are complex — use \"disarm trap\" after detecting them.', '#8a8');
+        return true;
+      case 'feature_treasure': {
+        if (f.used) { say('The treasure room has already been looted.', '#888'); return true; }
+        f.used = true;
+        const goldFound = 20 + Math.floor(Math.random() * 80);
+        this.addGold(goldFound);
+        say('You search the treasure room and find ' + goldFound + ' gp in scattered coins and gems!', '#ffd700');
+        // Chance for a magic item
+        if (Math.random() < 0.25) {
+          const items = ['Potion of Healing', 'Scroll of Fireball', 'Scroll of Shield', 'Antidote'];
+          const item = items[Math.floor(Math.random() * items.length)];
+          this.party.leader.inventory.push({
+            id: 'treasure_' + Date.now(), name: item, type: 'potion',
+            value: 30, description: 'Found in a treasure room.',
+          });
+          say('Among the coins you find a ' + item + '!', '#8cf');
+        }
+        return true;
+      }
+      case 'feature_merchant_talk': {
+        if (f.used) { say('The merchant has packed up and left.', '#888'); return true; }
+        say('The weary merchant looks up. \"I have potions, scrolls, and odds and ends. Take a look at the town shops — they have better prices.\"', '#a89');
+        say('Tip: Buy something from the merchant for a discount? He sells Healing Potions for 20 gp and Scrolls for 30 gp.', '#8cf');
+        return true;
+      }
+      case 'feature_merchant_rob': {
+        if (f.used) { say('The merchant already fled.', '#888'); return true; }
+        f.used = true;
+        say('You attack the merchant! He screams and drops his goods before fleeing.', '#c44');
+        const haul = 15 + Math.floor(Math.random() * 30);
+        this.addGold(haul);
+        say('Loot: ' + haul + ' gp from his abandoned cart.', '#ffd700');
+        // Lose reputation
+        if (this.currentTown && this.townLife) {
+          const tl = this.townLife.byTown[this.currentTown.id];
+          if (tl) tl.townReputation = Math.max(0, tl.townReputation - 5);
+          say('Your reputation with the town drops.', '#c66');
+        }
+        return true;
+      }
+      case 'feature_puzzle': {
+        if (f.used) { say('The puzzle has already been solved.', '#888'); return true; }
+        f.used = true;
+        const solved = Math.random() < 0.6; // 60% success chance
+        if (solved) {
+          say('You study the puzzle carefully and align the pieces correctly. A hidden door slides open!', '#ffd700');
+          const bonus = 30 + Math.floor(Math.random() * 50);
+          this.addGold(bonus);
+          say('Behind the door: a cache with ' + bonus + ' gp!', '#8cf');
+        } else {
+          const coin = 5 + Math.floor(Math.random() * 10);
+          say('You attempt the puzzle but fail. The mechanism locks — but you spot a ' + coin + ' gp coin that fell out.', '#a89');
+          this.addGold(coin);
+        }
+        return true;
+      }
+      case 'feature_ritual': {
+        if (f.used) { say('The ritual chamber has already been used.', '#888'); return true; }
+        f.used = true;
+        const blessing = Math.random();
+        if (blessing < 0.5) {
+          // Restore some HP
+          for (const m of this.party.members) {
+            const heal = 5 + Math.floor(Math.random() * 15);
+            m.hp = Math.min(m.maxHp, m.hp + heal);
+          }
+          say('The ritual chamber bathes the party in warm light. Each member recovers 5-20 HP.', '#8cf');
+        } else if (blessing < 0.8) {
+          // Restore a spell slot
+          say('Arcane energy flows through the chamber. The casters feel their magic renewed.', '#a8f');
+          for (const m of this.party.members) {
+            if (m.charClass.id === 'wizard' || m.charClass.id === 'cleric' || m.charClass.id === 'sorcerer' || m.charClass.id === 'warlock') {
+              // Add a spell slot (simplified: just note it)
+              say(m.name + ' feels a spell slot restored.', '#a8f');
+            }
+          }
+        } else {
+          // Bonus XP
+          const xp = 20 + Math.floor(Math.random() * 40);
+          for (const m of this.party.members) m.xp += xp;
+          say('Ancient knowledge floods your mind. Each member gains ' + xp + ' XP.', '#ffd700');
+        }
+        return true;
+      }
+      case 'feature_war_room': {
+        if (f.used) { say('You have already studied the war room thoroughly.', '#888'); return true; }
+        f.used = true;
+        // Reveals info about the dungeon
+        say('The maps reveal hidden passages and monster patrol routes. You gain tactical advantage.', '#8cf');
+        // Bonus: +2 to next attack rolls
+        say('Your party gains +2 to attack rolls for the next battle (tactical knowledge).', '#a89');
+        // Small gold find
+        const gold = 10 + Math.floor(Math.random() * 25);
+        this.addGold(gold);
+        say('Hidden in a map case: ' + gold + ' gp.', '#ffd700');
+        return true;
+      }
     }
     return false;
   }
@@ -3054,17 +3008,21 @@ class Game {
 
         const current = member.equipment[slot] ?? null;
         const currentScore = current ? this.gearScore(current, member, slot) : -Infinity;
-        let best: { item: InventoryItem; score: number } | null = null;
-        for (const c of candidates) {
-          const score = this.gearScore(c.item, member, slot);
-          if (score > currentScore && (!best || score > best.score)) best = { item: c.item, score };
+        // Try candidates best-first; the first that actually equips (some are
+        // refused by class proficiencies) wins the slot.
+        const ranked = candidates
+          .map(c => ({ ...c, score: this.gearScore(c.item, member, slot) }))
+          .filter(c => c.score > currentScore)
+          .sort((a, b) => b.score - a.score);
+        let equipped: { item: InventoryItem; line: string } | null = null;
+        for (const c of ranked) {
+          const result = member.equip(c.item.id);
+          if (result.ok) { equipped = { item: c.item, line: result.line }; break; }
         }
-        if (!best) continue;
+        if (!equipped) continue;
 
-        const line = member.equip(best.item.id);
-        if (!line) continue;
-        const flavor = this.upgradeFlavor(slot, current, best.item, member);
-        this.hud.addCombatMessage(`⚔ ${line} ${flavor}`, '#fd8');
+        const flavor = this.upgradeFlavor(slot, current, equipped.item, member);
+        this.hud.addCombatMessage(`⚔ ${equipped.line} ${flavor}`, '#fd8');
       }
     }
   }
@@ -3082,7 +3040,10 @@ class Game {
       // Finesse or ranged weapons favor DEX; heavy arms favor STR.
       const useDex = /bow|dagger|rapier|scimitar|shortsword|dart|sling/i.test(item.name);
       const attackStat = useDex ? member.dexMod : member.strMod;
-      return die * 2 + attackStat + magicBonusOf(item) * 3;
+      // Proficiency swings the score hard both ways: a trained blade lands
+      // far more often, while an untrained one forfeits the prof bonus.
+      const profSwing = member.isProficientWithWeapon(item) ? member.profBonus * 3 : -member.profBonus * 3;
+      return die + attackStat + magicBonusOf(item) * 3 + profSwing;
     }
     if (slot === 'armor') return item.power ?? 11;
     if (slot === 'shield') return item.power ?? 2;
@@ -5413,671 +5374,697 @@ class Game {
     if (page < maxPage) this.hud.addCombatMessage(`  … “journal page ${page + 1}” for the next page.`, '#666');
   }
 
+  /** The slice of live state the DM understanders may consult. */
+  private dmContext(): DMContext {
+    return {
+      featureKind: this.currentRoom()?.feature?.kind ?? null,
+      inCombat: this.phase !== GamePhase.Exploration,
+      mode: this.mode === GameMode.Dungeon ? 'dungeon' : this.mode === GameMode.Town ? 'town' : 'overworld',
+    };
+  }
+
+  /** The trained intent model, once loaded and enabled (null = regex only). */
+  public intentPredictor: IntentPredictor | null = null;
+  /** Echo which understander handled each order (toggled with "model status"). */
+  private dmModelDebug: boolean = false;
+
   private handleDMCommand(raw: string): void {
     const text = raw.trim();
     if (!text) return;
     this.hud.addCombatMessage(`\u276f ${text}`, '#6fd');
-    const cmd = text.toLowerCase();
+    const result = understand(text, this.dmContext(), this.intentPredictor);
+    if (this.dmModelDebug && result.source !== 'none') {
+      const p = result.prob !== undefined ? ` ${result.prob.toFixed(2)}` : '';
+      this.hud.addCombatMessage(`   (${result.source}: ${result.cmd.intent}${p})`, '#555');
+    }
+    this.dispatchDMCommand(result.cmd, text);
+  }
+
+  private confusedGlances(): void {
+    this.hud.addCombatMessage('The party exchanges confused glances. Type "help" for orders they understand.', '#888');
+  }
+
+  /** Act on one understood order. Bodies are the original command handlers, keyed by intent. */
+  private dispatchDMCommand(cmd: DMCommand, text: string): void {
     const leader = this.party.leader;
     const inCombat = this.phase !== GamePhase.Exploration;
 
-    if (/^(help|\?)$/.test(cmd)) {
-      for (const line of [
-        '\u2022 go / head + north, south, east, west \u2014 march that way',
-        '\u2022 attack / charge \u2014 hunt nearby foes   |   flee / cautious \u2014 avoid fights',
-        '\u2022 "as you were" \u2014 resume normal exploring',
-        '\u2022 rest (short) or camp / long rest   |   descend / deeper \u2014 next floor',
-        '\u2022 wait until dawn / night \u2014 bide your time and let the sky turn',
-        '\u2022 calendar / what day is it \u2014 the weekday, moon, and today\u2019s festivals',
-        '\u2022 journal / chronicle \u2014 read the party\u2019s deeds back',
-        '\u2022 summon <monster> e.g. "summon owlbear"   |   report \u2014 party status',
-        '\u2022 roll d20 / 2d6+3 / "roll d20 adv" \u2014 roll the dice (d20 banks a fated Luck die)',
-        '\u2022 look / examine / describe \u2014 narrate the room around you',
-        '\u2022 talk to <npc> / list npcs \u2014 visit townsfolk for quests and gossip',
-        '\u2022 raid camp / report camp / list clues \u2014 deal with bandit hideouts',
-        '\u2022 pray at the altar / search the vault / free prisoners / barricade \u2014 use the room\u2019s feature',
-        '\u2022 search for traps / disarm trap \u2014 find and defuse dungeon hazards',
-        '\u2022 loot / inventory / pack \u2014 show what the party is carrying',
-        '\u2022 equip <item> / unequip <item> / gear \u2014 manage weapons and armor',
-        '\u2022 upcast always / never / auto \u2014 how aggressively casters spend higher slots',
-        '\u2022 save \u2014 persist to the active slot | "save to slot 1/2/3" \u2014 pick a slot | "new game" \u2014 wipe it',
-        '\u2022 rename party <name> \u2014 give your party a custom name',
-        '\u2022 rename <character> to <new name> \u2014 rename a party member',
-        '\u2022 pause / resume',
-      ]) this.hud.addCombatMessage(line, '#8a8');
-      return;
-    }
-
-    if (/\b(pause|hold)\b/.test(cmd)) {
-      if (!this.paused) this.togglePause();
-      this.hud.addCombatMessage('Time holds its breath.', '#8cf');
-      return;
-    }
-    if (/\b(resume|unpause|carry on|as you were)\b/.test(cmd)) {
-      this.dmStance = 'auto';
-      this.dmDirection = undefined;
-      if (this.paused) this.togglePause();
-      this.hud.addCombatMessage('The party resumes exploring at its own judgment.', '#8cf');
-      return;
-    }
-
-    if (/\b(save|saved|quick ?save|checkpoint)\b/.test(cmd)) {
-      const slotMatch = cmd.match(/slot\s*([1-3])/) || cmd.match(/save\s*([1-3])\s*$/);
-      if (slotMatch) {
-        this.activeSlot = parseInt(slotMatch[1], 10) - 1;
-        this.hud.addCombatMessage(`The party inks the ledger \u2014 future saves go to slot ${this.activeSlot + 1}.`, '#8cf');
-      }
-      this.saveGame(false);
-      return;
-    }
-    if (/\b(new game|new run|abandon|wipe|erase|fresh start|start over|restart)\b/.test(cmd)) {
-      this.startFreshRun();
-      return;
-    }
-
-    if (/\b(rename party|party name|name party|name the party|rename the party)\b/.test(cmd)) {
-      const nameArg = cmd.replace(/.*?(?:rename party|party name|name party|name the party|rename the party)\s*/i, '').trim();
-      if (nameArg.length > 0) {
-        const chosen = this.party.setName(nameArg);
-        this.hud.addCombatMessage(`\u2726 The party is now known as \u201c${chosen}\u201d.`, '#ffd700');
-        this.hud.setDungeonTitle(`${chosen} \u2014 ${this.mode === GameMode.Dungeon
-          ? this.dungeonName
-          : (this.currentTown?.name ?? 'The Wilderlands')}`);
-      } else {
-        this.party.generateDefaultName();
-        this.hud.addCombatMessage(`\u2726 The party is now known as \u201c${this.party.partyName}\u201d.`, '#ffd700');
-        this.hud.setDungeonTitle(`${this.party.partyName} \u2014 ${this.mode === GameMode.Dungeon
-          ? this.dungeonName
-          : (this.currentTown?.name ?? 'The Wilderlands')}`);
-      }
-      this.hud.setParty(this.party);
-      return;
-    }
-
-    if (/\b(rename character|rename)\b/.test(cmd) && /\b(to|as)\b/.test(cmd)) {
-      const match = cmd.match(/(?:rename character|rename)\s+(.+?)\s+(?:to|as)\s+(.+)/i);
-      if (match) {
-        const [, oldName, newName] = match;
-        const member = this.party.members.find(m => m.name.toLowerCase() === oldName.trim().toLowerCase());
-        if (member) {
-          const cleaned = newName.trim().replace(/[^a-zA-Z0-9\s'\-]/g, '').trim().slice(0, 30);
-          if (cleaned.length > 0) {
-            const old = member.name;
-            member.name = cleaned;
-            this.hud.addCombatMessage(`\u2726 ${old} is now known as \u201c${cleaned}\u201d.`, '#ffd700');
-          } else {
-            this.hud.addCombatMessage(`\u26a0 The name \u201c${newName.trim()}\u201d is not valid.`, '#c88');
-          }
-        } else {
-          this.hud.addCombatMessage(`\u26a0 No party member named \u201c${oldName.trim()}\u201d found.`, '#c88');
-        }
-      } else {
-        this.hud.addCombatMessage(`\u26a0 Usage: rename <character> to <new name>  (e.g. \u201crename Grom to Gandalf\u201d)`, '#c88');
-      }
-      this.hud.setParty(this.party);
-      return;
-    }
-
-    if (/\b(look|look around|examine|survey|inspect|describe the room|describe room)\b/.test(cmd)) {
-      this.hud.addCombatMessage(this.mode === GameMode.Dungeon ? this.describeCurrentRoom() : this.describeOverworldHere(), '#8aa');
-      return;
-    }
-
-    // Interact with the current room's feature (altar, vault, chokepoint...).
-    if (!inCombat && this.interactWithRoomFeature(cmd)) {
-      this.hud.setParty(this.party);
-      return;
-    }
-
-    if (/^\s*roll\b/.test(cmd)) {
-      this.rollDiceForParty(cmd.replace(/^\s*roll\s*/, '').trim());
-      return;
-    }
-
-    if (/\bupcast\b/.test(cmd)) {
-      const arg = cmd.replace(/upcast\s*/g, '').trim();
-      if (/\b(always|max|maximum|all)\b/.test(arg)) this.party.upcastPolicy = 'always';
-      else if (/\b(never|off|none|no)\b/.test(arg)) this.party.upcastPolicy = 'never';
-      else this.party.upcastPolicy = 'auto';
-      const doctrine = this.party.upcastPolicy === 'always'
-        ? 'Casters spend the highest slot they can \u2014 maximum upcast!' 
-        : this.party.upcastPolicy === 'never'
-          ? 'Casters always use the lowest usable slot \u2014 no upcasting.'
-          : 'Casters upcast when the fight calls for it \u2014 otherwise lowest slot.';
-      this.hud.addCombatMessage(`\u2726 Casting doctrine set: ${doctrine}`, '#8cf');
-      return;
-    }
-
-    const dir = extractDirection(cmd);
-    if (dir) {
-      if (inCombat) { this.hud.addCombatMessage('They cannot reposition mid-melee!', '#c66'); return; }
-      this.dmDirection = dir;
-      this.dmStance = 'auto';
-      this.hud.addCombatMessage(`${leader.name} nods \u2014 the party sets off ${DM_DIR_NAMES[dir]}.`, '#6a8');
-      return;
-    }
-
-    if (/\b(descend|deeper|next floor|downstairs|stairs? down|take the stairs)\b/.test(cmd)) {
-      if (this.mode !== GameMode.Dungeon) {
-        this.hud.addCombatMessage('There are no stairs here — the dungeon is underground.', '#886');
+    switch (cmd.intent) {
+      case 'help': {
+        for (const line of [
+          '\u2022 go / head + north, south, east, west \u2014 march that way',
+          '\u2022 attack / charge \u2014 hunt nearby foes   |   flee / cautious \u2014 avoid fights',
+          '\u2022 "as you were" \u2014 resume normal exploring',
+          '\u2022 rest (short) or camp / long rest   |   descend / deeper \u2014 next floor',
+          '\u2022 wait until dawn / night \u2014 bide your time and let the sky turn',
+          '\u2022 calendar / what day is it \u2014 the weekday, moon, and today\u2019s festivals',
+          '\u2022 journal / chronicle \u2014 read the party\u2019s deeds back',
+          '\u2022 summon <monster> e.g. "summon owlbear"   |   report \u2014 party status',
+          '\u2022 roll d20 / 2d6+3 / "roll d20 adv" \u2014 roll the dice (d20 banks a fated Luck die)',
+          '\u2022 look / examine / describe \u2014 narrate the room around you',
+          '\u2022 talk to <npc> / list npcs \u2014 visit townsfolk for quests and gossip',
+          '\u2022 raid camp / report camp / list clues \u2014 deal with bandit hideouts',
+          '\u2022 pray at the altar / search the vault / free prisoners / barricade \u2014 use the room\u2019s feature',
+          '\u2022 search for traps / disarm trap \u2014 find and defuse dungeon hazards',
+          '\u2022 loot / inventory / pack \u2014 show what the party is carrying',
+          '\u2022 equip <item> / unequip <item> / gear \u2014 manage weapons and armor',
+          '\u2022 upcast always / never / auto \u2014 how aggressively casters spend higher slots',
+          '\u2022 save \u2014 persist to the active slot | "save to slot 1/2/3" \u2014 pick a slot | "new game" \u2014 wipe it',
+          '\u2022 rename party <name> \u2014 give your party a custom name',
+          '\u2022 rename <character> to <new name> \u2014 rename a party member',
+          '\u2022 model on / off / status \u2014 the DM intent model that reads free-form orders',
+          '\u2022 pause / resume',
+        ]) this.hud.addCombatMessage(line, '#8a8');
         return;
       }
-      if (inCombat) { this.hud.addCombatMessage('Not with swords still drawn!', '#c66'); return; }
-      if (this.descending) { this.hud.addCombatMessage('The party is already on its way down...', '#cc8'); return; }
-      this.hud.addCombatMessage('\u2b07 The party seeks the stairwell downward...', '#cc8');
-      this.descending = true;
-      setTimeout(() => this.generateNewDungeon(), 400);
-      return;
-    }
 
-    if (/\b(wait|hold up|pass the time|bide|wait out|sit tight)\b/.test(cmd) && (/(dawn|daylight|morning|day|dusk|evening|night|midnight|dark)/.test(cmd))) {
-      if (inCombat) { this.hud.addCombatMessage('Not while blades are drawn!', '#c66'); return; }
-      // Fast-forward the clock to the next desired stage of the day.
-      const want = (/(dusk|evening)/.test(cmd) && !/(dawn|morning)/.test(cmd)) ? 0.5
-        : (/(night|midnight|dark)/.test(cmd) && !/(dusk|evening|dawn|morning)/.test(cmd)) ? 0.75
-        : 0.08; // dawn / morning / day / default
-      const STAMP = 180_000;
-      const cur = this.clock.phase;
-      let delta = want - cur;
-      if (delta < 0) delta += 1;
-      if (delta < 0.02) delta = 1; // already there — a full day passes
-      const newPhase = ((cur + delta) % 1 + 1) % 1;
-      const fromStage = this.clock.timeOfDay;
-      this.clock = {
-        phase: newPhase,
-        elapsed: this.clock.elapsed + delta * STAMP,
-        timeOfDay: timeOfDayFromPhase(newPhase),
-        light: 0.5 - 0.55 * Math.cos(newPhase * Math.PI * 2),
-      };
-      this.lastClockStage = this.clock.timeOfDay;
-      const line = dayChangeNarration(fromStage, this.clock.timeOfDay) ?? 'The campfire crackles and the hours turn. When the party opens their eyes, the world has moved on.';
-      this.hud.addCombatMessage(`🏕 The party settles in to wait out the hours.`, '#8cf');
-      this.hud.addCombatMessage(`${this.clock.light < NIGHT_VISIBILITY_LIGHT ? '🌙' : '🌤'} ${this.clock.timeOfDay.toUpperCase()} — ${line}`, '#7ca');
-      return;
-    }
-    if (/\b(long rest|camp)\b/.test(cmd)) {
-      if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-      this.hud.addCombatMessage('\ud83d\udee1 The party makes camp right here \u2014 long rest.', '#8cf');
-      for (const msg of this.party.longRest()) this.hud.addCombatMessage(msg, '#7c7');
-      this.hud.setParty(this.party);
-      return;
-    }
-    if (/\b(rest|recover|catch(ing)? breath|bind wounds)\b/.test(cmd)) {
-      if (inCombat) { this.hud.addCombatMessage('No rest mid-fight \u2014 win first!', '#c66'); return; }
-      this.hud.addCombatMessage('The party pauses for a short rest.', '#8cf');
-      for (const msg of this.party.shortRest()) this.hud.addCombatMessage(msg, '#8cf');
-      this.hud.setParty(this.party);
-      return;
-    }
+      case 'model_toggle': {
+        this.handleModelToggle(cmd.state);
+        return;
+      }
 
-    if (/\b(attack|fight|charge|hunt|kill|to arms|onward)\b/.test(cmd)) {
-      this.dmStance = 'aggressive';
-      this.dmDirection = undefined;
-      this.hud.addCombatMessage('\u2694 Weapons up \u2014 the party will hunt anything that moves.', '#c84');
-      return;
-    }
-    if (/\b(flee|retreat|avoid|careful|cautious|sneak|evade|withdraw|stealth)\b/.test(cmd)) {
-      this.dmStance = 'cautious';
-      this.dmDirection = undefined;
-      this.hud.addCombatMessage('The party tightens formation \u2014 discretion over valor.', '#886');
-      return;
-    }
+      case 'pause': {
+        if (!this.paused) this.togglePause();
+        this.hud.addCombatMessage('Time holds its breath.', '#8cf');
+        return;
+      }
+      case 'resume': {
+        this.dmStance = 'auto';
+        this.dmDirection = undefined;
+        if (this.paused) this.togglePause();
+        this.hud.addCombatMessage('The party resumes exploring at its own judgment.', '#8cf');
+        return;
+      }
 
-    // Flexible party formations: 2x2 block, 1x4 single file, 2x3, ...
-    const formationMatch = cmd.match(/\bformation\s+(?:as\s+|into\s+)?([a-z0-9x]+)\b/i);
-    if (formationMatch || /\b(formation|form up|reform|shape)\b/i.test(cmd)) {
-      const want = (formationMatch ? formationMatch[1] : '').toLowerCase();
-      let rows = 2;
-      let cols = 2;
-      if (/^(block|square|2x2|2 x 2)$/.test(want)) {
-        rows = 2; cols = 2;
-      } else if (/^(line|column|single|file|single-file|1x4|1 x 4|4x1|4 x 1)$/.test(want)) {
-        rows = 4; cols = 1; // single file, four deep
-      } else if (/^(loose|wide|spread)$/.test(want)) {
-        rows = 2; cols = 3;
-      } else if (/^(\d+)\s*x\s*(\d+)$/.test(want)) {
-        const m = want.match(/^(\d+)\s*x\s*(\d+)$/)!;
-        cols = Math.max(1, Math.min(4, parseInt(m[1], 10)));
-        rows = Math.max(1, Math.min(4, parseInt(m[2], 10)));
-      } else if (!formationMatch) {
+      case 'save': {
+        if (cmd.slot) {
+          this.activeSlot = cmd.slot - 1;
+          this.hud.addCombatMessage(`The party inks the ledger \u2014 future saves go to slot ${this.activeSlot + 1}.`, '#8cf');
+        }
+        this.saveGame(false);
+        return;
+      }
+      case 'new_game': {
+        this.startFreshRun();
+        return;
+      }
+
+      case 'rename_party': {
+        const placeName = this.mode === GameMode.Dungeon
+          ? this.dungeonName
+          : (this.currentTown?.name ?? 'The Wilderlands');
+        if (cmd.name) {
+          const chosen = this.party.setName(cmd.name);
+          this.hud.addCombatMessage(`\u2726 The party is now known as \u201c${chosen}\u201d.`, '#ffd700');
+          this.hud.setDungeonTitle(`${chosen} \u2014 ${placeName}`);
+        } else {
+          this.party.generateDefaultName();
+          this.hud.addCombatMessage(`\u2726 The party is now known as \u201c${this.party.partyName}\u201d.`, '#ffd700');
+          this.hud.setDungeonTitle(`${this.party.partyName} \u2014 ${placeName}`);
+        }
+        this.hud.setParty(this.party);
+        return;
+      }
+
+      case 'rename_member': {
+        if (cmd.oldName) {
+          const member = this.party.members.find(m => m.name.toLowerCase() === cmd.oldName.toLowerCase());
+          if (member) {
+            const cleaned = cmd.newName.replace(/[^a-zA-Z0-9\s'\-]/g, '').trim().slice(0, 30);
+            if (cleaned.length > 0) {
+              const old = member.name;
+              member.name = cleaned;
+              this.hud.addCombatMessage(`\u2726 ${old} is now known as \u201c${cleaned}\u201d.`, '#ffd700');
+            } else {
+              this.hud.addCombatMessage(`\u26a0 The name \u201c${cmd.newName}\u201d is not valid.`, '#c88');
+            }
+          } else {
+            this.hud.addCombatMessage(`\u26a0 No party member named \u201c${cmd.oldName}\u201d found.`, '#c88');
+          }
+        } else {
+          this.hud.addCombatMessage(`\u26a0 Usage: rename <character> to <new name>  (e.g. \u201crename Grom to Gandalf\u201d)`, '#c88');
+        }
+        this.hud.setParty(this.party);
+        return;
+      }
+
+      case 'look': {
+        this.hud.addCombatMessage(this.mode === GameMode.Dungeon ? this.describeCurrentRoom() : this.describeOverworldHere(), '#8aa');
+        return;
+      }
+
+      case 'feature_altar': case 'feature_vault': case 'feature_prison': case 'feature_chokepoint':
+      case 'feature_forge': case 'feature_library': case 'feature_fountain': case 'feature_sarcophagus':
+      case 'feature_throne': case 'feature_trapped_search': case 'feature_trapped_disarm':
+      case 'feature_treasure': case 'feature_merchant_talk': case 'feature_merchant_rob':
+      case 'feature_puzzle': case 'feature_ritual': case 'feature_war_room':
+      case 'feature_inspect': case 'search_room': {
+        if (!inCombat && this.performFeatureIntent(cmd.intent)) {
+          this.hud.setParty(this.party);
+        } else {
+          this.confusedGlances();
+        }
+        return;
+      }
+
+      case 'roll': {
+        this.rollDiceForParty(cmd.expr);
+        return;
+      }
+
+      case 'upcast': {
+        this.party.upcastPolicy = cmd.policy;
+        const doctrine = this.party.upcastPolicy === 'always'
+          ? 'Casters spend the highest slot they can \u2014 maximum upcast!'
+          : this.party.upcastPolicy === 'never'
+            ? 'Casters always use the lowest usable slot \u2014 no upcasting.'
+            : 'Casters upcast when the fight calls for it \u2014 otherwise lowest slot.';
+        this.hud.addCombatMessage(`\u2726 Casting doctrine set: ${doctrine}`, '#8cf');
+        return;
+      }
+
+      case 'move': {
+        if (inCombat) { this.hud.addCombatMessage('They cannot reposition mid-melee!', '#c66'); return; }
+        this.dmDirection = cmd.direction;
+        this.dmStance = 'auto';
+        this.hud.addCombatMessage(`${leader.name} nods \u2014 the party sets off ${DM_DIR_NAMES[cmd.direction]}.`, '#6a8');
+        return;
+      }
+
+      case 'descend': {
+        if (this.mode !== GameMode.Dungeon) {
+          this.hud.addCombatMessage('There are no stairs here — the dungeon is underground.', '#886');
+          return;
+        }
+        if (inCombat) { this.hud.addCombatMessage('Not with swords still drawn!', '#c66'); return; }
+        if (this.descending) { this.hud.addCombatMessage('The party is already on its way down...', '#cc8'); return; }
+        this.hud.addCombatMessage('\u2b07 The party seeks the stairwell downward...', '#cc8');
+        this.descending = true;
+        setTimeout(() => this.generateNewDungeon(), 400);
+        return;
+      }
+
+      case 'wait_until': {
+        if (inCombat) { this.hud.addCombatMessage('Not while blades are drawn!', '#c66'); return; }
+        // Fast-forward the clock to the next desired stage of the day.
+        const want = cmd.time === 'dusk' ? 0.5 : cmd.time === 'night' ? 0.75 : 0.08; // dawn / morning / day / default
+        const STAMP = 180_000;
+        const cur = this.clock.phase;
+        let delta = want - cur;
+        if (delta < 0) delta += 1;
+        if (delta < 0.02) delta = 1; // already there — a full day passes
+        const newPhase = ((cur + delta) % 1 + 1) % 1;
+        const fromStage = this.clock.timeOfDay;
+        this.clock = {
+          phase: newPhase,
+          elapsed: this.clock.elapsed + delta * STAMP,
+          timeOfDay: timeOfDayFromPhase(newPhase),
+          light: 0.5 - 0.55 * Math.cos(newPhase * Math.PI * 2),
+        };
+        this.lastClockStage = this.clock.timeOfDay;
+        const line = dayChangeNarration(fromStage, this.clock.timeOfDay) ?? 'The campfire crackles and the hours turn. When the party opens their eyes, the world has moved on.';
+        this.hud.addCombatMessage(`🏕 The party settles in to wait out the hours.`, '#8cf');
+        this.hud.addCombatMessage(`${this.clock.light < NIGHT_VISIBILITY_LIGHT ? '🌙' : '🌤'} ${this.clock.timeOfDay.toUpperCase()} — ${line}`, '#7ca');
+        return;
+      }
+      case 'long_rest': {
+        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
+        this.hud.addCombatMessage('\ud83d\udee1 The party makes camp right here \u2014 long rest.', '#8cf');
+        for (const msg of this.party.longRest()) this.hud.addCombatMessage(msg, '#7c7');
+        this.hud.setParty(this.party);
+        return;
+      }
+      case 'short_rest': {
+        if (inCombat) { this.hud.addCombatMessage('No rest mid-fight \u2014 win first!', '#c66'); return; }
+        this.hud.addCombatMessage('The party pauses for a short rest.', '#8cf');
+        for (const msg of this.party.shortRest()) this.hud.addCombatMessage(msg, '#8cf');
+        this.hud.setParty(this.party);
+        return;
+      }
+
+      case 'stance': {
+        this.dmDirection = undefined;
+        if (cmd.stance === 'aggressive') {
+          this.dmStance = 'aggressive';
+          this.hud.addCombatMessage('\u2694 Weapons up \u2014 the party will hunt anything that moves.', '#c84');
+        } else {
+          this.dmStance = 'cautious';
+          this.hud.addCombatMessage('The party tightens formation \u2014 discretion over valor.', '#886');
+        }
+        return;
+      }
+
+      case 'formation_help': {
         this.hud.addCombatMessage(
           `Formations: \u201cformation 2x2\u201d (block), \u201cformation 1x4\u201d (single file), \u201cformation 2x3\u201d (loose), \u201cformation line\u201d.`,
           '#8cf'
         );
         return;
       }
-      this.party.setFormation(rows, cols);
-      const shape =
-        rows === 1 && cols === 4 ? 'a single-file line, four deep'
-        : rows === 4 && cols === 1 ? 'a single-file line, four deep'
-        : `${cols}\u00d7${rows}`;
-      this.hud.addCombatMessage(`The party reforms into ${shape}${rows > 1 && cols > 1 ? ' block' : ''} \u2014 they\u2019ll spread out where space allows and squeeze single-file through tight spots.`, '#8cf');
-      return;
-    }
-
-    if (/\b(search|look for traps|find traps|scan for traps|check for traps)\b/.test(cmd)) {
-      if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-      const searcher = this.bestScout();
-      const { total } = rollPerception(searcher);
-      const radius = 3;
-      let found = 0;
-      for (const t of this.traps) {
-        if (t.detected || t.disarmed) continue;
-        const d = Math.max(Math.abs(t.tile.x - leader.tile.x), Math.abs(t.tile.y - leader.tile.y));
-        if (d <= radius) {
-          t.detected = true;
-          found++;
-          this.hud.addCombatMessage(`${searcher.name} spots a ${getTrapKind(t.kindId)!.name} at (${t.tile.x}, ${t.tile.y}).`, '#a86');
-        }
-      }
-      if (found === 0) {
-        this.hud.addCombatMessage(`${searcher.name} scans the stone (Perception ${total}) but finds no traps nearby.`, '#888');
-      } else {
-        this.hud.addCombatMessage(`${searcher.name} reveals ${found} hidden hazard${found === 1 ? '' : 's'}!`, '#6c6');
-      }
-      return;
-    }
-
-    if (/\b(disarm|disable the trap|defuse the trap|disarm trap|spring the trap)\b/.test(cmd)) {
-      if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-      if (!this.checkTrapDisarm(3)) {
-        this.hud.addCombatMessage('There is no detected trap within reach to disarm. Try "search for traps".', '#888');
-      }
-      return;
-    }
-
-    // ── Use a looted potion or scroll (works mid-combat) ──
-    const useMatch = cmd.match(/^(?:use|drink|quaff|read|cast)\s+(.+)/i);
-    if (useMatch) {
-      this.handleLootedItemUse(useMatch[1]);
-      return;
-    }
-
-    if (/\b(loot|treasure|inventory|pack|gear|what do we carry|what are we carrying)\b/.test(cmd)) {
-      const carriers = this.party.members.filter(m => m.inventory.length > 0);
-      if (carriers.length === 0) {
-        this.hud.addCombatMessage('The party carries nothing but weapons, wounds, and determination.', '#888');
+      case 'formation': {
+        const { rows, cols } = cmd;
+        this.party.setFormation(rows, cols);
+        const shape =
+          rows === 1 && cols === 4 ? 'a single-file line, four deep'
+          : rows === 4 && cols === 1 ? 'a single-file line, four deep'
+          : `${cols}\u00d7${rows}`;
+        this.hud.addCombatMessage(`The party reforms into ${shape}${rows > 1 && cols > 1 ? ' block' : ''} \u2014 they\u2019ll spread out where space allows and squeeze single-file through tight spots.`, '#8cf');
         return;
       }
-      let totalItemValue = 0;
-      for (const m of carriers) {
-        this.hud.addCombatMessage(`\ud83c\udfa5 ${m.name}'s pack:`, '#ca8');
-        for (const item of m.inventory) {
-          const value = item.value ?? 0;
-          totalItemValue += value;
-          this.hud.addCombatMessage(
-            `  ${inventoryItemEmoji(item)} ${item.name}${value > 0 ? ` (${value.toLocaleString()} gp)` : ''}`,
-            '#ca8'
-          );
-        }
-      }
-      const coin = this.party.members.reduce((s, m) => s + m.gold, 0);
-      this.hud.addCombatMessage(
-        `\ud83d\udcb0 Combined wealth: ${coin.toLocaleString()} gp in coin + ${totalItemValue.toLocaleString()} gp in carried items.`,
-        '#fd8'
-      );
-      return;
-    }
 
-    const summonMatch = cmd.match(/\b(conjure|summon|spawn)\s+(.+)/);
-    if (summonMatch) {
-      const query = summonMatch[2].replace(/[!.]/g, '').trim();
-      const candidates = MONSTER_TEMPLATES
-        .filter(t => t.name.toLowerCase().includes(query) || query.includes(t.name.toLowerCase()))
-        .sort((a, b) => a.name.length - b.name.length);
-      if (candidates.length === 0) {
-        this.hud.addCombatMessage(`Nothing in the bestiary answers to "${query}".`, '#888');
-        return;
-      }
-      const template = candidates[0];
-      this.proclaim(`At your word, a ${template.name} manifests!`);
-      this.spawnEncounter([template]);
-      this.hud.setParty(this.party);
-      return;
-    }
-
-    if (/\b(what day|calendar|date|today|what is it\?|whats today)\b/.test(cmd)) {
-      const c = this.calendar;
-      const phaseLabel = c.moonPhase.replace(/_/g, ' ');
-      const alt = this.clock.light < NIGHT_VISIBILITY_LIGHT ? 'night' : this.clock.light > 0.85 ? 'day' : this.clock.timeOfDay;
-      this.hud.addCombatMessage(`📅 ${this.calendarDesc()}.`, '#7aa');
-      this.hud.addCombatMessage(`The sun is ${alt}.${this.calendar.isGloomDay ? ' Old tales say the dead walk a Gloom day.' : ''}${this.calendar.isSacredDay ? ' Hearth blesses the faithful — the temple is open to all.' : ''}`, '#9aa');
-      if (this.calendar.moonLight > 0.86) this.hud.addCombatMessage(`🌕 The ${phaseLabel} rides high — a hunting pack is abroad tonight, and werecreatures answer its call.`, '#c86');
-      else if (this.calendar.moonLight < 0.14) this.hud.addCombatMessage(`🌑 The ${phaseLabel} blots the sky — the dark opens vaults the light has kept shut for a thousand years.`, '#8cf');
-      else this.hud.addCombatMessage(`The ${phaseLabel} sits midway through its cycle.`, '#9aa');
-      if (this.moonForgeBlade) {
-        this.hud.addCombatMessage(`⚔ The party wields the legendary Moonfall — silver that sings on every stroke and thunders on a critical.`, '#ffd700');
-      } else if (this.silveredWeapon && this.moonForgeLevel < 3) {
-        this.hud.addCombatMessage(`⚔ The moon-forge contract stands at tier ${this.moonForgeLevel} of 3 — temper the blade further with moon-fangs and a were-pelt at any smith.`, '#ca8');
-      } else if (this.moonForgeLevel >= 3) {
-        this.hud.addCombatMessage(`⚔ The moon-forge blade is complete — nothing mortal can temper it further. Seek the forge it spoke of to finish it.`, '#ffd700');
-      }
-      return;
-    }
-    if (/\b(journal|chronicle|history|ledger|story|log)\b/.test(cmd)) {
-      this.journalCodex(cmd);
-      return;
-    }
-    if (/\b(report|status|sitrep|how goes|party status)\b/.test(cmd)) {
-      const foes = this.monsters.filter(m => m.isAlive).length;
-      const armedTraps = this.traps.filter(t => !t.disarmed).length;
-      const detectedTraps = this.traps.filter(t => t.detected && !t.disarmed).length;
-      const trapNote = armedTraps > 0
-        ? ` | traps: ${detectedTraps}/${armedTraps} visible`
-        : ' | traps: none';
-      const placeLabel = this.mode === GameMode.Dungeon
-        ? this.dungeonName
-        : this.mode === GameMode.Town && this.currentTown
-          ? `${this.currentTown.name} (town)`
-          : 'The Wilderlands (surface)';
-      this.hud.addCombatMessage(`\ud83d\udccd ${placeLabel} \u2014 ${foes} foe${foes === 1 ? '' : 's'} remain. Orders: ${this.dmStance}${this.dmDirection ? ` (marching ${DM_DIR_NAMES[this.dmDirection]})` : ''} | casting: ${this.party.upcastPolicy}${trapNote}.`, '#ffd700');
-      this.hud.addCombatMessage(`📅 ${this.calendarDesc()} — the ${this.clock.timeOfDay}, weather ${this.weather?.type.replace(/_/g, ' ') ?? 'fair'}.`, '#7aa');
-      for (const m of this.party.members) {
-        const conds = m.conditions.map(c => CONDITION_META[c.id].label).join(', ');
-        const pct = Math.round((m.hp / m.maxHp) * 100);
-        const state = m.isConscious ? '' : m.isDead ? 'DEAD ' : m.stabilized ? 'STABILIZED ' : 'DYING ';
-        this.hud.addCombatMessage(`${m.isConscious ? '' : '\u2620 '}${state}${m.name}: ${pct}% HP${conds ? ` [${conds}]` : ''}${m.concentration ? ` (concentrating)` : ''}${m.exhaustion > 0 ? ` [Exhaustion ${m.exhaustion}]` : ''}`, m.isConscious ? '#ccc' : '#c44');
-      }
-      this.hud.addCombatMessage(`Gold carried: ${this.party.members.reduce((s, m) => s + m.gold, 0)}.`, '#ca8');
-      const h = this.history;
-      this.hud.addCombatMessage(
-        `\ud83d\udcdc Chronicle: ${h.kills} slain, ${h.victories} victor${h.victories === 1 ? 'y' : 'ies'}, ${h.defeats} retreat${h.defeats === 1 ? '' : 's'}, ${h.roomsVisited} room${h.roomsVisited === 1 ? '' : 's'} explored, deepest level ${h.deepestLevel}.`,
-        '#9aa'
-      );
-      // Bestiary kill ledger — per-kind totals, most slain first.
-      const ledger = Object.entries(h.killLedger)
-        .filter(([, n]) => n > 0)
-        .sort((a, b) => b[1] - a[1]);
-      if (ledger.length > 0) {
-        const kinds = ledger.length === 1 ? 'kind' : 'kinds';
-        const top = ledger.slice(0, 5).map(([id, n]) => {
-          const entry = getMonsterBestiaryEntry(id);
-          return `${entry ? entry.name : id} \u00d7${n}`;
-        }).join(', ');
-        const extra = ledger.length > 5 ? ` (+${ledger.length - 5} more)` : '';
-        this.hud.addCombatMessage(`\ud83d\udcd6 Bestiary: ${ledger.length} ${kinds} slain${extra} \u2014 ${top}.`, '#7bd');
-      }
-      const dice = getDiceStats();
-      const byType = Object.entries(dice.byType).filter(([, n]) => n > 0).map(([t, n]) => `${n}×${t}`).join(', ');
-      this.hud.addCombatMessage(`\ud83c\udfb2 ${dice.rolls} rolls this session \u2014 ${dice.crits} natural 20s, ${dice.fumbles} natural 1s.`, '#fd8');
-      const floorDice = dice.byFloor[this.dungeonLevel] ?? { rolls: 0, crits: 0, fumbles: 0 };
-      this.hud.addCombatMessage(
-        `\ud83d\uddfa Floor ${this.dungeonLevel}: ${floorDice.rolls} rolls \u2014 ${floorDice.crits} natural 20s, ${floorDice.fumbles} natural 1s.`,
-        '#fd8'
-      );
-      if (dice.critStreak >= 2) {
-        this.hud.addCombatMessage(`\ud83d\udd25 ${dice.critStreak} crits in a row (best ${dice.bestCritStreak})!`, '#ffd700');
-      } else if (dice.fumbleStreak >= 2) {
-        this.hud.addCombatMessage(`\ud83d\udc80 ${dice.fumbleStreak} fumbles in a row (best ${dice.bestFumbleStreak})\u2026`, '#c66');
-      } else if (dice.bestCritStreak >= 2 || dice.bestFumbleStreak >= 2) {
-        this.hud.addCombatMessage(`Streaks: best ${dice.bestCritStreak} crits, worst ${dice.bestFumbleStreak} fumbles in a row.`, '#aa8');
-      }
-      const luck = getLuckDie();
-      if (luck) this.hud.addCombatMessage(`\u26a1 Fated Luck die pending: ${luck.value} (from "${luck.source}") \u2014 spent on the next party d20 roll.`, '#fd8');
-      if (byType) this.hud.addCombatMessage(`  Breakdown: ${byType}`, '#aa8');
-      return;
-    }
-
-    // ── Equipment commands ──
-    if (/\b(equip|wield|don|wear|put on)\b/.test(cmd) && !/\b(unequip|remove|doff)\b/.test(cmd)) {
-      const whoMatch = cmd.match(/(?:equip|wield|don|wear|put on)\s+([a-z0-9'\- ]+?)\s+on\s+([a-z ]+)$/);
-      const itemName = (whoMatch ? whoMatch[1] : cmd.replace(/.*?(?:equip|wield|don|wear|put on)\s*/, '')).replace(/^(the|a|an)\s+/, '').trim();
-      const owner = whoMatch
-        ? this.party.members.find(m => m.name.toLowerCase().includes(whoMatch[2].trim())) ?? leader
-        : this.findItemOwner(itemName) ?? leader;
-      const item = [...owner.inventory, ...Object.values(owner.equipment)]
-        .find(i => i && i.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(itemName.replace(/[^a-z0-9]+/g, ' ').trim()));
-      if (!item) {
-        this.hud.addCombatMessage(`No one carries a "${itemName}" — try "gear" to see what's held.`, '#886');
-        return;
-      }
-      if (Object.values(owner.equipment).some(e => e?.id === item.id)) {
-        this.hud.addCombatMessage(`${owner.name} is already using the ${item.name}.`, '#886');
-        return;
-      }
-      const line = owner.equip(item.id);
-      this.hud.addCombatMessage(line ? `⚔ ${line} (AC ${owner.ac})` : `The ${item.name} can't be equipped.`, line ? '#8cf' : '#c66');
-      this.hud.setParty(this.party);
-      return;
-    }
-    if (/\b(unequip|remove|doff|stow)\b/.test(cmd)) {
-      const arg = cmd.replace(/.*?(?:unequip|remove|doff|stow)\s*/, '').replace(/^(the|a|an)\s+/, '').trim();
-      const SLOT_WORDS: Record<string, EquipSlot> = { weapon: 'weapon', armor: 'armor', shield: 'shield', trinket: 'trinket', ring: 'trinket', amulet: 'trinket', cloak: 'trinket' };
-      let done = false;
-      for (const m of this.party.members) {
-        for (const slot of ['weapon', 'armor', 'shield', 'trinket'] as EquipSlot[]) {
-          const it = m.equipment[slot];
-          if (!it) continue;
-          const hit = SLOT_WORDS[arg] === slot ||
-            it.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(arg.replace(/[^a-z0-9]+/g, ' ').trim());
-          if (hit && arg.length > 0) {
-            const line = m.unequip(slot);
-            this.hud.addCombatMessage(`🎒 ${line} (AC ${m.ac})`, '#8cf');
-            done = true;
+      case 'search_traps': {
+        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
+        const searcher = this.bestScout();
+        const { total } = rollPerception(searcher);
+        const radius = 3;
+        let found = 0;
+        for (const t of this.traps) {
+          if (t.detected || t.disarmed) continue;
+          const d = Math.max(Math.abs(t.tile.x - leader.tile.x), Math.abs(t.tile.y - leader.tile.y));
+          if (d <= radius) {
+            t.detected = true;
+            found++;
+            this.hud.addCombatMessage(`${searcher.name} spots a ${getTrapKind(t.kindId)!.name} at (${t.tile.x}, ${t.tile.y}).`, '#a86');
           }
         }
-      }
-      if (!done) this.hud.addCombatMessage('Nothing like that is equipped — try "gear" to see worn items.', '#886');
-      this.hud.setParty(this.party);
-      return;
-    }
-    if (/\b(gear|equipment|loadout)\b/.test(cmd)) {
-      this.hud.addCombatMessage('⚔ Equipped gear:', '#ffd700');
-      for (const m of this.party.members) {
-        this.hud.addCombatMessage(`${m.name} (AC ${m.ac}, +${m.attackBonus} to hit, +${m.damageBonus} dmg): ${m.gearSummary()}`, '#ccc');
-      }
-      return;
-    }
-
-    // ── Overworld, town, quest & commerce commands ──
-    if (/\b(quests|quest board|postings|contracts)\b/.test(cmd)) {
-      this.listQuests();
-      return;
-    }
-    if (/\b(accept|take|take on|pick up)\s+(the\s+)?(quest|contract|posting|job)\b/.test(cmd)) {
-      if (this.activeQuest()) {
-        this.hud.addCombatMessage('A quest is already accepted — finish it before taking another.', '#886');
-        return;
-      }
-      const idx = cmd.match(/(?:quest|job|posting|contract)\s*(\d)/);
-      const pool = this.quests.filter(q => !q.accepted && !q.turnedIn);
-      const q = pool[Math.max(0, (idx ? parseInt(idx[1], 10) : 1) - 1)];
-      if (!q) {
-        this.hud.addCombatMessage('There is nothing to accept right now — try "quests".', '#886');
-        return;
-      }
-      this.acceptQuest(q);
-      return;
-    }
-    if (/\b(turn ?in|complete quest|claim reward|hand in)\b/.test(cmd)) {
-      const active = this.activeQuest();
-      if (!active || !active.completed) {
-        this.hud.addCombatMessage('No quest is ready to report — finish the objective first.', '#886');
-        return;
-      }
-      if (this.mode !== GameMode.Town) {
-        this.hud.addCombatMessage('Quest rewards are claimed in town — head back and report there.', '#886');
-        return;
-      }
-      this.reportQuest(active);
-      return;
-    }
-    if (/\b(leave town|depart|set out|hit the road|take the road|ride out|head out)\b/.test(cmd)) {
-      this.departTown();
-      return;
-    }
-    if (/\b(go to town|return to town|back to town|head home|go home|return home)\b/.test(cmd)) {
-      if (this.mode === GameMode.Overworld) {
-        this.overworldDestination = { kind: 'town', id: this.currentTown?.id ?? this.overworld?.spawnTownId ?? '' };
-        this.overworldPath = [];
-        this.hud.addCombatMessage('The party turns its steps toward town.', '#6a8');
-      } else {
-        this.hud.addCombatMessage(this.mode === GameMode.Town ? 'The party is already in town.' : 'The party is underground — climb out first ("leave").', '#886');
-      }
-      return;
-    }
-    if (/\b(shop|market|store|buy|sell|trade|merchant)\b/.test(cmd)) {
-      if (this.mode !== GameMode.Town) {
-        this.hud.addCombatMessage('No merchants here — the market is in town.', '#886');
-        return;
-      }
-      this.hud.townPanel.show();
-      const want = cmd.match(/\b(buy|sell)\s+(.+)/);
-      if (want) {
-        const verb = want[1];
-        const query = want[2].trim().toLowerCase();
-        const item = [...this.marketStock(), ...this.partyInventory()].find(i => i.name.toLowerCase().includes(query));
-        if (item) {
-          if (verb === 'buy') this.buyItem(item);
-          else this.sellItem(item);
+        if (found === 0) {
+          this.hud.addCombatMessage(`${searcher.name} scans the stone (Perception ${total}) but finds no traps nearby.`, '#888');
         } else {
-          this.hud.addCombatMessage(`No ${verb === 'buy' ? 'stock' : 'item'} matching "${query}".`, '#888');
+          this.hud.addCombatMessage(`${searcher.name} reveals ${found} hidden hazard${found === 1 ? '' : 's'}!`, '#6c6');
         }
+        return;
       }
-      return;
-    }
-    if (/\b(leave|ascend|climb out|surface|get out|exit the dungeon)\b/.test(cmd)) {
-      if (this.mode === GameMode.Dungeon) {
-        this.hud.addCombatMessage('The party turns back and climbs toward the light.', '#ca8');
-        this.exitDungeonToOverworld();
-      } else if (this.mode === GameMode.Overworld) {
-        this.hud.addCombatMessage('The party is already on the surface.', '#888');
-      } else {
-        this.hud.addCombatMessage('The party is in town — try "depart" to leave.', '#888');
+
+      case 'disarm_trap': {
+        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
+        if (!this.checkTrapDisarm(3)) {
+          this.hud.addCombatMessage('There is no detected trap within reach to disarm. Try "search for traps".', '#888');
+        }
+        return;
       }
-      return;
-    }
-    if (/\b(enter|descend into|delve|go into the)\b/.test(cmd)) {
-      const e = this.overworld ? entranceAt(this.overworld, leader.tile.x, leader.tile.y) : undefined;
-      if (this.mode === GameMode.Overworld && e) {
-        this.enterDungeonFromEntrance(e);
-      } else if (this.mode === GameMode.Dungeon) {
-        this.hud.addCombatMessage('The party is already underground.', '#888');
-      } else {
-        this.hud.addCombatMessage('There is no dungeon entrance here.', '#888');
+
+      // ── Use a looted potion or scroll (works mid-combat) ──
+      case 'use_item': {
+        this.handleLootedItemUse(cmd.arg);
+        return;
       }
-      return;
-    }
-    const travelMatch = cmd.match(/\b(travel to|head to|make for|bound for|trek to)\s+(.+)/);
-    if (travelMatch) {
-      const query = travelMatch[2].trim().toLowerCase();
-      if (this.mode === GameMode.Overworld && this.overworld) {
-        const town = this.overworld.towns.find(t => t.name.toLowerCase().includes(query));
-        const entrance = this.overworld.entrances.find(e => e.name.toLowerCase().includes(query));
-        if (town) {
-          this.overworldDestination = { kind: 'town', id: town.id };
+
+      case 'inventory': {
+        const carriers = this.party.members.filter(m => m.inventory.length > 0);
+        if (carriers.length === 0) {
+          this.hud.addCombatMessage('The party carries nothing but weapons, wounds, and determination.', '#888');
+          return;
+        }
+        let totalItemValue = 0;
+        for (const m of carriers) {
+          this.hud.addCombatMessage(`\ud83c\udfa5 ${m.name}'s pack:`, '#ca8');
+          for (const item of m.inventory) {
+            const value = item.value ?? 0;
+            totalItemValue += value;
+            this.hud.addCombatMessage(
+              `  ${inventoryItemEmoji(item)} ${item.name}${value > 0 ? ` (${value.toLocaleString()} gp)` : ''}`,
+              '#ca8'
+            );
+          }
+        }
+        const coin = this.party.members.reduce((s, m) => s + m.gold, 0);
+        this.hud.addCombatMessage(
+          `\ud83d\udcb0 Combined wealth: ${coin.toLocaleString()} gp in coin + ${totalItemValue.toLocaleString()} gp in carried items.`,
+          '#fd8'
+        );
+        return;
+      }
+
+      case 'summon': {
+        const query = cmd.monster.toLowerCase();
+        const candidates = MONSTER_TEMPLATES
+          .filter(t => t.name.toLowerCase().includes(query) || query.includes(t.name.toLowerCase()))
+          .sort((a, b) => a.name.length - b.name.length);
+        if (candidates.length === 0) {
+          this.hud.addCombatMessage(`Nothing in the bestiary answers to "${query}".`, '#888');
+          return;
+        }
+        const template = candidates[0];
+        this.proclaim(`At your word, a ${template.name} manifests!`);
+        this.spawnEncounter([template]);
+        this.hud.setParty(this.party);
+        return;
+      }
+
+      case 'calendar': {
+        const c = this.calendar;
+        const phaseLabel = c.moonPhase.replace(/_/g, ' ');
+        const alt = this.clock.light < NIGHT_VISIBILITY_LIGHT ? 'night' : this.clock.light > 0.85 ? 'day' : this.clock.timeOfDay;
+        this.hud.addCombatMessage(`📅 ${this.calendarDesc()}.`, '#7aa');
+        this.hud.addCombatMessage(`The sun is ${alt}.${this.calendar.isGloomDay ? ' Old tales say the dead walk a Gloom day.' : ''}${this.calendar.isSacredDay ? ' Hearth blesses the faithful — the temple is open to all.' : ''}`, '#9aa');
+        if (this.calendar.moonLight > 0.86) this.hud.addCombatMessage(`🌕 The ${phaseLabel} rides high — a hunting pack is abroad tonight, and werecreatures answer its call.`, '#c86');
+        else if (this.calendar.moonLight < 0.14) this.hud.addCombatMessage(`🌑 The ${phaseLabel} blots the sky — the dark opens vaults the light has kept shut for a thousand years.`, '#8cf');
+        else this.hud.addCombatMessage(`The ${phaseLabel} sits midway through its cycle.`, '#9aa');
+        if (this.moonForgeBlade) {
+          this.hud.addCombatMessage(`⚔ The party wields the legendary Moonfall — silver that sings on every stroke and thunders on a critical.`, '#ffd700');
+        } else if (this.silveredWeapon && this.moonForgeLevel < 3) {
+          this.hud.addCombatMessage(`⚔ The moon-forge contract stands at tier ${this.moonForgeLevel} of 3 — temper the blade further with moon-fangs and a were-pelt at any smith.`, '#ca8');
+        } else if (this.moonForgeLevel >= 3) {
+          this.hud.addCombatMessage(`⚔ The moon-forge blade is complete — nothing mortal can temper it further. Seek the forge it spoke of to finish it.`, '#ffd700');
+        }
+        return;
+      }
+      case 'journal': {
+        this.journalCodex(cmd.raw);
+        return;
+      }
+      case 'report': {
+        const foes = this.monsters.filter(m => m.isAlive).length;
+        const armedTraps = this.traps.filter(t => !t.disarmed).length;
+        const detectedTraps = this.traps.filter(t => t.detected && !t.disarmed).length;
+        const trapNote = armedTraps > 0
+          ? ` | traps: ${detectedTraps}/${armedTraps} visible`
+          : ' | traps: none';
+        const placeLabel = this.mode === GameMode.Dungeon
+          ? this.dungeonName
+          : this.mode === GameMode.Town && this.currentTown
+            ? `${this.currentTown.name} (town)`
+            : 'The Wilderlands (surface)';
+        this.hud.addCombatMessage(`\ud83d\udccd ${placeLabel} \u2014 ${foes} foe${foes === 1 ? '' : 's'} remain. Orders: ${this.dmStance}${this.dmDirection ? ` (marching ${DM_DIR_NAMES[this.dmDirection]})` : ''} | casting: ${this.party.upcastPolicy}${trapNote}.`, '#ffd700');
+        this.hud.addCombatMessage(`📅 ${this.calendarDesc()} — the ${this.clock.timeOfDay}, weather ${this.weather?.type.replace(/_/g, ' ') ?? 'fair'}.`, '#7aa');
+        for (const m of this.party.members) {
+          const conds = m.conditions.map(c => CONDITION_META[c.id].label).join(', ');
+          const pct = Math.round((m.hp / m.maxHp) * 100);
+          const state = m.isConscious ? '' : m.isDead ? 'DEAD ' : m.stabilized ? 'STABILIZED ' : 'DYING ';
+          this.hud.addCombatMessage(`${m.isConscious ? '' : '\u2620 '}${state}${m.name}: ${pct}% HP${conds ? ` [${conds}]` : ''}${m.concentration ? ` (concentrating)` : ''}${m.exhaustion > 0 ? ` [Exhaustion ${m.exhaustion}]` : ''}`, m.isConscious ? '#ccc' : '#c44');
+        }
+        this.hud.addCombatMessage(`Gold carried: ${this.party.members.reduce((s, m) => s + m.gold, 0)}.`, '#ca8');
+        const h = this.history;
+        this.hud.addCombatMessage(
+          `\ud83d\udcdc Chronicle: ${h.kills} slain, ${h.victories} victor${h.victories === 1 ? 'y' : 'ies'}, ${h.defeats} retreat${h.defeats === 1 ? '' : 's'}, ${h.roomsVisited} room${h.roomsVisited === 1 ? '' : 's'} explored, deepest level ${h.deepestLevel}.`,
+          '#9aa'
+        );
+        // Bestiary kill ledger — per-kind totals, most slain first.
+        const ledger = Object.entries(h.killLedger)
+          .filter(([, n]) => n > 0)
+          .sort((a, b) => b[1] - a[1]);
+        if (ledger.length > 0) {
+          const kinds = ledger.length === 1 ? 'kind' : 'kinds';
+          const top = ledger.slice(0, 5).map(([id, n]) => {
+            const entry = getMonsterBestiaryEntry(id);
+            return `${entry ? entry.name : id} \u00d7${n}`;
+          }).join(', ');
+          const extra = ledger.length > 5 ? ` (+${ledger.length - 5} more)` : '';
+          this.hud.addCombatMessage(`\ud83d\udcd6 Bestiary: ${ledger.length} ${kinds} slain${extra} \u2014 ${top}.`, '#7bd');
+        }
+        const dice = getDiceStats();
+        const byType = Object.entries(dice.byType).filter(([, n]) => n > 0).map(([t, n]) => `${n}×${t}`).join(', ');
+        this.hud.addCombatMessage(`\ud83c\udfb2 ${dice.rolls} rolls this session \u2014 ${dice.crits} natural 20s, ${dice.fumbles} natural 1s.`, '#fd8');
+        const floorDice = dice.byFloor[this.dungeonLevel] ?? { rolls: 0, crits: 0, fumbles: 0 };
+        this.hud.addCombatMessage(
+          `\ud83d\uddfa Floor ${this.dungeonLevel}: ${floorDice.rolls} rolls \u2014 ${floorDice.crits} natural 20s, ${floorDice.fumbles} natural 1s.`,
+          '#fd8'
+        );
+        if (dice.critStreak >= 2) {
+          this.hud.addCombatMessage(`\ud83d\udd25 ${dice.critStreak} crits in a row (best ${dice.bestCritStreak})!`, '#ffd700');
+        } else if (dice.fumbleStreak >= 2) {
+          this.hud.addCombatMessage(`\ud83d\udc80 ${dice.fumbleStreak} fumbles in a row (best ${dice.bestFumbleStreak})\u2026`, '#c66');
+        } else if (dice.bestCritStreak >= 2 || dice.bestFumbleStreak >= 2) {
+          this.hud.addCombatMessage(`Streaks: best ${dice.bestCritStreak} crits, worst ${dice.bestFumbleStreak} fumbles in a row.`, '#aa8');
+        }
+        const luck = getLuckDie();
+        if (luck) this.hud.addCombatMessage(`\u26a1 Fated Luck die pending: ${luck.value} (from "${luck.source}") \u2014 spent on the next party d20 roll.`, '#fd8');
+        if (byType) this.hud.addCombatMessage(`  Breakdown: ${byType}`, '#aa8');
+        return;
+      }
+
+      // ── Equipment ──
+      case 'equip': {
+        const itemName = cmd.item;
+        const owner = cmd.member
+          ? this.party.members.find(m => m.name.toLowerCase().includes(cmd.member!)) ?? leader
+          : this.findItemOwner(itemName) ?? leader;
+        const item = [...owner.inventory, ...Object.values(owner.equipment)]
+          .find(i => i && i.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(itemName.replace(/[^a-z0-9]+/g, ' ').trim()));
+        if (!item) {
+          this.hud.addCombatMessage(`No one carries a "${itemName}" — try "gear" to see what's held.`, '#886');
+          return;
+        }
+        if (Object.values(owner.equipment).some(e => e?.id === item.id)) {
+          this.hud.addCombatMessage(`${owner.name} is already using the ${item.name}.`, '#886');
+          return;
+        }
+        const line = owner.equip(item.id);
+        this.hud.addCombatMessage(line ? `⚔ ${line} (AC ${owner.ac})` : `The ${item.name} can't be equipped.`, line ? '#8cf' : '#c66');
+        this.hud.setParty(this.party);
+        return;
+      }
+      case 'unequip': {
+        const arg = cmd.arg;
+        const SLOT_WORDS: Record<string, EquipSlot> = { weapon: 'weapon', armor: 'armor', shield: 'shield', trinket: 'trinket', ring: 'trinket', amulet: 'trinket', cloak: 'trinket' };
+        let done = false;
+        for (const m of this.party.members) {
+          for (const slot of ['weapon', 'armor', 'shield', 'trinket'] as EquipSlot[]) {
+            const it = m.equipment[slot];
+            if (!it) continue;
+            const hit = SLOT_WORDS[arg] === slot ||
+              it.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(arg.replace(/[^a-z0-9]+/g, ' ').trim());
+            if (hit && arg.length > 0) {
+              const line = m.unequip(slot);
+              this.hud.addCombatMessage(`🎒 ${line} (AC ${m.ac})`, '#8cf');
+              done = true;
+            }
+          }
+        }
+        if (!done) this.hud.addCombatMessage('Nothing like that is equipped — try "gear" to see worn items.', '#886');
+        this.hud.setParty(this.party);
+        return;
+      }
+      case 'gear': {
+        this.hud.addCombatMessage('⚔ Equipped gear:', '#ffd700');
+        for (const m of this.party.members) {
+          this.hud.addCombatMessage(`${m.name} (AC ${m.ac}, +${m.attackBonus} to hit, +${m.damageBonus} dmg): ${m.gearSummary()}`, '#ccc');
+        }
+        return;
+      }
+
+      // ── Overworld, town, quest & commerce ──
+      case 'quests': {
+        this.listQuests();
+        return;
+      }
+      case 'accept_quest': {
+        if (this.activeQuest()) {
+          this.hud.addCombatMessage('A quest is already accepted — finish it before taking another.', '#886');
+          return;
+        }
+        const pool = this.quests.filter(q => !q.accepted && !q.turnedIn);
+        const q = pool[Math.max(0, (cmd.index ?? 1) - 1)];
+        if (!q) {
+          this.hud.addCombatMessage('There is nothing to accept right now — try "quests".', '#886');
+          return;
+        }
+        this.acceptQuest(q);
+        return;
+      }
+      case 'turn_in_quest': {
+        const active = this.activeQuest();
+        if (!active || !active.completed) {
+          this.hud.addCombatMessage('No quest is ready to report — finish the objective first.', '#886');
+          return;
+        }
+        if (this.mode !== GameMode.Town) {
+          this.hud.addCombatMessage('Quest rewards are claimed in town — head back and report there.', '#886');
+          return;
+        }
+        this.reportQuest(active);
+        return;
+      }
+      case 'depart_town': {
+        this.departTown();
+        return;
+      }
+      case 'go_to_town': {
+        if (this.mode === GameMode.Overworld) {
+          this.overworldDestination = { kind: 'town', id: this.currentTown?.id ?? this.overworld?.spawnTownId ?? '' };
           this.overworldPath = [];
-          this.hud.addCombatMessage(`The party sets course for ${town.name}.`, '#6a8');
-        } else if (entrance) {
-          this.overworldDestination = { kind: 'entrance', id: entrance.id };
-          this.overworldPath = [];
-          this.hud.addCombatMessage(`The party sets course for ${entrance.name}.`, '#6a8');
+          this.hud.addCombatMessage('The party turns its steps toward town.', '#6a8');
         } else {
-          this.hud.addCombatMessage(`No town or dungeon named "${query}" on the maps.`, '#888');
+          this.hud.addCombatMessage(this.mode === GameMode.Town ? 'The party is already in town.' : 'The party is underground — climb out first ("leave").', '#886');
         }
-      } else {
-        this.hud.addCombatMessage('Travel orders only make sense on the surface.', '#886');
+        return;
       }
-      return;
-    }
+      case 'shop': case 'buy': case 'sell': {
+        if (this.mode !== GameMode.Town) {
+          this.hud.addCombatMessage('No merchants here — the market is in town.', '#886');
+          return;
+        }
+        this.hud.townPanel.show();
+        if (cmd.intent !== 'shop') {
+          const query = cmd.item.toLowerCase();
+          const item = [...this.marketStock(), ...this.partyInventory()].find(i => i.name.toLowerCase().includes(query));
+          if (item) {
+            if (cmd.intent === 'buy') this.buyItem(item);
+            else this.sellItem(item);
+          } else {
+            this.hud.addCombatMessage(`No ${cmd.intent === 'buy' ? 'stock' : 'item'} matching "${query}".`, '#888');
+          }
+        }
+        return;
+      }
+      case 'leave_dungeon': {
+        if (this.mode === GameMode.Dungeon) {
+          this.hud.addCombatMessage('The party turns back and climbs toward the light.', '#ca8');
+          this.exitDungeonToOverworld();
+        } else if (this.mode === GameMode.Overworld) {
+          this.hud.addCombatMessage('The party is already on the surface.', '#888');
+        } else {
+          this.hud.addCombatMessage('The party is in town — try "depart" to leave.', '#888');
+        }
+        return;
+      }
+      case 'enter_dungeon': {
+        const e = this.overworld ? entranceAt(this.overworld, leader.tile.x, leader.tile.y) : undefined;
+        if (this.mode === GameMode.Overworld && e) {
+          this.enterDungeonFromEntrance(e);
+        } else if (this.mode === GameMode.Dungeon) {
+          this.hud.addCombatMessage('The party is already underground.', '#888');
+        } else {
+          this.hud.addCombatMessage('There is no dungeon entrance here.', '#888');
+        }
+        return;
+      }
+      case 'travel_to': {
+        const query = cmd.destination.toLowerCase();
+        if (this.mode === GameMode.Overworld && this.overworld) {
+          const town = this.overworld.towns.find(t => t.name.toLowerCase().includes(query));
+          const entrance = this.overworld.entrances.find(e => e.name.toLowerCase().includes(query));
+          if (town) {
+            this.overworldDestination = { kind: 'town', id: town.id };
+            this.overworldPath = [];
+            this.hud.addCombatMessage(`The party sets course for ${town.name}.`, '#6a8');
+          } else if (entrance) {
+            this.overworldDestination = { kind: 'entrance', id: entrance.id };
+            this.overworldPath = [];
+            this.hud.addCombatMessage(`The party sets course for ${entrance.name}.`, '#6a8');
+          } else {
+            this.hud.addCombatMessage(`No town or dungeon named "${query}" on the maps.`, '#888');
+          }
+        } else {
+          this.hud.addCombatMessage('Travel orders only make sense on the surface.', '#886');
+        }
+        return;
+      }
 
-    // ── Bandit camp commands ──
-    if (/\b(raid camp|assault camp|attack camp|hit the camp|storm the camp)\b/.test(cmd)) {
-      if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-      if (this.mode === GameMode.Town) { this.hud.addCombatMessage('There are no camps in town — head to the overworld.', '#886'); return; }
-      const pendingClue = this.banditCamps.clues.find(c => !c);
-      if (!pendingClue) {
-        this.hud.addCombatMessage('You have no camp clues to act on. Defeat bandits on the road to find their hideouts.', '#888');
+      // ── Bandit camps ──
+      case 'raid_camp': {
+        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
+        if (this.mode === GameMode.Town) { this.hud.addCombatMessage('There are no camps in town — head to the overworld.', '#886'); return; }
+        const pendingClue = this.banditCamps.clues.find(c => !c.resolved);
+        if (!pendingClue) {
+          this.hud.addCombatMessage('You have no camp clues to act on. Defeat bandits on the road to find their hideouts.', '#888');
+          return;
+        }
+        this.hud.addCombatMessage('⚔️ The party moves to assault the bandit camp!', '#c84');
+        // Spawn a combat encounter scaled to the camp tier
+        const templates = [];
+        for (let i = 0; i < 2 + pendingClue.tier; i++) {
+          templates.push(getMonsterTemplate('bandit') ?? getMonsterTemplate('goblin')!);
+        }
+        if (pendingClue.tier >= 2) templates.push(getMonsterTemplate('highwayman') ?? getMonsterTemplate('bandit')!);
+        if (pendingClue.tier >= 3) templates.push(getMonsterTemplate('bandit_captain') ?? getMonsterTemplate('orc')!);
+        this.spawnEncounter(templates);
+        pendingClue.resolved = true;
         return;
       }
-      this.hud.addCombatMessage('⚔️ The party moves to assault the bandit camp!', '#c84');
-      // Spawn a combat encounter scaled to the camp tier
-      const templates = [];
-      for (let i = 0; i < 2 + pendingClue.tier; i++) {
-        templates.push(getMonsterTemplate('bandit') ?? getMonsterTemplate('goblin')!);
-      }
-      if (pendingClue.tier >= 2) templates.push(getMonsterTemplate('highwayman') ?? getMonsterTemplate('bandit')!);
-      if (pendingClue.tier >= 3) templates.push(getMonsterTemplate('bandit_captain') ?? getMonsterTemplate('orc')!);
-      this.spawnEncounter(templates);
-      pendingClue.resolved = true;
-      return;
-    }
-    if (/\b(report camp|report hideout|report bandits|report to constable)\b/.test(cmd)) {
-      if (this.mode !== GameMode.Town) {
-        this.hud.addCombatMessage('You must be in town to report a camp location.', '#886');
+      case 'report_camp': {
+        if (this.mode !== GameMode.Town) {
+          this.hud.addCombatMessage('You must be in town to report a camp location.', '#886');
+          return;
+        }
+        const pendingClue = this.banditCamps.clues.find(c => !c.resolved);
+        if (!pendingClue) {
+          this.hud.addCombatMessage('You have no camp clues to report.', '#888');
+          return;
+        }
+        this.hud.addCombatMessage(`🗺️ The constable studies the map and nods grimly.`, '#ca8');
+        this.hud.addCombatMessage(`"Good work. The guard will handle the rest. Here's your reward — ${pendingClue.reportReward} gold, as promised."`, '#888');
+        // Award gold to the party
+        const living = this.party.members.filter(m => m.isAlive);
+        if (living.length > 0) {
+          const each = Math.floor(pendingClue.reportReward / living.length);
+          living.forEach(m => m.gold += each);
+        }
+        pendingClue.resolved = true;
         return;
       }
-      const pendingClue = this.banditCamps.clues.find(c => !c);
-      if (!pendingClue) {
-        this.hud.addCombatMessage('You have no camp clues to report.', '#888');
+      case 'list_clues': {
+        const pending = this.banditCamps.clues.filter(c => !c.resolved);
+        if (pending.length === 0) {
+          this.hud.addCombatMessage('No bandit camp clues in hand. Defeat bandits on the road to find their hideouts.', '#888');
+          return;
+        }
+        this.hud.addCombatMessage('🗺️ Bandit Camp Clues:', '#ca8');
+        pending.forEach((c, i) => {
+          this.hud.addCombatMessage(`  ${i + 1}. ${c.description} (Tier ${c.tier})`, '#a89');
+          this.hud.addCombatMessage(`     Report for ${c.reportReward} gp or "raid camp" to assault it.`, '#888');
+        });
         return;
       }
-      this.hud.addCombatMessage(`🗺️ The constable studies the map and nods grimly.`, '#ca8');
-      this.hud.addCombatMessage(`"Good work. The guard will handle the rest. Here's your reward — ${pendingClue.reportReward} gold, as promised."`, '#888');
-      // Award gold to the party
-      const living = this.party.members.filter(m => m.isAlive);
-      if (living.length > 0) {
-        const each = Math.floor(pendingClue.reportReward / living.length);
-        living.forEach(m => m.gold += each);
-      }
-      pendingClue.resolved = true;
-      return;
-    }
-    if (/\b(list clues|clues|maps|bandit maps|camp clues)\b/.test(cmd)) {
-      const pending = this.banditCamps.clues.filter(c => !c.resolved);
-      if (pending.length === 0) {
-        this.hud.addCombatMessage('No bandit camp clues in hand. Defeat bandits on the road to find their hideouts.', '#888');
-        return;
-      }
-      this.hud.addCombatMessage('🗺️ Bandit Camp Clues:', '#ca8');
-      pending.forEach((c, i) => {
-        this.hud.addCombatMessage(`  ${i + 1}. ${c.description} (Tier ${c.tier})`, '#a89');
-        this.hud.addCombatMessage(`     Report for ${c.reportReward} gp or "raid camp" to assault it.`, '#888');
-      });
-      return;
-    }
 
-    // ── Quest-giver NPC commands ──
-    if (/\b(talk to|speak to|visit|greet|meet|chat with)\s+(\w+\s*\w*)\b/.test(cmd)) {
-      const match = cmd.match(/\b(?:talk to|speak to|visit|greet|meet|chat with)\s+(\w+(?:\s+\w+)?)\b/);
-      if (!match) { this.hud.addCombatMessage('Who do you want to talk to?', '#888'); return; }
-      const query = match[1].trim().toLowerCase();
-      if (this.mode !== GameMode.Town || !this.currentTown) {
-        this.hud.addCombatMessage('You must be in town to visit NPCs.', '#886');
+      // ── Townsfolk ──
+      case 'talk_to': {
+        const query = cmd.npc.toLowerCase();
+        if (!query) { this.hud.addCombatMessage('Who do you want to talk to?', '#888'); return; }
+        if (this.mode !== GameMode.Town || !this.currentTown) {
+          this.hud.addCombatMessage('You must be in town to visit NPCs.', '#886');
+          return;
+        }
+        const tl = this.townLife?.byTown[this.currentTown.id];
+        if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around right now.', '#888'); return; }
+        const npc = tl.questGivers.find(g => g.name.toLowerCase().includes(query));
+        if (!npc) { this.hud.addCombatMessage(`No one named "${query}" is around right now.`, '#888'); return; }
+        this.hud.addCombatMessage(`${npc.portrait} ${npc.name} — ${npc.title}:`, '#ca8');
+        // Show quest-specific dialogue if this NPC has posted quests
+        const npcQuests = this.quests.filter(q => q.giverNpcId === npc.id && !q.turnedIn);
+        if (npcQuests.length > 0) {
+          const quest = npcQuests[0];
+          this.hud.addCombatMessage(`   "${getQuestDialogue(npc, quest.kind)}"`, '#a89');
+          this.hud.addCombatMessage(`   [${quest.title} — ${quest.completed ? '✔ Ready to report' : 'In progress'}]`, '#8cf');
+        } else {
+          this.hud.addCombatMessage(`   "${getDialogue(npc)}"`, '#a89');
+        }
+        this.hud.addCombatMessage(`   [Reputation: ${getReputationTier(npc)}]`, '#888');
         return;
       }
-      const tl = this.townLife?.byTown[this.currentTown.id];
-      if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around right now.', '#888'); return; }
-      const npc = tl.questGivers.find(g => g.name.toLowerCase().includes(query));
-      if (!npc) { this.hud.addCombatMessage(`No one named "${query}" is around right now.`, '#888'); return; }
-      this.hud.addCombatMessage(`${npc.portrait} ${npc.name} — ${npc.title}:`, '#ca8');
-      // Show quest-specific dialogue if this NPC has posted quests
-      const npcQuests = this.quests.filter(q => q.giverNpcId === npc.id && !q.turnedIn);
-      if (npcQuests.length > 0) {
-        const quest = npcQuests[0];
-        this.hud.addCombatMessage(`   "${getQuestDialogue(npc, quest.kind)}"`, '#a89');
-        this.hud.addCombatMessage(`   [${quest.title} — ${quest.completed ? '✔ Ready to report' : 'In progress'}]`, '#8cf');
-      } else {
-        this.hud.addCombatMessage(`   "${getDialogue(npc)}"`, '#a89');
-      }
-      this.hud.addCombatMessage(`   [Reputation: ${getReputationTier(npc)}]`, '#888');
-      return;
-    }
-    if (/\b(list npcs|who is here|who's here|townspeople|people|citizens)\b/.test(cmd)) {
-      if (this.mode !== GameMode.Town || !this.currentTown) {
-        this.hud.addCombatMessage('You must be in town to see the locals.', '#886');
+      case 'list_npcs': {
+        if (this.mode !== GameMode.Town || !this.currentTown) {
+          this.hud.addCombatMessage('You must be in town to see the locals.', '#886');
+          return;
+        }
+        const tl = this.townLife?.byTown[this.currentTown.id];
+        if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around.', '#888'); return; }
+        this.hud.addCombatMessage('👥 Notable NPCs in town:', '#ca8');
+        tl.questGivers.forEach(g => {
+          this.hud.addCombatMessage(`  ${g.portrait} ${g.name} — ${g.title} [${getReputationTier(g)}]`, '#a89');
+        });
         return;
       }
-      const tl = this.townLife?.byTown[this.currentTown.id];
-      if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around.', '#888'); return; }
-      this.hud.addCombatMessage('👥 Notable NPCs in town:', '#ca8');
-      tl.questGivers.forEach(g => {
-        this.hud.addCombatMessage(`  ${g.portrait} ${g.name} — ${g.title} [${getReputationTier(g)}]`, '#a89');
-      });
-      return;
-    }
 
-    this.hud.addCombatMessage('The party exchanges confused glances. Type "help" for orders they understand.', '#888');
+      case 'unknown': {
+        void text;
+        this.confusedGlances();
+        return;
+      }
+    }
+  }
+
+  /** "model on / off / status" — the DM intent model is wired up by the LLM service. */
+  private handleModelToggle(state: 'on' | 'off' | 'status'): void {
+    if (state === 'status') {
+      this.dmModelDebug = !this.dmModelDebug;
+      this.hud.addCombatMessage(
+        `DM intent model: ${this.intentPredictor ? 'loaded' : 'not loaded (regex only)'}. Understander echo ${this.dmModelDebug ? 'on' : 'off'}.`,
+        '#8cf'
+      );
+      return;
+    }
+    this.hud.addCombatMessage(`The DM intent model cannot be switched ${state} in this build yet.`, '#888');
   }
 
 }

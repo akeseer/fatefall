@@ -344,8 +344,11 @@ export class HUD {
     const gearEntries = (['weapon', 'armor', 'shield', 'trinket'] as const)
       .map(s => ({ slot: s, item: c.equipment[s] }))
       .filter(e => e.item);
+    const profTag = c.hasWeaponProficiencyPenalty
+      ? ` <span style="color:#c66;">(not proficient with ${c.equipment.weapon!.name} — no prof bonus)</span>`
+      : '';
     const gearHtml = gearEntries.length > 0 ? `
-      <div style="margin-top:6px; color:#fd8; font-weight:bold;">Equipped (AC ${c.ac}, +${c.attackBonus} to hit):</div>
+      <div style="margin-top:6px; color:#fd8; font-weight:bold;">Equipped (AC ${c.ac}, +${c.attackBonus} to hit):${profTag}</div>
       ${gearEntries.map(e => `<div style="color:#db8; font-size:10px; padding:1px 4px;">${SLOT_LABELS[e.slot]} ${e.item!.name}${e.item!.identified === false ? ' (???)' : ''}</div>`).join('')}
     ` : '';
 

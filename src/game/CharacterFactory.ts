@@ -217,6 +217,7 @@ export function createCharacter(
     character.addToInventory({ ...item, id: `gear_${item.name.toLowerCase().replace(/\W+/g, '_')}_${id.slice(-6)}` });
   }
   // Equip everything the class starts with (weapon, armor, shield as listed).
+  // Refusals can't happen — starter gear is class-appropriate — but guard anyway.
   for (const item of [...character.inventory]) {
     if (item.type === 'weapon' || item.type === 'armor') character.equip(item.id);
   }
