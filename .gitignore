@@ -1,0 +1,7 @@
+node_modules/
+dist/
+tools/train/data/
+tools/train/runs/
+*.log
+.DS_Store
+Thumbs.db
