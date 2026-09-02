@@ -890,13 +890,24 @@ export class CombatEngine {
    * upcast. Only scaling spells (damage/healing/sleep) ever upcast.
    * Returns the slot level used (0 for cantrips), or null if broke.
    */
-  private chooseSlotFor(caster: GameCharacter, spell: Spell): number | null {
-    if (spell.level <= 0) return 0; // cantrips cost nothing
-
+  /** Slot levels this caster could still put the spell into, lowest first. */
+  private affordableSlots(caster: GameCharacter, spell: Spell): number[] {
     const available: number[] = [];
     for (let lvl = spell.level; lvl <= 9; lvl++) {
       if ((caster.spellSlots[lvl] || 0) > 0) available.push(lvl);
     }
+    return available;
+  }
+
+  /**
+   * Which slot the caster would use, without spending it. Choosing and paying
+   * are separate because callers that right-size the slot (healing triage)
+   * need to decide against the slots the caster still has, not the ones left
+   * after a speculative spend.
+   */
+  private pickSlotLevel(caster: GameCharacter, spell: Spell): number | null {
+    if (spell.level <= 0) return 0; // cantrips cost nothing
+    const available = this.affordableSlots(caster, spell);
     if (available.length === 0) return null;
 
     const scales = Boolean(spell.damage || spell.healing || spell.id === 'sleep');
@@ -908,7 +919,12 @@ export class CombatEngine {
         chosen = available.find(lvl => lvl > spell.level) ?? available[available.length - 1];
       }
     }
+    return chosen;
+  }
 
+  /** Pay for the chosen slot and say so. */
+  private spendSlotFor(caster: GameCharacter, spell: Spell, chosen: number): void {
+    if (spell.level <= 0) return;
     caster.spendSlotAt(chosen);
     if (chosen > spell.level) {
       const above = chosen - spell.level;
@@ -916,6 +932,12 @@ export class CombatEngine {
     } else {
       this.log.messages.push(`${caster.name} spends a ${ordinal(chosen)}-level slot on ${spell.name}.`);
     }
+  }
+
+  private chooseSlotFor(caster: GameCharacter, spell: Spell): number | null {
+    const chosen = this.pickSlotLevel(caster, spell);
+    if (chosen === null) return null;
+    this.spendSlotFor(caster, spell, chosen);
     return chosen;
   }
 
@@ -1062,28 +1084,24 @@ export class CombatEngine {
       const triage = chooseHealTarget(this.party);
       if (!triage.target) return false;
       const ally = triage.target;
-      let slotLevel = this.chooseSlotFor(caster, spell);
+      // Right-size the slot before paying for it. This block used to spend a
+      // slot first and then reconsider: for a wounded ally it could spend a
+      // second one, and for a dying ally it re-read the slots left after the
+      // spend and healed at that lower level — an upcast paid for and not
+      // delivered.
+      let slotLevel = this.pickSlotLevel(caster, spell);
       if (slotLevel === null) return false;
-      // Right-size the slot: don't upcast past what the emergency needs.
+      const affordable = this.affordableSlots(caster, spell);
       const emergency = triage.urgency === 'dying';
       if (emergency) {
-        // Dying ally: upcast if we can afford it — every die buys another
-        // chance to bring them above 0 HP.
-        const affordable: number[] = [];
-        for (let lvl = spell.level; lvl <= 9; lvl++) {
-          if ((caster.spellSlots[lvl] ?? 0) > 0) affordable.push(lvl);
-        }
-        if (affordable.length > 0) slotLevel = affordable[0];
+        // Dying ally: the biggest slot on hand. Every die is more of a cushion
+        // above 0 HP, and there may not be a next turn to spend it on.
+        if (affordable.length > 0) slotLevel = affordable[affordable.length - 1];
       } else if (triage.urgency === 'wounded' && slotLevel > spell.level) {
-        // Non-critical wounds get the base slot; save the big ones.
-        slotLevel = spell.level;
-        if ((caster.spellSlots[spell.level] ?? 0) <= 0) {
-          // Base slot spent — fall back to whatever chooseSlotFor gave us.
-          slotLevel = this.chooseSlotFor(caster, spell) ?? slotLevel;
-          if ((caster.spellSlots[spell.level] ?? 0) > 0) slotLevel = spell.level;
-        }
+        // Non-critical wounds get the base slot, when one is still spare.
+        if ((caster.spellSlots[spell.level] ?? 0) > 0) slotLevel = spell.level;
       }
-      if (slotLevel === null) return false;
+      this.spendSlotFor(caster, spell, slotLevel);
       const [dicePart] = spell.healing.split('+');
       const [diceCount, diceSize] = dicePart.split('d').map(Number);
       // Upcast: +1 die per slot level above the spell's base level.
@@ -1248,6 +1266,18 @@ export class CombatEngine {
     if (strBuff > 0) {
       opts.damageBonus = (opts.damageBonus || 0) + strBuff;
     }
+    // Flanking: an ally standing on the opposite side of the foe splits its
+    // attention — the classic 5e optional rule, and a reason to move.
+    if (!opts.advantage && !opts.disadvantage) {
+      const flankAlly = this.party.alive.find(m =>
+        m !== attacker &&
+        manhattan(m.tile, target.tile) <= 1 &&
+        isFlanking(attacker.tile, target.tile, m.tile),
+      );
+      if (flankAlly) {
+        opts.advantage = true;
+      }
+    }
     // Town enchantment: the blacksmith's forge adds elemental power.
     if (this.townBuffDamage > 0) {
       opts.damageBonus = (opts.damageBonus || 0) + this.townBuffDamage;
@@ -1353,7 +1383,7 @@ export class CombatEngine {
     // Tactical target selection: finish downed heroes, deny the healer, and
     // punish the squishy backline instead of whaling on a random hero.
     const { target, reason } = chooseMonsterTarget(this.party, monster, { maxReach: 6 });
-    if (reason !== 'closest reachable threat') {
+    if (reason !== 'the closest reachable threat') {
       this.log.messages.push(`\uD83C\uDFF0 ${monster.template.name} fixates on ${target.name} \u2014 ${reason}.`);
     }
     // Closing the distance: an out-of-reach monster advances up to its speed
@@ -1365,14 +1395,18 @@ export class CombatEngine {
       const blocked = this.isTileWalkable ? !this.isTileWalkable(move.tile.x, move.tile.y) : false;
       if (move.steps > 0 && !blocked) {
         // Advancing out of one hero's reach to reach another can cost a hit.
-        const oldTile = { ...monster.tile };
-        monster.tile = move.tile;
+        // Resolve the parting blow BEFORE the move completes — if the monster
+        // is cut down mid-dash, it never reaches its target.
         const leaving = this.party.alive.filter(h =>
-          manhattan(oldTile, h.tile) <= 1 && manhattan(monster.tile, h.tile) > 1 && h !== target,
+          h !== target &&
+          manhattan(monster.tile, h.tile) <= 1 &&
+          manhattan(move.tile, h.tile) > 1,
         );
         if (leaving.length > 0) {
-          this.log.messages.push(...this.opportunityAttack(monster, monster.tile));
+          this.log.messages.push(...this.opportunityAttack(monster, move.tile));
         }
+        if (!monster.isAlive || monster.fled) return;
+        monster.tile = move.tile;
         if (move.steps >= 2) {
           this.log.messages.push(`🏃 ${monster.template.name} closes in on ${target.name}.`);
         }

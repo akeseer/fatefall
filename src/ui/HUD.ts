@@ -361,7 +361,7 @@ export class HUD {
       ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter(lvl => (c.maxSpellSlots[lvl] || 0) > 0).map(lvl => {
         const max = c.maxSpellSlots[lvl] || 0;
         const rem = c.spellSlots[lvl] || 0;
-        return `<div style="color:#aaf; font-size:10px; padding:1px 4px;">${ordinal(lvl)}: ${'\u25cf'.repeat(rem)}${'\u25cb'.repeat(max - rem)}</div>`;
+        return `<div style="color:#aaf; font-size:10px; padding:1px 4px;">${ordinal(lvl)}: ${'\u25cf'.repeat(Math.max(0, rem))}${'\u25cb'.repeat(Math.max(0, max - rem))}</div>`;
       }).join('')}
     ` : '';
 
@@ -412,7 +412,7 @@ export class HUD {
         <span style="color:${hpBarColor}; font-size:10px; font-variant-numeric:tabular-nums;">${c.hp}/${c.maxHp} HP</span>
       </div>
       ${c.hp <= 0 ? `<div style="color:#d06a5a; font-size:10px; margin-top:3px; font-weight:bold;">${c.isDead ? '☠ DEAD' : c.stabilized ? 'STABILIZED — stable at 0 HP' : 'DYING — making death saves'}</div>` : ''}
-      ${c.isDying ? `<div style="color:#e0a094; font-size:9px; margin-top:2px;">Death saves: ${'◉'.repeat(c.deathSaveSuccesses)}${'○'.repeat(3 - c.deathSaveSuccesses)} passed · ${'◉'.repeat(c.deathSaveFailures)}${'○'.repeat(3 - c.deathSaveFailures)} failed</div>` : ''}
+      ${c.isDying ? `<div style="color:#e0a094; font-size:9px; margin-top:2px;">Death saves: ${'◉'.repeat(Math.max(0, c.deathSaveSuccesses))}${'○'.repeat(Math.max(0, 3 - c.deathSaveSuccesses))} passed · ${'◉'.repeat(Math.max(0, c.deathSaveFailures))}${'○'.repeat(Math.max(0, 3 - c.deathSaveFailures))} failed</div>` : ''}
       ${c.exhaustion > 0 ? `<div style="color:#e8b45a; font-size:9px; margin-top:2px;">Exhaustion ${c.exhaustion}/6 — ${c.exhaustionLabel}</div>` : ''}
       <div style="color:#8a94a6; font-size:9px; margin-top:4px;">AC ${c.ac} · SPD ${c.effectiveSpeed}ft${c.effectiveSpeed !== c.speed ? ` (base ${c.speed})` : ''} · Prof +${c.profBonus}${getCasterType(c.charClass.id) !== 'none' ? ` · DC ${c.spellSaveDC}` : ''} · Hit Dice ${c.hitDiceRemaining}/${c.maxHitDice}</div>
       ${c.conditions.length > 0 || c.concentration ? `${sec('ACTIVE')}${this.conditionChips(c)}${c.conditions.length > 0 ? c.conditions.map(cond => {
@@ -835,7 +835,7 @@ export class HUD {
         const max = m.maxSpellSlots[lvl] || 0;
         if (max <= 0) continue;
         const remaining = m.spellSlots[lvl] || 0;
-        parts.push(`${ordinal(lvl)} ${'\u25cf'.repeat(remaining)}${'\u25cb'.repeat(max - remaining)}`);
+        parts.push(`${ordinal(lvl)} ${'\u25cf'.repeat(Math.max(0, remaining))}${'\u25cb'.repeat(Math.max(0, max - remaining))}`);
       }
       if (parts.length > 0) {
         const pact = getCasterType(m.charClass.id) === 'pact' ? ' \u26a1 Pact' : '';

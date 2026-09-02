@@ -1,6 +1,7 @@
 import { Ability, CharacterClass, Race, abilityModifier, getCasterType, maxSlotsFor, ordinal, rollDice } from '../data/gameData';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
+import { getAbilityForClass } from '../combat/Abilities';
 import { Vector2 } from '../engine/types';
 import {
   ActiveCondition,
@@ -172,6 +173,23 @@ export class GameCharacter {
   public pendingConcentrationBreak: boolean = false;
   /** Vendetta ledger: monster template ids this hero was downed by → times. Survives between fights. */
   public vendettas: Record<string, number> = {};
+  /** Combat-ability uses remaining this rest, keyed by ability id. */
+  public abilityUses: Record<string, number> = {};
+
+  /** Restore all class-ability uses (short rest). */
+  rechargeAbilities(): void {
+    const ability = getAbilityForClass(this.charClass.id, this.level);
+    if (ability && ability.effect) {
+      this.abilityUses[ability.id] = ability.usesPerRest(this.level);
+    }
+  }
+
+  /** Whether this hero can use their class ability right now. */
+  canUseAbility(): boolean {
+    const ability = getAbilityForClass(this.charClass.id, this.level);
+    if (!ability || !ability.effect) return false;
+    return (this.abilityUses[ability.id] ?? 0) > 0;
+  }
 
   // AI personality
   public personality: Personality;

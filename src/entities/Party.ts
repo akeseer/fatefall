@@ -230,6 +230,8 @@ export class Party {
   /** Party-wide short rest: each living member spends hit dice to recover. */
   shortRest(): string[] {
     const messages = this.alive.map(member => member.shortRest());
+    // Class abilities recharge on a breather.
+    for (const member of this.alive) member.rechargeAbilities();
     // Tending the fallen: a rest after a fight brings the dead back at 1 HP.
     // Reviving always succeeds, so the party can never get stuck crippled.
     for (const member of this.members) {
