@@ -260,7 +260,7 @@ interface SaveDataV1 {
 }
 
 /** Upgrade older save schemas to the current version, or reject unknown ones. */
-function migrateSave(data: SaveData): SaveData | null {
+export function migrateSave(data: SaveData): SaveData | null {
   if (!data || typeof data.version !== 'number') return null;
   if (data.version === SAVE_VERSION) return data;
 

@@ -88,6 +88,18 @@ export function pushDiceRoll(e: Omit<DiceRollEvent, 'time'>): DiceRollEvent {
   return event;
 }
 
+/** Wipe history, stats, listeners and the floor pointer (tests / new run). */
+export function resetDiceEvents(): void {
+  history = [];
+  stats.rolls = 0; stats.crits = 0; stats.fumbles = 0;
+  stats.byType = {} as Record<DiceType, number>;
+  stats.byFloor = {};
+  stats.critStreak = 0; stats.fumbleStreak = 0;
+  stats.bestCritStreak = 0; stats.bestFumbleStreak = 0;
+  currentFloor = 1;
+  listeners.clear();
+}
+
 export function onDiceRoll(fn: (e: DiceRollEvent) => void): () => void {
   listeners.add(fn);
   return () => { listeners.delete(fn); };

@@ -17,7 +17,7 @@ import { QuestGiver, getReputationTier, getDialogue, getQuestDialogue, awardRepu
 import { BanditCampState, BanditClue, rollBanditClue, raidCamp, reportCamp } from './quests/BanditCamps';
 import { MARKET_POTIONS, MARKET_SCROLLS } from './loot/LootTables';
 import { Party } from './entities/Party';
-import { GameCharacter, InventoryItem, EquipSlot } from './entities/Character';
+import { GameCharacter, InventoryItem, EquipSlot, slotForItem, magicBonusOf } from './entities/Character';
 import { BulletinTask } from './quests/BulletinBoard';
 import { Monster, MonsterTemplate, getMonsterTemplate, getRandomMonster, MONSTER_TEMPLATES, THEME_MONSTERS, isUnseeableMonster } from './entities/Monster';
 import { SpriteRenderer } from './entities/Sprites';
@@ -2944,8 +2944,93 @@ class Game {
       this.hud.addCombatMessage('The corpses yield nothing but dust.', '#888');
     }
 
+    // After the haul lands, everyone re-kits: any looted gear that beats
+    // what a member currently wears is swapped on and narrated.
+    this.autoEquipUpgrades();
+
     this.hud.setParty(this.party);
     return loot;
+  }
+
+  /**
+   * Post-combat auto-equip pass. Scans every living member's pack for gear
+   * that beats their currently equipped piece and swaps it on, with a
+   * narration line per upgrade. Parties loot as a group, so any member may
+   * claim any pack item — whoever benefits most gets it.
+   */
+  private autoEquipUpgrades(): void {
+    for (const member of this.party.alive) {
+      for (const slot of ['weapon', 'armor', 'shield', 'trinket'] as EquipSlot[]) {
+        // Consider every pack item that would fill this slot (weapons and
+        // armor-type items; shields/trinkets route by name).
+        const candidates = member.inventory
+          .map(item => ({ item, slot: slotForItem(item) }))
+          .filter(c => c.slot === slot);
+        if (candidates.length === 0) continue;
+
+        const current = member.equipment[slot] ?? null;
+        const currentScore = current ? this.gearScore(current, member, slot) : -Infinity;
+        let best: { item: InventoryItem; score: number } | null = null;
+        for (const c of candidates) {
+          const score = this.gearScore(c.item, member, slot);
+          if (score > currentScore && (!best || score > best.score)) best = { item: c.item, score };
+        }
+        if (!best) continue;
+
+        const line = member.equip(best.item.id);
+        if (!line) continue;
+        const flavor = this.upgradeFlavor(slot, current, best.item, member);
+        this.hud.addCombatMessage(`⚔ ${line} ${flavor}`, '#fd8');
+      }
+    }
+  }
+
+  /**
+   * How good is this piece of gear for this member in this slot? Higher is
+   * better. Weapons: damage die + magic bonus + finesse synergy. Armor/shield/
+   * trinket: effective AC contribution. Unidentified items score as junk —
+   * nobody equips a mystery on faith.
+   */
+  private gearScore(item: InventoryItem, member: GameCharacter, slot: EquipSlot): number {
+    if (item.identified === false) return -100;
+    if (slot === 'weapon') {
+      const die = item.power && item.power >= 4 && item.power <= 12 ? item.power : 4;
+      // Finesse or ranged weapons favor DEX; heavy arms favor STR.
+      const useDex = /bow|dagger|rapier|scimitar|shortsword|dart|sling/i.test(item.name);
+      const attackStat = useDex ? member.dexMod : member.strMod;
+      return die * 2 + attackStat + magicBonusOf(item) * 3;
+    }
+    if (slot === 'armor') return item.power ?? 11;
+    if (slot === 'shield') return item.power ?? 2;
+    return magicBonusOf(item) || 1;
+  }
+
+  /** One-line flavor describing why the swap was worth it. */
+  private upgradeFlavor(slot: EquipSlot, oldItem: InventoryItem | null | undefined, newItem: InventoryItem, member: GameCharacter): string {
+    const name = (i: InventoryItem) => i.name;
+    switch (slot) {
+      case 'weapon': {
+        const oldDie = oldItem?.power && oldItem.power >= 4 && oldItem.power <= 12 ? oldItem.power : 4;
+        const newDie = newItem.power && newItem.power >= 4 && newItem.power <= 12 ? newItem.power : 4;
+        const dmgNote = newDie > oldDie ? ` (d${oldDie} → d${newDie} damage die)` : '';
+        return oldItem
+          ? `${member.name} trades ${name(oldItem)} for ${name(newItem)}${dmgNote}.`
+          : `${member.name} arms themselves with ${name(newItem)}.`;
+      }
+      case 'armor': {
+        const oldAc = oldItem?.power ?? 10;
+        const newAc = newItem.power ?? 10;
+        return oldItem
+          ? `${member.name} swaps ${name(oldItem)} for ${name(newItem)} — AC ${member.ac}${newAc > oldAc ? ` (was ${Math.max(10 + member.dexMod, oldAc)})` : ''}.`
+          : `${member.name} dons ${name(newItem)} — AC ${member.ac}.`;
+      }
+      case 'shield':
+        return oldItem
+          ? `${member.name} trades ${name(oldItem)} for ${name(newItem)}.`
+          : `${member.name} raises ${name(newItem)} — AC ${member.ac}.`;
+      case 'trinket':
+        return `${member.name} fastens ${name(newItem)} — AC ${member.ac}.`;
+    }
   }
 
   /**
