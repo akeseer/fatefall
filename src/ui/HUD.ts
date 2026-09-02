@@ -13,6 +13,7 @@ import { DiceSounds } from './DiceSounds';
 import { buildDieScene, buildDiceModel, normalize3, quatFromAxisAngle, quatToMatrix3d } from './Dice3D';
 import { TownPanel } from './TownPanel';
 import { BattleView } from './BattleView';
+import { installTheme } from './Theme';
 
 export type GameSpeed = 0.25 | 0.5 | 1 | 2 | 4;
 
@@ -95,6 +96,7 @@ export class HUD {
 
   constructor() {
     this.overlay = document.getElementById('ui-overlay')!;
+    installTheme(); // fonts + global polish stylesheet (idempotent)
     this.overlay.innerHTML = this.getTemplate();
     this.logEl = this.overlay.querySelector('#combat-log')!;
     this.bossBarEl = this.overlay.querySelector('#boss-bar')!;
@@ -117,7 +119,28 @@ export class HUD {
 
   private getTemplate(): string {
     return `
-      <div style="position:absolute; bottom:0; left:0; right:0; height:200px; display:flex; flex-direction:row;">
+      <style>
+        /* HUD panel + button design language (shared by every surface below). */
+        .dp-hud-panel {
+          background: linear-gradient(180deg, rgba(14,18,28,0.93), rgba(10,13,20,0.93));
+          border-top: 1px solid #2a3242;
+          box-shadow: 0 -6px 24px rgba(0,0,0,0.45);
+        }
+        #hud-top button {
+          padding: 5px 13px;
+          font-size: 12px;
+          border-radius: 5px;
+        }
+        #hud-top button.btn-danger { color:#e0a094 !important; }
+        #speed-controls .speed-btn { padding: 4px 8px; font-size: 11px; color:#8a94a6; }
+        #speed-controls .speed-btn.speed-active {
+          color: #fff !important;
+          background: linear-gradient(180deg, rgba(74,54,20,0.95), rgba(52,38,14,0.95)) !important;
+          border-color: #a08a4a !important;
+          box-shadow: 0 0 10px rgba(232,197,106,0.25);
+        }
+      </style>
+      <div id="hud-panels" class="dp-hud-panel" style="position:absolute; bottom:0; left:0; right:0; height:200px; display:flex; flex-direction:row;">
         <!-- Party Status -->
         <div id="party-status" style="width:250px; background:rgba(10,10,20,0.92); color:#ccc; padding:8px; overflow-y:auto; font-family:monospace; font-size:11px; border-right:1px solid #333;">
         </div>
@@ -134,21 +157,21 @@ export class HUD {
       </div>
 
       <!-- Top bar: controls -->
-      <div style="position:absolute; top:10px; right:10px; display:flex; gap:8px; z-index:20;">
-        <button id="btn-pause" style="padding:4px 12px; background:#333; color:#ccc; border:1px solid #555; cursor:pointer; font-family:monospace; font-size:12px;">⏸ Pause</button>
+      <div id="hud-top" style="position:absolute; top:10px; right:10px; display:flex; gap:8px; z-index:20;">
+        <button id="btn-pause" title="Pause / resume the world (P)">⏸ Pause</button>
         <div id="speed-controls" style="display:flex; gap:4px;">
-          <button data-speed="0.25" class="speed-btn" style="padding:4px 8px; background:#222; color:#888; border:1px solid #444; cursor:pointer; font-family:monospace; font-size:11px;">0.25x</button>
-          <button data-speed="0.5" class="speed-btn" style="padding:4px 8px; background:#222; color:#888; border:1px solid #444; cursor:pointer; font-family:monospace; font-size:11px;">0.5x</button>
-          <button data-speed="1" class="speed-btn" style="padding:4px 8px; background:#444; color:#fff; border:1px solid #666; cursor:pointer; font-family:monospace; font-size:11px;">1x</button>
-          <button data-speed="2" class="speed-btn" style="padding:4px 8px; background:#222; color:#888; border:1px solid #444; cursor:pointer; font-family:monospace; font-size:11px;">2x</button>
-          <button data-speed="4" class="speed-btn" style="padding:4px 8px; background:#222; color:#888; border:1px solid #444; cursor:pointer; font-family:monospace; font-size:11px;">4x</button>
+          <button data-speed="0.25" class="speed-btn">0.25x</button>
+          <button data-speed="0.5" class="speed-btn">0.5x</button>
+          <button data-speed="1" class="speed-btn">1x</button>
+          <button data-speed="2" class="speed-btn">2x</button>
+          <button data-speed="4" class="speed-btn">4x</button>
         </div>
-        <button id="btn-new-dungeon" style="padding:4px 12px; background:#432; color:#ca8; border:1px solid #654; cursor:pointer; font-family:monospace; font-size:12px;">↻ New Dungeon</button>
-        <button id="btn-compendium" title="Open the D&D compendium" style="padding:4px 12px; background:#24233b; color:#c9b8ff; border:1px solid #5a4f89; cursor:pointer; font-family:monospace; font-size:12px;">📖 Grimoire</button>
-        <button id="btn-save" title="Save the run to this browser" style="padding:4px 12px; background:#2b241f; color:#d6a88f; border:1px solid #6b4f3f; cursor:pointer; font-family:monospace; font-size:12px;">💾 Save</button>
-        <button id="btn-dm-panel" title="Issue orders to the party" style="padding:4px 12px; background:#1f2b22; color:#8fd6a0; border:1px solid #3f6b4f; cursor:pointer; font-family:monospace; font-size:12px;">\u2328 DM</button>
-        <button id="btn-town" title="Open the town (quests & market)" style="padding:4px 12px; background:#2b2420; color:#e0c060; border:1px solid #6b5a3f; cursor:pointer; font-family:monospace; font-size:12px;">🏪 Town</button>
-        <button id="btn-menu" title="Save and return to the main menu" style="padding:4px 12px; background:#332c2c; color:#e0b0a8; border:1px solid #6b4a45; cursor:pointer; font-family:monospace; font-size:12px;">☰ Menu</button>
+        <button id="btn-new-dungeon">↻ New Dungeon</button>
+        <button id="btn-compendium" title="Open the D&D compendium" style="color:#c9b8ff !important;">📖 Grimoire</button>
+        <button id="btn-save" title="Save the run to this browser" style="color:#d6a88f !important;">💾 Save</button>
+        <button id="btn-dm-panel" title="Issue orders to the party" style="color:#8fd6a0 !important;">\u2328 DM</button>
+        <button id="btn-town" title="Open the town (quests & market)" style="color:#e0c060 !important;">🏪 Town</button>
+        <button id="btn-menu" title="Save and return to the main menu" class="btn-danger">☰ Menu</button>
       </div>
 
       <!-- Top strip: dungeon title + quest tracker, pinned on their own row below the
@@ -166,12 +189,14 @@ export class HUD {
 
       <!-- DM command bar -->
       <div id="dm-bar" style="display:none; position:absolute; left:0; right:0; bottom:200px; z-index:30;">
-        <div style="display:flex; gap:6px; padding:6px 8px; background:rgba(6,20,10,0.94); border-top:1px solid #2f5b40; border-bottom:1px solid #2f5b40;">
-          <span style="align-self:center; color:#8fd6a0; font-family:monospace; font-size:12px;">DM \u276f</span>
+        <div style="display:flex; gap:6px; padding:6px 8px; background:linear-gradient(180deg, rgba(10,24,18,0.96), rgba(6,16,12,0.96)); border-top:1px solid #2f6647; border-bottom:1px solid #2f6647;">
+          <span style="align-self:center; color:#7fd88f; font-family:'Cinzel', Georgia, serif; font-size:12px; letter-spacing:1px; text-shadow:0 0 8px rgba(127,216,143,0.35);">DM \u276f</span>
+          <span id="dm-model-chip" title="How the party reads your orders. Click to switch between the trained model and the written orders."
+                style="align-self:center; cursor:pointer; user-select:none; font-family:monospace; font-size:10px; padding:2px 7px; border-radius:9px; white-space:nowrap; border:1px solid #3f6b4f; background:#0d1410; color:#7fd88f;"></span>
           <input id="dm-input" type="text" autocomplete="off"
                  placeholder='Order the party\u2026 try "go north", "attack", "flee", "rest", "camp", "descend", "summon owlbear", "report", "help"'
-                 style="flex:1; min-width:0; padding:6px 8px; background:#0d130f; color:#d7efe0; border:1px solid #3f6b4f; font-family:monospace; font-size:12px;" />
-          <button id="dm-send" style="padding:6px 14px; background:#274a35; color:#bdf0cf; border:1px solid #3f6b4f; cursor:pointer; font-family:monospace; font-size:12px;">Send</button>
+                 style="flex:1; min-width:0; padding:6px 8px; background:#0d1410; color:#d7efe0; border:1px solid #3f6b4f; font-size:12px;" />
+          <button id="dm-send" class="dp-btn-gold" style="padding:6px 14px; font-size:12px; cursor:pointer;">Send</button>
         </div>
       </div>
     `;
@@ -221,6 +246,7 @@ export class HUD {
     });
     const dmInput = this.overlay.querySelector('#dm-input') as HTMLInputElement;
     this.overlay.querySelector('#dm-send')!.addEventListener('click', () => this.sendDMCommand(dmInput));
+    this.overlay.querySelector('#dm-model-chip')!.addEventListener('click', () => this.onModelToggle?.());
     dmInput.addEventListener('keydown', event => {
       if (event.key === 'Enter') this.sendDMCommand(dmInput);
     });
@@ -231,27 +257,31 @@ export class HUD {
     const members = party.members;
     let html = '';
     for (const m of members) {
-      const hpColor = m.hp / m.maxHp > 0.5 ? '#4c4' : m.hp / m.maxHp > 0.25 ? '#cc4' : '#c44';
+      const hpPct = Math.max(0, Math.min(100, (m.hp / m.maxHp) * 100));
+      const hpColor = hpPct > 50 ? '#5fbf7f' : hpPct > 25 ? '#d9a94a' : '#d06a5a';
       const classColor = this.classColor(m.charClass.id);
+      const isSel = m.id === this.selectedChar?.id;
       html += `
         <div class="party-member" data-id="${m.id}"
-             style="padding:4px; margin-bottom:4px; background:rgba(255,255,255,0.03); border-radius:2px; cursor:pointer; ${m.id === this.selectedChar?.id ? 'border:1px solid #ffd700;' : ''}">
-          <div style="color:${classColor}; font-weight:bold;">${m.name}</div>
-          <div style="color:#888;">Lv${m.level} ${m.race.name} ${m.charClass.name}</div>
-          <div style="display:flex; align-items:center; gap:4px;">
-            <div style="flex:1; height:4px; background:#222; border-radius:2px;">
-              <div style="width:${(m.hp / m.maxHp) * 100}%; height:100%; background:${hpColor}; border-radius:2px;"></div>
+             style="display:flex; gap:7px; padding:5px 7px; margin-bottom:5px; background:rgba(255,255,255,0.035); border:1px solid transparent; border-radius:5px; cursor:pointer; transition:border-color .15s ease, background .15s ease; ${isSel ? 'border-color:#e8c56a; background:rgba(232,197,106,0.06);' : ''}">
+          <div style="width:3px; align-self:stretch; border-radius:2px; background:${classColor}; opacity:0.85; flex:0 0 auto;"></div>
+          <div style="flex:1; min-width:0;">
+            <div style="color:${classColor}; font-weight:bold; font-size:11px;">${m.name}</div>
+            <div style="color:#8a94a6; font-size:9px;">Lv${m.level} ${m.race.name} ${m.charClass.name}</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+              <div style="flex:1; height:5px; background:rgba(0,0,0,0.4); border:1px solid #2a3242; border-radius:3px; overflow:hidden;">
+                <div style="width:${hpPct}%; height:100%; background:linear-gradient(90deg, ${hpColor}, ${hpColor}cc); border-radius:3px;"></div>
+              </div>
+              <span style="font-size:9px; color:#8a94a6; font-variant-numeric:tabular-nums;">${m.hp}/${m.maxHp}</span>
             </div>
-            <span style="font-size:10px;">${m.hp}/${m.maxHp}</span>
+            ${this.conditionChips(m)}
           </div>
-          ${this.conditionChips(m)}
         </div>`;
     }
     this.refreshQuestBar();
-    html += this.dungeonLevel > 0
-      ? `<div style="color:#665; font-size:9px; margin-top:4px;">Dungeon Level: ${this.dungeonLevel}</div>`
-      : `<div style="color:#665; font-size:9px; margin-top:4px;">The Surface World</div>`;
-    html += `<div style="color:#864; font-size:9px;">Gold: ${party.members.reduce((s, m) => s + m.gold, 0)}</div>`;
+    html += `<div style="margin-top:6px; padding-top:5px; border-top:1px solid rgba(232,197,106,0.12); display:flex; justify-content:space-between; font-size:9px;">`
+      + `<span style="color:#8a94a6;">${this.dungeonLevel > 0 ? `Dungeon Lv ${this.dungeonLevel}` : 'The Surface World'}</span>`
+      + `<span style="color:#c9a04a;">💰 ${party.members.reduce((s, m) => s + m.gold, 0)} gp</span></div>`;
     this.partyEl.innerHTML = html;
 
     // Click handlers
@@ -349,7 +379,10 @@ export class HUD {
       : '';
     const gearHtml = gearEntries.length > 0 ? `
       <div style="margin-top:6px; color:#fd8; font-weight:bold;">Equipped (AC ${c.ac}, +${c.attackBonus} to hit):${profTag}</div>
-      ${gearEntries.map(e => `<div style="color:#db8; font-size:10px; padding:1px 4px;">${SLOT_LABELS[e.slot]} ${e.item!.name}${e.item!.identified === false ? ' (???)' : ''}</div>`).join('')}
+      ${gearEntries.map(e => {
+        const curse = e.item!.cursed ? ' <span style="color:#c44;">☠ cursed</span>' : '';
+        return `<div style="color:#db8; font-size:10px; padding:1px 4px;">${SLOT_LABELS[e.slot]} ${e.item!.name}${e.item!.identified === false ? ' (???)' : ''}${curse}</div>`;
+      }).join('')}
     ` : '';
 
     const invHtml = c.inventory.length > 0 ? `
@@ -357,30 +390,44 @@ export class HUD {
       ${c.inventory.map(i => `<div style="color:#a98; font-size:10px; padding:1px 4px;">• ${i.identified === false ? '???' : i.name}</div>`).join('')}
     ` : '<div style="color:#555; font-size:10px; margin-top:4px;">Inventory empty</div>';
 
+    const classColor = this.classColor(c.charClass.id);
+    const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.maxHp)) * 100));
+    const hpBarColor = hpPct > 50 ? '#5fbf7f' : hpPct > 25 ? '#d9a94a' : '#d06a5a';
+    // Monogram badge: class initial on a parchment-plaque instead of art.
+    const badge = `<div style="width:40px; height:40px; border-radius:8px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; background:linear-gradient(160deg, rgba(232,197,106,0.16), rgba(232,197,106,0.04)); border:1px solid ${classColor}; box-shadow:0 0 12px rgba(232,197,106,0.12); color:${classColor}; font-family:'Cinzel', Georgia, serif; font-size:22px;">${c.charClass.name.charAt(0)}</div>`;
+    // Section divider with a gold hairline + small label.
+    const sec = (label: string) => `<div style="margin-top:8px; margin-bottom:3px; padding-top:6px; border-top:1px solid rgba(232,197,106,0.14); color:#a08a4a; font-size:9px; font-weight:bold; letter-spacing:1.5px;">${label}</div>`;
     this.charSheetEl.innerHTML = `
-      <div style="color:#ffd700; font-size:12px; font-weight:bold; margin-bottom:4px;">${c.name}</div>
-      <div style="color:#888; font-size:10px;">Lv${c.level} ${c.race.name} ${c.charClass.name}</div>
-      <div style="margin-top:4px; color:#4c4;">HP: ${c.hp}/${c.maxHp}</div>
-      ${c.hp <= 0 ? `<div style="color:#f66; font-size:10px; margin-top:2px;">${c.isDead ? 'DEAD' : c.stabilized ? 'STABILIZED — stable at 0 HP' : 'DYING — making death saves'}</div>` : ''}
-      ${c.isDying ? `<div style="color:#faa; font-size:9px;">Death saves: ${c.deathSaveSuccesses}S / ${c.deathSaveFailures}F</div>` : ''}
-      ${c.exhaustion > 0 ? `<div style="color:#fa0; font-size:9px;">Exhaustion ${c.exhaustion}/6 — ${c.exhaustionLabel}</div>` : ''}
-      <div style="color:#888; font-size:9px;">AC: ${c.ac} | Speed: ${c.effectiveSpeed}ft${c.effectiveSpeed !== c.speed ? ` (base ${c.speed})` : ''}</div>
-      <div style="color:#888; font-size:9px;">Prof bonus: +${c.profBonus}${getCasterType(c.charClass.id) !== 'none' ? ` | Spell DC ${c.spellSaveDC}` : ''} | Hit Dice: ${c.hitDiceRemaining}/${c.maxHitDice}</div>
-      ${c.conditions.length > 0 || c.concentration ? `<div style="margin-top:4px; color:#ca8; font-weight:bold; font-size:10px;">Active:</div>${this.conditionChips(c)}${c.conditions.length > 0 ? c.conditions.map(cond => {
+      <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">
+        ${badge}
+        <div style="min-width:0;">
+          <div style="color:${classColor}; font-family:'Cinzel', Georgia, serif; font-size:14px; font-weight:bold; line-height:1.1;">${c.name}</div>
+          <div style="color:#8a94a6; font-size:10px; margin-top:2px;">Lv${c.level} ${c.race.name} ${c.charClass.name}</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <div style="flex:1; height:7px; background:rgba(0,0,0,0.45); border:1px solid #2a3242; border-radius:4px; overflow:hidden;">
+          <div style="width:${hpPct}%; height:100%; background:linear-gradient(90deg, ${hpBarColor}, ${hpBarColor}cc); border-radius:4px; transition:width .25s;"></div>
+        </div>
+        <span style="color:${hpBarColor}; font-size:10px; font-variant-numeric:tabular-nums;">${c.hp}/${c.maxHp} HP</span>
+      </div>
+      ${c.hp <= 0 ? `<div style="color:#d06a5a; font-size:10px; margin-top:3px; font-weight:bold;">${c.isDead ? '☠ DEAD' : c.stabilized ? 'STABILIZED — stable at 0 HP' : 'DYING — making death saves'}</div>` : ''}
+      ${c.isDying ? `<div style="color:#e0a094; font-size:9px; margin-top:2px;">Death saves: ${'◉'.repeat(c.deathSaveSuccesses)}${'○'.repeat(3 - c.deathSaveSuccesses)} passed · ${'◉'.repeat(c.deathSaveFailures)}${'○'.repeat(3 - c.deathSaveFailures)} failed</div>` : ''}
+      ${c.exhaustion > 0 ? `<div style="color:#e8b45a; font-size:9px; margin-top:2px;">Exhaustion ${c.exhaustion}/6 — ${c.exhaustionLabel}</div>` : ''}
+      <div style="color:#8a94a6; font-size:9px; margin-top:4px;">AC ${c.ac} · SPD ${c.effectiveSpeed}ft${c.effectiveSpeed !== c.speed ? ` (base ${c.speed})` : ''} · Prof +${c.profBonus}${getCasterType(c.charClass.id) !== 'none' ? ` · DC ${c.spellSaveDC}` : ''} · Hit Dice ${c.hitDiceRemaining}/${c.maxHitDice}</div>
+      ${c.conditions.length > 0 || c.concentration ? `${sec('ACTIVE')}${this.conditionChips(c)}${c.conditions.length > 0 ? c.conditions.map(cond => {
         const meta = CONDITION_META[cond.id];
         return `<div style="color:${meta.color}; font-size:9px; padding:1px 4px;">• ${meta.label} — ${meta.effect}${cond.turnsLeft > 0 ? ` (${cond.turnsLeft} turn${cond.turnsLeft === 1 ? '' : 's'} left)` : ''}</div>`;
       }).join('') : ''}` : ''}
-      <div style="color:#888; font-size:9px;">XP: ${c.xp}/${c.xpToNext()}</div>
-      <div style="margin-top:4px; color:#ccc; font-weight:bold;">Attributes:</div>
-      ${abilsHtml}
+      ${sec('ATTRIBUTES')}
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px 8px;">${abilsHtml}</div>
+      ${sec('XP')}<div style="color:#8a94a6; font-size:9px; padding:1px 4px;">${c.xp} / ${c.xpToNext()}</div>
       ${slotsHtml}
       ${spellsHtml}
       ${gearHtml}
       ${invHtml}
-      <div style="margin-top:6px; color:#888; font-size:9px;">Combat: +${c.attackBonus} atk / ${c.getWeaponDamageDie()}d die</div>
-      <div style="margin-top:6px; color:#888; font-size:9px;">
-        ${c.charClass.description.substring(0, 80)}...
-      </div>
+      ${sec('COMBAT')}<div style="color:#8a94a6; font-size:9px; padding:1px 4px;">+${c.attackBonus} to hit · ${c.getWeaponDamageDie()}d damage</div>
+      <div style="color:#6a7486; font-size:9px; margin-top:6px; font-style:italic;">${c.charClass.description.substring(0, 84)}…</div>
     `;
   }
 
@@ -485,7 +532,7 @@ export class HUD {
     // A centered column: the tumbling die sits in flow ABOVE the logo, then
     // the choices. The die is a sibling of #start-content so slot re-renders
     // never wipe it.
-    screen.style.cssText = 'position:absolute; inset:0; z-index:100; background:rgba(5,5,12,0.97); display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:monospace;';
+    screen.style.cssText = 'position:absolute; inset:0; z-index:100; background:radial-gradient(ellipse at 50% 30%, #0d1018 0%, #07080e 55%, #040508 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:monospace;';
     this.overlay.appendChild(screen);
 
     // Decorative tumbling d20 behind the choices (sibling of the content
@@ -630,12 +677,12 @@ export class HUD {
 
   private startScreenHtml(saves: (SaveData | null)[], selected: number, confirming: boolean): string {
     const title = `
-      <div style="font-size:30px; font-weight:bold; color:#ffd700; text-shadow:0 0 14px rgba(255,200,0,0.55), 0 0 40px rgba(255,120,40,0.25); letter-spacing:6px;">\u2694 FATEFALL</div>
-      <div style="color:#8a8; font-size:12px; margin-top:8px;">An autonomous party of adventurers roams a living world of dice, dungeons, and fate.<br>Pick a save slot below \u2014 each holds one run, saved automatically.</div>`;
+      <div class="dp-title" style="font-size:34px; font-weight:bold; color:#ffd700; text-shadow:0 0 14px rgba(255,200,0,0.55), 0 0 40px rgba(255,120,40,0.25); letter-spacing:8px;">\u2694 FATEFALL</div>
+      <div style="color:#9aa48e; font-size:13px; margin-top:10px; font-style:italic;">An autonomous party of adventurers roams a living world of dice, dungeons, and fate.<br>Pick a save slot below \u2014 each holds one run, saved automatically.</div>`;
 
     const slotCards = saves.map((save, i) => {
       const isSelected = i === selected;
-      const cardStyle = `flex:1; min-width:170px; padding:12px; cursor:pointer; text-align:left; background:${isSelected ? 'rgba(255,215,0,0.07)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isSelected ? '#ffd700' : '#333'}; border-radius:4px; font-family:monospace;`;
+      const cardStyle = `flex:1; min-width:170px; padding:12px; cursor:pointer; text-align:left; background:${isSelected ? 'rgba(255,215,0,0.07)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isSelected ? '#e8c56a' : '#2a3242'}; border-radius:6px; font-family:monospace; box-shadow:${isSelected ? '0 0 16px rgba(232,197,106,0.2), inset 0 0 20px rgba(232,197,106,0.04)' : 'none'}; transition:border-color .15s ease, box-shadow .15s ease;`;
       const body = save ? (() => {
         const inDungeon = (save.mode ?? 2) === 2;
         const partyLabel = save.partyName && save.partyName !== 'The Unnamed Party' ? save.partyName : '';
@@ -666,8 +713,8 @@ export class HUD {
         </div>`;
       })() : `<div style="color:#555; font-size:12px; margin-top:14px;">Empty</div>`;
 
-      return `<button data-slot="${i}" style="${cardStyle}">
-        <div style="color:#ca8; font-weight:bold; font-size:10px; letter-spacing:1px;">SLOT ${i + 1}</div>
+      return `<button data-slot="${i}" class="dp-slot-btn" style="${cardStyle}">
+        <div style="color:#a08a4a; font-weight:bold; font-size:10px; letter-spacing:2px;">SLOT ${i + 1}</div>
         ${body}
       </button>`;
     }).join('');
@@ -690,14 +737,14 @@ export class HUD {
     } else if (saves[selected]) {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px;">
-          <button data-action="continue" style="padding:10px 26px; background:#3a3a10; color:#ffd700; border:1px solid #8a8a2a; cursor:pointer; font-family:monospace; font-size:14px; font-weight:bold;">\u25b6 Continue Slot ${selected + 1}</button>
-          <button data-action="new" style="padding:10px 26px; background:#1a1a24; color:#a8b; border:1px solid #4a4a66; cursor:pointer; font-family:monospace; font-size:14px;">\u2726 New Run</button>
-          <button data-action="erase" style="padding:10px 26px; background:#2a1010; color:#c66; border:1px solid #6a3030; cursor:pointer; font-family:monospace; font-size:14px;">\u2716 Erase</button>
+          <button data-action="continue" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(74,64,20,0.9), rgba(48,42,14,0.9)); color:#ffd700; border:1px solid #a08a4a; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; font-weight:bold; border-radius:6px; letter-spacing:1px; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u25b6 Continue Slot ${selected + 1}</button>
+          <button data-action="new" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(28,32,46,0.95), rgba(18,22,32,0.95)); color:#c9d4e8; border:1px solid #4a5a78; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; border-radius:6px; letter-spacing:1px;">\u2726 New Run</button>
+          <button data-action="erase" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(52,22,22,0.95), rgba(36,14,14,0.95)); color:#d8887a; border:1px solid #6a3a34; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; border-radius:6px; letter-spacing:1px;">\u2716 Erase</button>
         </div>`;
     } else {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px;">
-          <button data-action="new" style="padding:10px 26px; background:#3a3a10; color:#ffd700; border:1px solid #8a8a2a; cursor:pointer; font-family:monospace; font-size:14px; font-weight:bold;">\u2726 Start New Run in Slot ${selected + 1}</button>
+          <button data-action="new" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(74,64,20,0.9), rgba(48,42,14,0.9)); color:#ffd700; border:1px solid #a08a4a; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; font-weight:bold; border-radius:6px; letter-spacing:1px; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u2726 Start New Run in Slot ${selected + 1}</button>
         </div>`;
     }
 
@@ -712,8 +759,7 @@ export class HUD {
     this.speedBtns.querySelectorAll('.speed-btn').forEach(btn => {
       const s = parseFloat(btn.getAttribute('data-speed')!);
       const isActive = s === speed;
-      (btn as HTMLElement).style.background = isActive ? '#444' : '#222';
-      (btn as HTMLElement).style.color = isActive ? '#fff' : '#888';
+      (btn as HTMLElement).classList.toggle('speed-active', isActive);
     });
     this.onSpeedChange?.(speed);
   }
@@ -723,6 +769,31 @@ export class HUD {
     const btn = this.overlay.querySelector('#btn-pause') as HTMLElement;
     btn.textContent = this.isPaused ? '▶ Play' : '⏸ Pause';
     this.onPauseToggle?.();
+  }
+
+  /** Called when the player clicks the DM understander chip. */
+  public onModelToggle?: () => void;
+
+  /**
+   * Show how DM orders are being read: while the weights download, with the
+   * trained model on, with it switched off, or when only the regex parser is
+   * available because the weights could not be loaded.
+   */
+  setModelChip(state: 'loading' | 'model' | 'regex' | 'off') {
+    const el = this.overlay.querySelector('#dm-model-chip') as HTMLElement | null;
+    if (!el) return;
+    const look: Record<typeof state, { label: string; color: string; border: string; title: string }> = {
+      loading: { label: '◌ reading', color: '#8a9', border: '#3f5b4f', title: 'Loading the trained order-reader…' },
+      model: { label: '◆ model', color: '#7fd88f', border: '#3f6b4f', title: 'Free-form orders go through the trained model. Click to switch it off.' },
+      off: { label: '◇ by the book', color: '#c8b98a', border: '#6b5f3f', title: 'Only the written orders are understood. Click to switch the model on.' },
+      regex: { label: '◇ by the book', color: '#a89', border: '#5b4f4f', title: 'The trained model could not load; the written orders still work.' },
+    };
+    const { label, color, border, title } = look[state];
+    el.textContent = label;
+    el.style.color = color;
+    el.style.borderColor = border;
+    el.title = title;
+    el.style.cursor = state === 'loading' || state === 'regex' ? 'default' : 'pointer';
   }
 
   /** Sync the pause button to a pause the game decided on itself (no callback). */

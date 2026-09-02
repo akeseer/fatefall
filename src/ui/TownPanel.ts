@@ -71,8 +71,8 @@ export class TownPanel {
     this.visible = true;
     this.activeBuildingId = null;
     this.el = document.createElement('div');
-    this.el.style.cssText = 'position:absolute; inset:0; z-index:60; background:rgba(6,8,16,0.72); display:flex; align-items:center; justify-content:center; font-family:monospace;';
-    this.el.innerHTML = `<div id="town-panel" style="width:920px; max-width:96vw; height:640px; max-height:90vh; background:rgba(16,20,30,0.97); border:1px solid #5a6b4f; border-radius:8px; box-shadow:0 0 40px rgba(0,0,0,0.8); display:flex; flex-direction:column; overflow:hidden;"></div>`;
+    this.el.style.cssText = 'position:absolute; inset:0; z-index:60; background:rgba(6,8,16,0.72); display:flex; align-items:center; justify-content:center; font-family:monospace; backdrop-filter: blur(3px);';
+    this.el.innerHTML = `<div id="town-panel" style="width:920px; max-width:96vw; height:640px; max-height:90vh; background:linear-gradient(180deg, rgba(17,22,32,0.98), rgba(12,16,24,0.98)); border:1px solid #5a6b4f; border-radius:10px; box-shadow:0 12px 48px rgba(0,0,0,0.8), 0 0 0 1px rgba(232,197,106,0.08) inset; display:flex; flex-direction:column; overflow:hidden;"></div>`;
     this.overlay.appendChild(this.el);
 
     this.el.addEventListener('click', (e) => {
@@ -254,15 +254,15 @@ export class TownPanel {
     panel.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 16px; border-bottom:1px solid #3a4a3a; background:rgba(30,40,30,0.6);">
         <div style="max-width:520px;">
-          <div style="color:#ffd700; font-size:16px;">🏘 ${town?.name ?? 'Town'}${archName}</div>
+          <div style="color:#ffd700; font-family:'Cinzel', Georgia, serif; letter-spacing:1px; font-size:17px;">🏘 ${town?.name ?? 'Town'}${archName}</div>
           <div style="color:#8a8; font-size:10px; margin-top:2px;">${town?.description ?? ''}</div>
           <div style="color:#a89; font-size:10px; margin-top:2px; font-style:italic;">🗣 "${rumor?.text ?? 'The streets are quiet.'}"</div>
           ${festival ? `<div style="color:#f6c; font-size:10px; margin-top:2px;">🎪 ${festival.name}</div>` : ''}
           ${event ? `<div style="color:#ff8; font-size:10px; margin-top:2px;">${event.icon} ${event.name} — ${event.effect.description}</div>` : ''}
         </div>
         <div style="display:flex; align-items:center; gap:12px;">
-          <span style="color:#ffd700; font-size:13px;">💰 ${gold} gp</span>
-          <button id="tp-close" style="padding:4px 12px; background:#3a2a2a; color:#d8a; border:1px solid #6b4f4f; cursor:pointer; font-family:monospace; font-size:12px;">✕</button>
+          <span style="color:#c9a04a; font-size:13px; font-variant-numeric:tabular-nums;">💰 ${gold} gp</span>
+          <button id="tp-close" style="padding:4px 12px; background:rgba(58,26,26,0.85); color:#d8887a; border:1px solid #6b4f4f; border-radius:4px; cursor:pointer; font-size:12px;">✕</button>
         </div>
       </div>
       <div style="display:flex; flex:1; overflow:hidden;">
@@ -278,8 +278,10 @@ export class TownPanel {
               const icon = bulletinIcon(t.kind);
               const prog = bulletinProgress(t);
               const action = t.completed
-                ? `<span style="color:#8a8; font-size:10px;">✅ Done</span>`
-                : `<button data-tp-action="bulletin-complete" data-tp-id="${t.id}" style="padding:2px 8px; background:#274a35; color:#bdf0cf; border:1px solid #3f6b4f; cursor:pointer; font-family:monospace; font-size:10px;">Claim</button>`;
+                ? `<button data-tp-action="bulletin-complete" data-tp-id="${t.id}" style="padding:2px 8px; background:#4a4227; color:#f0e0bd; border:1px solid #6b5f3f; cursor:pointer; font-family:monospace; font-size:10px;">Claim</button>`
+                : !t.accepted
+                ? `<button data-tp-action="bulletin-complete" data-tp-id="${t.id}" style="padding:2px 8px; background:#27354a; color:#bdd4f0; border:1px solid #3f556b; cursor:pointer; font-family:monospace; font-size:10px;">Accept</button>`
+                : `<span title="Finish the objective, then claim it here." style="padding:2px 8px; color:#8a8; font-family:monospace; font-size:10px;">In hand</span>`;
               return `<div style="border:1px solid #2a3a2a; background:#151a20; padding:6px; margin-bottom:4px; border-radius:4px;">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span style="font-size:14px;">${icon}</span>
@@ -391,7 +393,7 @@ export class TownPanel {
           <div style="color:#8a8; font-size:10px; margin-top:2px;">${building.description}</div>
         </div>
         <div style="display:flex; align-items:center; gap:12px;">
-          <span style="color:#ffd700; font-size:13px;">💰 ${gold} gp</span>
+          <span style="color:#c9a04a; font-size:13px; font-variant-numeric:tabular-nums;">💰 ${gold} gp</span>
           <button data-tp-action="leave-building" style="padding:4px 12px; background:#3a2a2a; color:#d8a; border:1px solid #6b4f4f; cursor:pointer; font-family:monospace; font-size:12px;">← Back</button>
         </div>
       </div>

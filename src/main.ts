@@ -5,6 +5,7 @@ import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
 import { assignFeature, assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
 import { understand, IntentPredictor } from './ai/DMCommandParser';
+import { IntentModel, loadIntentModel, intentModelEnabled, setIntentModelEnabled } from './ai/IntentModel';
 import { Overworld, OverworldEntrance, OverworldTown, entranceAt, generateOverworld, getEntranceById, getTownById, nearestWalkable, ringOverworld, townAt } from './world/Overworld';
 import { OverworldPOI, createMoonForgePOI, discoverNearbyPOIs, poiIcon } from './world/OverworldPOI';
 import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
@@ -19,8 +20,8 @@ import { QuestGiver, getReputationTier, getDialogue, getQuestDialogue, awardRepu
 import { BanditCampState, BanditClue, rollBanditClue, raidCamp, reportCamp } from './quests/BanditCamps';
 import { MARKET_POTIONS, MARKET_SCROLLS } from './loot/LootTables';
 import { Party } from './entities/Party';
-import { GameCharacter, InventoryItem, EquipSlot, slotForItem, magicBonusOf } from './entities/Character';
-import { BulletinTask } from './quests/BulletinBoard';
+import { GameCharacter, InventoryItem, EquipSlot, slotForItem, magicBonusOf, isCursed, curseTelltale } from './entities/Character';
+import { BulletinTask, bulletinIcon, bulletinProgress, bulletinObjective, bulletinObjectiveMet } from './quests/BulletinBoard';
 import { Monster, MonsterTemplate, getMonsterTemplate, getRandomMonster, MONSTER_TEMPLATES, THEME_MONSTERS, isUnseeableMonster } from './entities/Monster';
 import { SpriteRenderer } from './entities/Sprites';
 import { MapRenderer } from './rendering/MapRenderer';
@@ -39,6 +40,7 @@ import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules
 import { grantLuckDie, getLuckDie, onLuckDieSpent } from './rules/LuckDie';
 import { SAVE_VERSION, SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
 import { rollCombatLoot, LootSource, LootResult, EMPTY_PURSE } from './loot/LootTables';
+import { rollTieredGear } from './loot/TieredGear';
 import {
   PlacedTrap, getTrapKind, placeTraps, rollDisarm, rollPerception, sweepDetection, triggerTrap,
 } from './traps/Traps';
@@ -280,6 +282,9 @@ class Game {
     this.hud.questProvider = () => this.activeQuest() ?? null;
     this.hud.questStateProvider = () => this.questState();
     this.hud.onDMCommand = this.guard((text) => this.handleDMCommand(text));
+    this.hud.onModelToggle = this.guard(() => {
+      if (this.loadedIntentModel) this.handleModelToggle(this.intentPredictor ? 'off' : 'on');
+    });
     this.hud.onSave = () => this.saveGame(false);
 
     // When a fated Luck die is spent, narrate the resolution.
@@ -1010,7 +1015,7 @@ class Game {
 
     // Build lists of nearby things
     const visibleMonsters = this.getVisibleMonsters(8);
-    const lootNearby: Vector2[] = []; // Future: treasure chests
+    const lootNearby = this.unopenedChestsNearby(10);
     const doorsNearby = this.getNearbyTilesByType(TileType.Door, leader.tile, 2);
     const stairsNearby = this.getNearbyTilesByType(TileType.StairsDown, leader.tile, 1);
 
@@ -1234,9 +1239,25 @@ class Game {
         }
         break;
       }
-      case 'heal':
-      case 'regroup':
       case 'loot': {
+        // Standing on the chest already: open it. Otherwise walk toward it,
+        // and give up on this one if the way is blocked so the party is never
+        // stuck shouldering a wall.
+        const room = this.rooms.find(r => r.cx === action.target.x && r.cy === action.target.y);
+        if (leader.tile.x === action.target.x && leader.tile.y === action.target.y) {
+          if (room?.feature?.kind === 'chest') {
+            this.hud.addCombatMessage(action.message, '#a86');
+            this.featureChest(room.feature, (l, c) => this.hud.addCombatMessage(l, c ?? '#ca8'));
+          }
+        } else if (!this.moveParty(action.direction)) {
+          if (room?.feature) room.feature.used = true; // unreachable — stop pathing to it
+        } else if (this.frameCount % 30 === 0) {
+          this.hud.addCombatMessage(action.message, '#a86');
+        }
+        break;
+      }
+      case 'heal':
+      case 'regroup': {
         this.hud.addCombatMessage(action.message, '#a86');
         break;
       }
@@ -1259,6 +1280,7 @@ class Game {
     if (roomIdx !== -1 && !this.visitedRooms.has(roomIdx)) {
       this.visitedRooms.add(roomIdx);
       this.history.roomsVisited = this.visitedRooms.size;
+      this.bulletinScoutProgress(1);
       this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
       // The floor boss's hall: the stated mood speaks a one-line omen before
       // the party walks in, so what waits inside never comes as a surprise.
@@ -1394,6 +1416,8 @@ class Game {
     // FF command menu: Manual mode pauses every hero's turn until the DM
     // picks; Auto lets the AI resolve. The toggle lives in the battle window.
     this.combatEngine.decisionPause = this.hud.battleView.getMode() === 'manual';
+    // A fresh fight starts with a clean order queue.
+    this.combatEngine.queuedOrders.clear();
     this.combatEngine.onItemCommand = (itemId, holderId, actor) => {
       const holder = this.party.members.find(m => m.id === holderId) ?? actor;
       const item = holder.inventory.find(i => i.id === itemId);
@@ -1567,7 +1591,21 @@ class Game {
       // surface the Attack/Spell/Item/Flee menu and wait for the DM.
       const decider = this.combatEngine.decisionActor;
       if (decider) {
-        this.hud.battleView.showCommandMenu(
+        const bv = this.hud.battleView;
+        bv.setPartyRoster(this.party.alive);
+        // Drop queue entries the engine already consumed last cycle.
+        bv.queuedOrders = new Map(this.combatEngine.queuedOrders);
+        bv.spellsFor = (hero) => this.combatEngine.getDecisionSpells(hero);
+        bv.itemsFor = () => this.buildMenuConsumables();
+        bv.onQueuedOrder = (heroId, cmd) => {
+          this.combatEngine.queuedOrders.set(heroId, cmd);
+          this.hud.addCombatMessage(`⏳ ${this.party.members.find(m => m.id === heroId)?.name ?? 'Ally'} — order queued.`, '#8a9');
+        };
+        // Formation presets: the battle-cry line lands in the combat feed.
+        bv.onFormation = (line) => this.hud.addCombatMessage(line, '#d8c88a');
+        // Order chips on hero cards mirror the engine queue every tick.
+        bv.chipSyncFromGame = () => { bv.queuedOrders = new Map(this.combatEngine.queuedOrders); };
+        bv.showCommandMenu(
           decider,
           this.combatEngine.getDecisionSpells(decider),
           this.buildMenuConsumables(),
@@ -1577,6 +1615,7 @@ class Game {
       if (log.isOver) {
         // Combat over — make sure the menu can't linger over the aftermath.
         this.combatEngine.decisionPause = false;
+        this.combatEngine.queuedOrders.clear();
         this.hud.battleView.hideCommandMenu();
         if (log.winner === 'party') {
           // Remove dead monsters — but keep their stats for the loot roll first.
@@ -1818,6 +1857,22 @@ class Game {
 
   // ── Helpers ─────────────────────────────────────
 
+  /**
+   * Room centres holding a chest the party has not opened yet, within reach.
+   * Chests live on the room's feature, so the room centre is where to walk to.
+   */
+  /** Pieces of treasure the party has hauled out this run (collect_item quests). */
+  public treasuresFound: number = 0;
+
+  private unopenedChestsNearby(radius: number): Vector2[] {
+    if (this.mode !== GameMode.Dungeon) return [];
+    const from = this.party.leader.tile;
+    return this.rooms
+      .filter(r => r.feature?.kind === 'chest' && !r.feature.used)
+      .map(r => vec2(r.cx, r.cy))
+      .filter(t => manhattan(from, t) <= radius);
+  }
+
   private getVisibleMonsters(range: number): Monster[] {
     const leader = this.party.leader;
     return this.monsters.filter(m => {
@@ -2014,7 +2069,68 @@ class Game {
     puzzle_room: 'solve the puzzle',
     ritual_chamber: 'examine the ritual circle',
     war_room: 'study the war table',
+    chest: 'open the chest',
   };
+
+  /**
+   * Open a chest. A stuck lid takes a Strength check to force, and a wired one
+   * springs on whoever opens it unless the party spotted it first with
+   * "search for traps". What is inside is rolled from the same tables as
+   * combat spoils, scaled to the depth.
+   */
+  private featureChest(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
+    // Feature names carry their own article ("a small brass coffer").
+    const it = f.name.replace(/^(a|an|the)\s+/i, 'the ');
+    if (f.used) { say(`${capitalise(it)} stands open and empty.`, '#888'); return true; }
+
+    if (f.locked) {
+      // The strongest hand present shoulders it open; failure costs the turn.
+      const forcer = this.party.alive.reduce(
+        (best, m) => (m.strMod > best.strMod ? m : best),
+        this.party.leader,
+      );
+      const roll = 1 + Math.floor(Math.random() * 20);
+      const total = roll + forcer.strMod;
+      pushDiceRoll({
+        kind: 'check', diceType: 'd20',
+        label: `${forcer.name} forces ${it}`,
+        expression: `d20${forcer.strMod >= 0 ? '+' : ''}${forcer.strMod}`,
+        rolls: [roll], total,
+        outcome: roll === 20 ? 'crit' : roll === 1 ? 'fumble' : total >= 13 ? 'success' : 'failure',
+      });
+      if (total < 13) {
+        say(`${forcer.name} heaves at the lid (Strength ${total}) — it does not give. Try again.`, '#c88');
+        return true;
+      }
+      f.locked = false;
+      say(`${forcer.name} forces the lid with a crack of splitting wood (Strength ${total}).`, '#ca8');
+    }
+
+    if (f.trapped) {
+      f.trapped = false;
+      const victim = this.bestDisarmer();
+      const dmg = 2 + Math.floor(Math.random() * (4 + this.dungeonLevel * 2));
+      victim.takeDamage(dmg);
+      say(`The lid was wired — a needle bites ${victim.name} for ${dmg} damage!`, '#c44');
+      this.hud.setParty(this.party);
+      if (!victim.isConscious) {
+        say(`${victim.name} goes down.`, '#c44');
+        return true;
+      }
+    }
+
+    f.used = true;
+    say(`${capitalise(it)} creaks open.`, '#ffd700');
+    const loot = rollCombatLoot(
+      [{ cr: Math.max(1, this.dungeonLevel), name: f.name, type: 'chest', isBoss: false }],
+      this.dungeonLevel,
+    );
+    // Drop the kill-flavoured lines; nothing here died.
+    loot.narration = loot.narration.filter(line => !/corpse|body|remains|yields/i.test(line));
+    this.distributeLoot(loot, 'It holds nothing but mouldering rags.');
+    this.hud.setParty(this.party);
+    return true;
+  }
 
   /**
    * Act on a room-feature intent for the room the party stands in. Returns
@@ -2142,6 +2258,7 @@ class Game {
         }
         return true;
       }
+      case 'feature_chest': return this.featureChest(f, say);
       case 'feature_war_room': {
         if (f.used) { say('You have already studied the war room thoroughly.', '#888'); return true; }
         f.used = true;
@@ -2424,6 +2541,7 @@ class Game {
       weather: this.weather ?? undefined,
       clockPhase: this.clock.phase,
       clockElapsed: this.clock.elapsed,
+      treasuresFound: this.treasuresFound,
       monsterIdCounter: this.monsterIdCounter,
       dmStance: this.dmStance,
       dmDirection: this.dmDirection ?? null,
@@ -2539,6 +2657,7 @@ class Game {
     } else {
       this.clock = createClock();
     }
+    this.treasuresFound = save.treasuresFound ?? 0;
     this.lastClockStage = this.clock.timeOfDay;
     if (save.overworld) {
       const owMap = new TileMap(save.overworld.width, save.overworld.height);
@@ -2950,6 +3069,18 @@ class Game {
       this.hud.addCombatMessage(`Your tavern contacts tip you off to extra loot: +${tavernGoldBonus} gp!`, '#a89');
     }
 
+    this.distributeLoot(loot, 'The corpses yield nothing but dust.');
+
+    this.hud.setParty(this.party);
+    return loot;
+  }
+
+  /**
+   * Hand a rolled haul to the party: narrate it, split the coin among the
+   * living, stow the items with the leader, then re-kit anyone whose find
+   * beats what they are wearing. Shared by combat spoils and chests.
+   */
+  private distributeLoot(loot: LootResult, emptyLine: string): void {
     for (const line of loot.narration) {
       this.hud.addCombatMessage(line, '#dd0');
     }
@@ -2963,7 +3094,7 @@ class Game {
         living[i].gold += each + (i === 0 ? remainder : 0);
       }
       this.hud.addCombatMessage(
-        `\ud83d\udcb0 ${loot.goldValue} gp in coin split among the party (${each} gp each${remainder > 0 ? `, +${remainder} to ${living[0].name}` : ''}).`,
+        `💰 ${loot.goldValue} gp in coin split among the party (${each} gp each${remainder > 0 ? `, +${remainder} to ${living[0].name}` : ''}).`,
         '#fd8'
       );
     }
@@ -2972,22 +3103,21 @@ class Game {
     const leader = this.party.leader;
     for (const item of loot.items) {
       leader.addToInventory(item);
-      if (item.type === 'treasure') {
-        this.hud.addCombatMessage(`${leader.name} stows ${item.name}.`, '#ca8');
-      } else {
-        this.hud.addCombatMessage(`${leader.name} stows ${item.name}.`, '#a9f');
-      }
+      this.hud.addCombatMessage(`${leader.name} stows ${item.name}.`, item.type === 'treasure' ? '#ca8' : '#a9f');
     }
-    if (loot.items.length === 0 && loot.goldValue === 0) {
-      this.hud.addCombatMessage('The corpses yield nothing but dust.', '#888');
+    // Coppers are worth less than a whole gold piece, so goldValue can round to
+    // zero on a haul that still found something. Only call it empty when the
+    // purse is genuinely bare.
+    const anyCoin = Object.values(loot.coins).some(n => n > 0);
+    if (loot.items.length === 0 && loot.goldValue === 0 && !anyCoin) {
+      this.hud.addCombatMessage(emptyLine, '#888');
     }
 
     // After the haul lands, everyone re-kits: any looted gear that beats
     // what a member currently wears is swapped on and narrated.
     this.autoEquipUpgrades();
-
-    this.hud.setParty(this.party);
-    return loot;
+    this.treasuresFound += loot.items.length;
+    this.bulletinCollectProgress(loot.items.length);
   }
 
   /**
@@ -3016,6 +3146,9 @@ class Game {
           .sort((a, b) => b.score - a.score);
         let equipped: { item: InventoryItem; line: string } | null = null;
         for (const c of ranked) {
+          // The party's practiced eye catches curse-telltales before anyone
+          // straps a haunted piece on — cursed gear is never auto-equipped.
+          if (isCursed(c.item)) continue;
           const result = member.equip(c.item.id);
           if (result.ok) { equipped = { item: c.item, line: result.line }; break; }
         }
@@ -3327,10 +3460,18 @@ class Game {
       dungeonLevel: this.dungeonLevel,
       killLedger: this.history.killLedger,
       bossSlainThisFloor: this.bossSlainThisFloor,
+      // Only meaningful underground; on the surface there is no floor to clear.
+      monstersAliveOnFloor: this.mode === GameMode.Dungeon
+        ? this.monsters.filter(m => m.isAlive).length
+        : undefined,
+      treasuresFound: this.treasuresFound,
     };
   }
 
   private checkActiveQuestProgress(): void {
+    // Board work is tallied here too: both are driven by the kill ledger and
+    // the current floor, and both are re-checked at exactly these moments.
+    this.bulletinSlayProgress();
     const q = this.activeQuest();
     if (!q) return;
     if (checkQuestProgress(q, this.questState())) {
@@ -4379,6 +4520,7 @@ class Game {
   /** The party walks into town: rest, quests, market, and a warm fire. */
   private arriveAtTown(town: OverworldTown): void {
     this.mode = GameMode.Town;
+    this.bulletinArrivalProgress(town.id);
     this.currentTown = town;
     this.overworldDestination = null;
     this.overworldPath = [];
@@ -4473,6 +4615,21 @@ class Game {
     const town = this.currentTown;
 
     switch (serviceId) {
+      case 'remove_curse': {
+        const cost = 120;
+        if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
+        const afflicted = this.party.members.find(m => m.findCursedEquipped());
+        if (!afflicted) {
+          this.hud.addCombatMessage('The priests pass their hands over the party — no curse clings to anyone.', '#8a8');
+          return;
+        }
+        this.addGold(-cost);
+        const item = afflicted.findCursedEquipped()!;
+        afflicted.liftCurse();
+        this.hud.addCombatMessage(`✨ The temple rites wash over ${afflicted.name} — the pall on the ${item.name} lifts. It can now be removed.`, '#8cf');
+        this.hud.setParty(this.party);
+        break;
+      }
       case 'train_combat': {
         const cost = 50;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
@@ -4851,6 +5008,7 @@ class Game {
   private acceptQuest(q: Quest): void {
     if (q.accepted) return;
     q.accepted = true;
+    if (q.kind === 'collect_item') q.baselineTreasures = this.treasuresFound;
     this.activeQuestId = q.id;
     this.hud.addCombatMessage(`📜 The party accepts the posting: ${q.title}`, '#ffd700');
     this.hud.townPanel.refresh();
@@ -5055,8 +5213,32 @@ class Game {
     this.party.leader.inventory.push({ ...item });
   }
 
+  /** The smithy's enchantment rack — tiered gear rolled once per town visit. */
+  private shopTieredStock: InventoryItem[] = [];
+  private shopTieredTownId: string | null = null;
+
   private marketStock(): InventoryItem[] {
-    return [...MARKET_POTIONS, ...MARKET_SCROLLS];
+    const base = [...MARKET_POTIONS, ...MARKET_SCROLLS];
+    if (!this.currentTown) return base;
+    // Tiered gear: rolled fresh when the party arrives in a new town.
+    // Wealthier towns (higher priceModifier) stock higher tiers.
+    if (this.shopTieredTownId !== this.currentTown.id) {
+      const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
+      const wealth = archetype?.priceModifier ?? 1;
+      const maxBonus = wealth >= 1.25 ? 3 : wealth >= 1.0 ? 2 : 1;
+      const count = 2 + Math.floor(Math.random() * 3); // 2-4 pieces per visit
+      const stock: InventoryItem[] = [];
+      const seen = new Set<string>();
+      for (let i = 0; i < count * 3 && stock.length < count; i++) {
+        const piece = rollTieredGear({ maxBonus, minBonus: Math.max(1, maxBonus - 1) });
+        if (seen.has(piece.name)) continue;
+        seen.add(piece.name);
+        stock.push(piece);
+      }
+      this.shopTieredStock = stock;
+      this.shopTieredTownId = this.currentTown.id;
+    }
+    return [...base, ...this.shopTieredStock];
   }
 
   private buyItem(item: InventoryItem): void {
@@ -5081,6 +5263,8 @@ class Game {
       this.townLife.byTown[this.currentTown.id].prosperitySpent += cost;
     }
     this.addItemToParty(item);
+    // Tiered gear is a physical rack piece — once sold, it's gone.
+    this.shopTieredStock = this.shopTieredStock.filter(s => s.id !== item.id);
     this.hud.addCombatMessage(`🛒 ${this.party.leader.name} buys ${item.name} for ${cost} gp.`, '#ffd700');
     this.hud.townPanel.refresh();
   }
@@ -5136,29 +5320,116 @@ class Game {
     this.hud.townPanel.refresh();
   }
 
-  private completeBulletinTask(task: BulletinTask): void {
-    if (this.mode !== GameMode.Town) return;
-    if (task.completed) {
-      this.hud.addCombatMessage('That task is already completed.', '#8a8');
+  // ── Bulletin board tasks ────────────────────────────────────────────────
+
+  /** Every task on every board, so progress can land wherever the party is. */
+  private allBulletinTasks(): BulletinTask[] {
+    if (!this.townLife) return [];
+    return Object.values(this.townLife.byTown).flatMap(t => t.bulletinTasks ?? []);
+  }
+
+  /** Accepted, unfinished tasks — the only ones that can make progress. */
+  private activeBulletinTasks(): BulletinTask[] {
+    return this.allBulletinTasks().filter(t => t.accepted && !t.completed);
+  }
+
+  /** Take a task on. Progress is measured from this moment, not from the run. */
+  private acceptBulletinTask(task: BulletinTask): void {
+    if (task.accepted) {
+      this.hud.addCombatMessage(`The party has already taken on "${task.title}".`, '#8a8');
       return;
     }
-
-    switch (task.kind) {
-      case 'slay':
-      case 'collect':
-      case 'escort':
-      case 'deliver':
-      case 'scout':
-        // Auto-complete for now — the party just finished the task
-        task.completed = true;
-        task.progress = task.targetCount;
-        break;
+    task.accepted = true;
+    task.progress = 0;
+    if (task.kind === 'slay' && task.targetKind) {
+      task.baselineKills = this.history.killLedger[task.targetKind] ?? 0;
     }
+    if (task.kind === 'escort' || task.kind === 'deliver') {
+      task.targetTownId = this.currentTown?.id;
+    }
+    this.hud.addCombatMessage(`📋 Task accepted: ${task.title}`, '#ffd700');
+    this.hud.addCombatMessage(`   ${task.detail}`, '#8cf');
+    this.hud.addCombatMessage(`   ${bulletinObjective(task)}`, '#8a8');
+    this.hud.townPanel.refresh();
+  }
 
-    // Grant rewards
+  /** Announce a task whose objective has just been met. */
+  private announceBulletinReady(task: BulletinTask): void {
+    if (task.completed) return;
+    task.completed = true;
+    this.hud.addCombatMessage(`📋 Task ready to claim: ${task.title} — report in town.`, '#ffd700');
+    this.hud.townPanel.refresh();
+  }
+
+  /** Slay tasks read the kill ledger, so they count kills made since accepting. */
+  private bulletinSlayProgress(): void {
+    for (const task of this.activeBulletinTasks()) {
+      if (task.kind !== 'slay' || !task.targetKind) continue;
+      const total = this.history.killLedger[task.targetKind] ?? 0;
+      task.progress = Math.min(task.targetCount, Math.max(0, total - (task.baselineKills ?? 0)));
+      if (task.progress >= task.targetCount) this.announceBulletinReady(task);
+    }
+  }
+
+  /** Collect tasks tick up as the party hauls finds out of the dark. */
+  private bulletinCollectProgress(found: number): void {
+    if (found <= 0) return;
+    for (const task of this.activeBulletinTasks()) {
+      if (task.kind !== 'collect') continue;
+      task.progress = Math.min(task.targetCount, task.progress + found);
+      if (task.progress >= task.targetCount) this.announceBulletinReady(task);
+    }
+  }
+
+  /**
+   * Scout tasks count rooms the party opens up. This counts up as each new
+   * room is entered rather than diffing a total, because the room tally resets
+   * on every floor and a baseline taken in town would never be reached again.
+   */
+  private bulletinScoutProgress(rooms: number = 0): void {
+    if (rooms <= 0) return;
+    for (const task of this.activeBulletinTasks()) {
+      if (task.kind !== 'scout') continue;
+      task.progress = Math.min(task.targetCount, task.progress + rooms);
+      if (task.progress >= task.targetCount) this.announceBulletinReady(task);
+    }
+  }
+
+  /** Escorts and deliveries resolve on reaching a town other than the poster's. */
+  private bulletinArrivalProgress(townId: string): void {
+    for (const task of this.activeBulletinTasks()) {
+      if (task.kind !== 'escort' && task.kind !== 'deliver') continue;
+      if (task.targetTownId && task.targetTownId === townId) continue;
+      task.progress = task.targetCount;
+      this.announceBulletinReady(task);
+    }
+  }
+
+  private completeBulletinTask(task: BulletinTask): void {
+    if (this.mode !== GameMode.Town) {
+      this.hud.addCombatMessage('Board work is claimed in town.', '#886');
+      return;
+    }
+    if (!task.accepted) {
+      this.acceptBulletinTask(task);
+      return;
+    }
+    if (!bulletinObjectiveMet(task)) {
+      this.hud.addCombatMessage(
+        `"${task.title}" is not done yet — ${bulletinProgress(task)}. ${bulletinObjective(task)}`,
+        '#886',
+      );
+      return;
+    }
+    if (task.progress >= task.targetCount && !task.completed) task.completed = true;
+
+    // Grant rewards. addXp is used so a level-up actually fires.
     this.addGold(task.rewardGold);
     for (const m of this.party.members) {
-      m.xp += task.rewardXp;
+      // addXp, not a raw xp bump, so the level-up actually fires.
+      if (m.addXp(task.rewardXp)) {
+        this.hud.addCombatMessage(`⬆ ${m.name} reaches level ${m.level}!`, '#7c7');
+      }
     }
     // Reputation reward
     if (this.currentTown && this.townLife) {
@@ -5168,9 +5439,44 @@ class Game {
       }
     }
 
+    // Claimed work leaves the board.
+    if (this.townLife) {
+      for (const entry of Object.values(this.townLife.byTown)) {
+        entry.bulletinTasks = (entry.bulletinTasks ?? []).filter(t => t.id !== task.id);
+      }
+    }
+
     this.hud.addCombatMessage(`📋 Task complete: ${task.title}`, '#ffd700');
     this.hud.addCombatMessage(`   +${task.rewardGold} gp, +${task.rewardXp} XP, +${task.repReward} reputation`, '#8cf');
+    this.hud.setParty(this.party);
     this.hud.townPanel.refresh();
+  }
+
+  /** "tasks" — read the board and the party's in-flight work back to the DM. */
+  private listBulletinTasks(): void {
+    const local = this.currentTown && this.townLife
+      ? this.townLife.byTown[this.currentTown.id]?.bulletinTasks ?? []
+      : [];
+    const carried = this.activeBulletinTasks().filter(t => !local.includes(t));
+    if (local.length === 0 && carried.length === 0) {
+      this.hud.addCombatMessage('No board work in hand. Boards are posted in town.', '#888');
+      return;
+    }
+    if (local.length > 0) {
+      this.hud.addCombatMessage('📋 Bulletin board:', '#ca8');
+      local.forEach((t, i) => {
+        const state = t.completed ? '✅ ready to claim' : t.accepted ? bulletinProgress(t) : 'not taken';
+        this.hud.addCombatMessage(`  ${i + 1}. ${bulletinIcon(t.kind)} ${t.title} — ${state}`, '#a89');
+        this.hud.addCombatMessage(`     ${t.rewardGold} gp, ${t.rewardXp} XP. ${bulletinObjective(t)}`, '#888');
+      });
+      this.hud.addCombatMessage('  Say "accept task 2" to take one on.', '#888');
+    }
+    if (carried.length > 0) {
+      this.hud.addCombatMessage('📋 Work in hand from other towns:', '#ca8');
+      for (const t of carried) {
+        this.hud.addCombatMessage(`  ${bulletinIcon(t.kind)} ${t.title} — ${bulletinProgress(t)}`, '#a89');
+      }
+    }
   }
 
 
@@ -5517,7 +5823,7 @@ class Game {
       case 'feature_forge': case 'feature_library': case 'feature_fountain': case 'feature_sarcophagus':
       case 'feature_throne': case 'feature_trapped_search': case 'feature_trapped_disarm':
       case 'feature_treasure': case 'feature_merchant_talk': case 'feature_merchant_rob':
-      case 'feature_puzzle': case 'feature_ritual': case 'feature_war_room':
+      case 'feature_puzzle': case 'feature_ritual': case 'feature_war_room': case 'feature_chest':
       case 'feature_inspect': case 'search_room': {
         if (!inCombat && this.performFeatureIntent(cmd.intent)) {
           this.hud.setParty(this.party);
@@ -5805,10 +6111,16 @@ class Game {
           this.hud.addCombatMessage(`No one carries a "${itemName}" — try "gear" to see what's held.`, '#886');
           return;
         }
-        if (Object.values(owner.equipment).some(e => e?.id === item.id)) {
-          this.hud.addCombatMessage(`${owner.name} is already using the ${item.name}.`, '#886');
-          return;
-        }
+      if (Object.values(owner.equipment).some(e => e?.id === item.id)) {
+        this.hud.addCombatMessage(`${owner.name} is already using the ${item.name}.`, '#886');
+        return;
+      }
+      // A telltale check before the DM forces gear on someone.
+      const telltale = curseTelltale(item);
+      if (telltale && !item.curseKnown) {
+        item.curseKnown = true;
+        this.hud.addCombatMessage(`⚠ ${owner.name} examines the ${item.name} first: ${telltale}. Equipping it anyway is unwise.`, '#fa6');
+      }
         const line = owner.equip(item.id);
         this.hud.addCombatMessage(line ? `⚔ ${line} (AC ${owner.ac})` : `The ${item.name} can't be equipped.`, line ? '#8cf' : '#c66');
         this.hud.setParty(this.party);
@@ -5846,6 +6158,24 @@ class Game {
       // ── Overworld, town, quest & commerce ──
       case 'quests': {
         this.listQuests();
+        return;
+      }
+      case 'tasks': {
+        this.listBulletinTasks();
+        return;
+      }
+      case 'accept_task': {
+        if (this.mode !== GameMode.Town || !this.currentTown || !this.townLife) {
+          this.hud.addCombatMessage('Board work is taken on in town.', '#886');
+          return;
+        }
+        const board = (this.townLife.byTown[this.currentTown.id]?.bulletinTasks ?? []).filter(t => !t.completed);
+        const pick = board[Math.max(0, (cmd.index ?? 1) - 1)];
+        if (!pick) {
+          this.hud.addCombatMessage('Nothing on the board matches that — try "tasks".', '#886');
+          return;
+        }
+        this.acceptBulletinTask(pick);
         return;
       }
       case 'accept_quest': {
@@ -6054,17 +6384,52 @@ class Game {
     }
   }
 
-  /** "model on / off / status" — the DM intent model is wired up by the LLM service. */
+  /** The loaded weights, kept so "model on" can re-arm without re-fetching. */
+  public loadedIntentModel: IntentModel | null = null;
+
+  /**
+   * Hand the game its trained understander. Called once at start-up; the
+   * player's stored preference decides whether it is armed.
+   */
+  public attachIntentModel(model: IntentModel | null): void {
+    this.loadedIntentModel = model;
+    const on = model !== null && intentModelEnabled();
+    this.intentPredictor = on ? model : null;
+    this.hud.setModelChip(model === null ? 'regex' : on ? 'model' : 'off');
+  }
+
+  /** "model on / off / status" — arm, disarm, or describe the intent model. */
   private handleModelToggle(state: 'on' | 'off' | 'status'): void {
     if (state === 'status') {
       this.dmModelDebug = !this.dmModelDebug;
-      this.hud.addCombatMessage(
-        `DM intent model: ${this.intentPredictor ? 'loaded' : 'not loaded (regex only)'}. Understander echo ${this.dmModelDebug ? 'on' : 'off'}.`,
-        '#8cf'
-      );
+      if (!this.loadedIntentModel) {
+        this.hud.addCombatMessage('DM orders are read by the regex parser — the trained model did not load.', '#8cf');
+      } else {
+        const m = this.loadedIntentModel;
+        this.hud.addCombatMessage(
+          `DM intent model v${m.version}: ${this.intentPredictor ? 'on' : 'off'} — ${m.intents.length} intents, ` +
+          `${m.buckets} buckets, accepts at ${(m.threshold * 100).toFixed(0)}% confidence.`,
+          '#8cf'
+        );
+      }
+      this.hud.addCombatMessage(`Understander echo ${this.dmModelDebug ? 'on' : 'off'}.`, '#888');
       return;
     }
-    this.hud.addCombatMessage(`The DM intent model cannot be switched ${state} in this build yet.`, '#888');
+
+    const want = state === 'on';
+    if (want && !this.loadedIntentModel) {
+      this.hud.addCombatMessage('The trained model did not load — orders stay with the regex parser.', '#c88');
+      return;
+    }
+    setIntentModelEnabled(want);
+    this.intentPredictor = want ? this.loadedIntentModel : null;
+    this.hud.setModelChip(want ? 'model' : 'off');
+    this.hud.addCombatMessage(
+      want
+        ? 'The party listens more closely — free-form orders go through the trained model.'
+        : 'The party goes by the book — only the written orders are understood.',
+      '#8cf'
+    );
   }
 
 }
@@ -6100,11 +6465,22 @@ function startGame() {
   game.hud.onMainMenu = () => game.returnToMainMenu();
   game.hud.showStartScreen(saves);
 
+  // The DM intent model loads alongside the start screen, so it is ready long
+  // before the first order. A failure here is not fatal: the regex parser
+  // understands every documented order on its own.
+  game.hud.setModelChip('loading');
+  void loadIntentModel().then(model => game.attachIntentModel(model));
+
   // Persist when the tab hides or closes (only once a run has actually begun).
   window.addEventListener('beforeunload', () => { if (game.runStarted) game.saveGame(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && game.runStarted) game.saveGame();
   });
+}
+
+/** Capitalise the first letter of a sentence built from a feature name. */
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Parse '2d4+2' style healing dice out of an item description. */
