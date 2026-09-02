@@ -14,9 +14,17 @@ describe('parseDMCommandRegex — meta', () => {
     expect(parse('pause')).toEqual({ intent: 'pause' });
     expect(parse('as you were')).toEqual({ intent: 'resume' });
     expect(parse('save')).toEqual({ intent: 'save', slot: undefined });
+    // "wipe the save" must wipe, not save.
+    expect(parse('wipe the save')).toEqual({ intent: 'new_game' });
     expect(parse('save to slot 2')).toEqual({ intent: 'save', slot: 2 });
     expect(parse('quicksave 3')).toEqual({ intent: 'save', slot: 3 });
     expect(parse('new game')).toEqual({ intent: 'new_game' });
+    expect(parse('abandon')).toEqual({ intent: 'new_game' });
+    expect(parse('abandon this run')).toEqual({ intent: 'new_game' });
+    // Abandoning a delve, a fight or a quest must never wipe the save.
+    for (const order of ['abandon the delve', 'abandon this dungeon', 'abandon the quest', 'abandon the fight', 'abandon the camp']) {
+      expect(parse(order).intent).not.toBe('new_game');
+    }
     expect(parse('model off')).toEqual({ intent: 'model_toggle', state: 'off' });
     expect(parse('model')).toEqual({ intent: 'model_toggle', state: 'status' });
   });
@@ -67,6 +75,13 @@ describe('parseDMCommandRegex — movement, rest, stance', () => {
     expect(parse('formation 9x9')).toEqual({ intent: 'formation', rows: 4, cols: 4 });
     expect(parse('form up')).toEqual({ intent: 'formation_help' });
     expect(parseFormation('nothing')).toBeNull();
+    // The shape may sit anywhere in the order, not only after "formation".
+    expect(parse('form up 2x2')).toEqual({ intent: 'formation', rows: 2, cols: 2 });
+    expect(parse('adopt a 1x4 formation')).toEqual({ intent: 'formation', rows: 4, cols: 1 });
+    expect(parse('get into a loose formation')).toEqual({ intent: 'formation', rows: 2, cols: 3 });
+    expect(parse('reform into single file')).toEqual({ intent: 'formation', rows: 4, cols: 1 });
+    expect(parse('formation options')).toEqual({ intent: 'formation_help' });
+    expect(parse('what formations are there')).toEqual({ intent: 'formation_help' });
   });
 });
 
@@ -93,8 +108,8 @@ describe('parseDMCommandRegex — dice, magic, traps, items', () => {
     expect(parse('wield shield on borin')).toEqual({ intent: 'equip', item: 'shield', member: 'borin' });
     expect(parse('unequip armor')).toEqual({ intent: 'unequip', arg: 'armor' });
     expect(parse('loadout')).toEqual({ intent: 'gear' });
-    // Quirk preserved: "gear" alone is caught by the inventory branch first.
-    expect(parse('gear')).toEqual({ intent: 'inventory' });
+    expect(parse('gear')).toEqual({ intent: 'gear' });
+    expect(parse('pack')).toEqual({ intent: 'inventory' });
   });
 });
 
@@ -128,14 +143,22 @@ describe('parseDMCommandRegex — town, quests, travel, camps, npcs', () => {
     expect(parse("who's here")).toEqual({ intent: 'list_npcs' });
   });
 
-  it('known ordering quirks of the cascade are preserved (the model fixes these)', () => {
-    expect(parse('look for traps')).toEqual({ intent: 'look' });
+  it('specific trap phrases beat the generic look branch', () => {
+    expect(parse('look for traps')).toEqual({ intent: 'search_traps' });
+    expect(parse('check for traps')).toEqual({ intent: 'search_traps' });
+    expect(parse('look')).toEqual({ intent: 'look' });
     expect(parse('hunt the goblins on the road')).toEqual({ intent: 'stance', stance: 'aggressive' });
   });
 
   it('camp phrases beat the generic camp / report words', () => {
     expect(parse('attack camp')).toEqual({ intent: 'raid_camp' });
+    expect(parse('raid the camp')).toEqual({ intent: 'raid_camp' });
+    expect(parse('storm their bandit camp')).toEqual({ intent: 'raid_camp' });
+    expect(parse('attack the hideout')).toEqual({ intent: 'raid_camp' });
     expect(parse('report camp')).toEqual({ intent: 'report_camp' });
+    expect(parse('report the bandit camp')).toEqual({ intent: 'report_camp' });
+    expect(parse('show camp clues')).toEqual({ intent: 'list_clues' });
+    // The plain words still mean what they always did.
     expect(parse('camp')).toEqual({ intent: 'long_rest' });
     expect(parse('report')).toEqual({ intent: 'report' });
   });

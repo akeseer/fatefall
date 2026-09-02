@@ -29,7 +29,7 @@ export interface QuestGiver {
   reputation: number;
 }
 
-const GIVERS: Omit<QuestGiver, 'id' | 'reputation'>[] = [
+export const GIVERS: Omit<QuestGiver, 'id' | 'reputation'>[] = [
   {
     name: 'Brenna Ironforge',
     title: 'Town Blacksmith',

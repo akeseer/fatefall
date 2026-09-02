@@ -8,9 +8,14 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "export-vocab": "esbuild tools/train/export_vocab.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.export_vocab.mjs && node tools/train/data/.export_vocab.mjs",
+    "label-data": "esbuild tools/train/label.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.label.mjs && node tools/train/data/.label.mjs",
+    "probe": "esbuild tools/train/probe.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.probe.mjs && node tools/train/data/.probe.mjs",
+    "model-report": "esbuild tools/train/report.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.report.mjs && node tools/train/data/.report.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "typescript": "^5.4.0",
     "vite": "^5.4.0",
     "vitest": "^4.1.11"

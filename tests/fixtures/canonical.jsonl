@@ -1,0 +1,352 @@
+{"text":"help","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"help"}
+{"text":"?","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"help"}
+{"text":"pause","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"pause"}
+{"text":"hold","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"pause"}
+{"text":"resume","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"unpause","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"carry on","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"as you were","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"save","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"saved","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"quicksave","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"quick save","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"checkpoint","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"save to slot 2","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"save 3","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"new game","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"new run","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"abandon","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"wipe","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"erase","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"fresh start","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"start over","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"restart","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"model on","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"model_toggle"}
+{"text":"model off","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"model_toggle"}
+{"text":"model status","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"model_toggle"}
+{"text":"rename party The Iron Hawks","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_party"}
+{"text":"party name Wolves","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_party"}
+{"text":"name the party Ravens","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_party"}
+{"text":"rename Kael to Vex","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_member"}
+{"text":"rename character Mira as Zed","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_member"}
+{"text":"look","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"look around","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"examine","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"survey","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"inspect","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"describe the room","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"describe room","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"roll d20","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"roll"}
+{"text":"roll 2d6+3","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"roll"}
+{"text":"roll d20 adv","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"roll"}
+{"text":"upcast always","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"upcast"}
+{"text":"upcast never","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"upcast"}
+{"text":"upcast auto","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"upcast"}
+{"text":"upcast","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"upcast"}
+{"text":"go north","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"head south","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"move east","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"walk west","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"travel north","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"venture south","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"march east","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"continue west","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"north","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"south","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"east","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"west","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"n","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"s","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"e","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"w","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"up","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"down","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"left","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"right","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move"}
+{"text":"descend","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"deeper","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"next floor","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"downstairs","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"stairs down","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"take the stairs","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"wait until dawn","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"wait until dusk","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"wait until night","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"hold up until morning","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"pause"}
+{"text":"pass the time until evening","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"bide until midnight","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"wait out the dark","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"sit tight until daylight","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"wait_until"}
+{"text":"long rest","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"long_rest"}
+{"text":"camp","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"long_rest"}
+{"text":"rest","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"recover","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"catch breath","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"catching breath","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"bind wounds","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"attack","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"fight","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"charge","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"hunt","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"kill","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"to arms","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"onward","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"flee","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"retreat","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"avoid","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"careful","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"cautious","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"sneak","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"evade","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"withdraw","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"stealth","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance"}
+{"text":"formation 2x2","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation"}
+{"text":"formation 1x4","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation"}
+{"text":"formation line","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation"}
+{"text":"formation loose","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation"}
+{"text":"formation 2x3","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation"}
+{"text":"formation","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation_help"}
+{"text":"form up","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation_help"}
+{"text":"reform","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation_help"}
+{"text":"shape","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation_help"}
+{"text":"search","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"search for traps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"look for traps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"find traps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"scan for traps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"check for traps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"disarm","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"disable the trap","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"defuse the trap","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"disarm trap","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"spring the trap","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"use healing potion","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"use_item"}
+{"text":"drink potion","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"use_item"}
+{"text":"quaff potion","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"use_item"}
+{"text":"read scroll","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"use_item"}
+{"text":"cast scroll of fireball","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"use_item"}
+{"text":"loot","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"treasure","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"inventory","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"pack","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"what do we carry","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"what are we carrying","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"summon owlbear","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon"}
+{"text":"conjure goblin","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon"}
+{"text":"spawn a dragon","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon"}
+{"text":"what day","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"calendar"}
+{"text":"calendar","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"calendar"}
+{"text":"date","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"calendar"}
+{"text":"today","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"calendar"}
+{"text":"whats today","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"calendar"}
+{"text":"journal","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"chronicle","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"history","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"ledger","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"story","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"log","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"report","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"status","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"sitrep","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"how goes","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"party status","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"equip longsword","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"equip"}
+{"text":"wield shield","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"equip"}
+{"text":"don chain mail","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"equip"}
+{"text":"wear leather armor","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"equip"}
+{"text":"put on the helm","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"equip"}
+{"text":"unequip armor","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unequip"}
+{"text":"remove shield","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unequip"}
+{"text":"doff armor","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unequip"}
+{"text":"stow dagger","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unequip"}
+{"text":"gear","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"gear"}
+{"text":"equipment","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"gear"}
+{"text":"loadout","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"gear"}
+{"text":"quests","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"quests"}
+{"text":"quest board","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"quests"}
+{"text":"postings","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"quests"}
+{"text":"contracts","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"quests"}
+{"text":"accept the quest","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest"}
+{"text":"take the job","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest"}
+{"text":"take on the contract","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest"}
+{"text":"pick up the posting","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest"}
+{"text":"accept quest 2","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest"}
+{"text":"turn in","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"turnin","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"complete quest","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"claim reward","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"hand in","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"leave town","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"depart","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"set out","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"hit the road","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"take the road","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"ride out","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"head out","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"go to town","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"return to town","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"back to town","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"head home","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"go home","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"return home","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"shop","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"market","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"store","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"buy","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"sell","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"trade","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"merchant","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"buy healing potion","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"buy"}
+{"text":"sell rations","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"sell"}
+{"text":"leave","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"ascend","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"climb out","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"surface","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"get out","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"exit the dungeon","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"enter","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"enter_dungeon"}
+{"text":"descend into the dungeon","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"descend"}
+{"text":"delve","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"enter_dungeon"}
+{"text":"go into the crypt","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"enter_dungeon"}
+{"text":"travel to Emberwatch","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to"}
+{"text":"head to Duskhollow","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to"}
+{"text":"make for Silverbark","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to"}
+{"text":"bound for the Sunken Crypts","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to"}
+{"text":"trek to Ashen Spire","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to"}
+{"text":"raid camp","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"assault camp","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"attack camp","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"hit the camp","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"storm the camp","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"report camp","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"report_camp"}
+{"text":"report hideout","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"report_camp"}
+{"text":"report bandits","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"report_camp"}
+{"text":"report to constable","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"report_camp"}
+{"text":"list clues","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"list_clues"}
+{"text":"clues","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"list_clues"}
+{"text":"maps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"list_clues"}
+{"text":"bandit maps","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"list_clues"}
+{"text":"camp clues","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"list_clues"}
+{"text":"talk to Brenna","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"speak to the constable","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"visit Thalen","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"greet Dax","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"meet the innkeeper","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"chat with Varek","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"list npcs","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"who is here","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"who's here","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"townspeople","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"people","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"citizens","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"pray","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"kneel","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"bless","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"offer","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"altar","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"shrine","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"pray at the altar","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"search","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_inspect"}
+{"text":"search the vault","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"rob the strongbox","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"loot the chest","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"open the treasure","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"break the vault","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"search","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_inspect"}
+{"text":"free","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"release","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"rescue","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"prison","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"cell","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"cage","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"free the prisoners","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"barricade","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"feature_chokepoint"}
+{"text":"blockade","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"feature_chokepoint"}
+{"text":"fortify","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"feature_chokepoint"}
+{"text":"brace","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"feature_chokepoint"}
+{"text":"hold the line","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"pause"}
+{"text":"forge","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"sharpen","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"whetstone","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"hone","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"use the forge","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"read","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"study","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"library","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"tome","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"tomes","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"book","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"books","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"grimoire","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"read the tomes","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"drink","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"sip","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"fountain","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"cistern","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"drink from the fountain","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"open the sarcophagus","ctx":{"featureKind":"sarcophagus","inCombat":false,"mode":"dungeon"},"intent":"feature_sarcophagus"}
+{"text":"break the tomb","ctx":{"featureKind":"sarcophagus","inCombat":false,"mode":"dungeon"},"intent":"feature_sarcophagus"}
+{"text":"pry the coffin","ctx":{"featureKind":"sarcophagus","inCombat":false,"mode":"dungeon"},"intent":"feature_sarcophagus"}
+{"text":"open the coffin","ctx":{"featureKind":"sarcophagus","inCombat":false,"mode":"dungeon"},"intent":"feature_sarcophagus"}
+{"text":"throne","ctx":{"featureKind":"throne","inCombat":false,"mode":"dungeon"},"intent":"feature_throne"}
+{"text":"sit","ctx":{"featureKind":"throne","inCombat":false,"mode":"dungeon"},"intent":"feature_throne"}
+{"text":"approach the throne","ctx":{"featureKind":"throne","inCombat":false,"mode":"dungeon"},"intent":"feature_throne"}
+{"text":"sit on the throne","ctx":{"featureKind":"throne","inCombat":false,"mode":"dungeon"},"intent":"feature_throne"}
+{"text":"check","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_search"}
+{"text":"detect","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_search"}
+{"text":"find","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_search"}
+{"text":"scan","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_search"}
+{"text":"search","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_search"}
+{"text":"disable","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_disarm"}
+{"text":"defuse","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_disarm"}
+{"text":"disarm the traps","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_disarm"}
+{"text":"search","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"loot","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"rob","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"open","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"take","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"grab","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"steal","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"search the treasure room","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"buy","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"trade","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"shop","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"merchant","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"talk","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"speak","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"hello","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"greet","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"loot","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_rob"}
+{"text":"rob","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_rob"}
+{"text":"attack","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_rob"}
+{"text":"steal","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_rob"}
+{"text":"talk to the merchant","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"rob him","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_rob"}
+{"text":"solve","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"puzzle","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"rotate","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"align","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"press","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"activate","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"study","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"solve the puzzle","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"pray","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"meditate","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"channel","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"summon","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"ritual","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"cast","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"use","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"examine the ritual circle","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"study","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"map","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"plan","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"strategy","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"search","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"study the war table","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"investigate","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_inspect"}
+{"text":"search the room","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_inspect"}
+{"text":"search the room","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_room"}
+{"text":"search the chamber","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_room"}
+{"text":"search here","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_room"}
+{"text":"investigate","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_room"}

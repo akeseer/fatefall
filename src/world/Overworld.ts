@@ -48,13 +48,13 @@ export interface Overworld {
   pois: OverworldPOI[];
 }
 
-const TOWN_NAMES = [
+export const TOWN_NAMES = [
   'Emberwatch', 'Duskhollow', 'Silverbark', 'Ravenmere', 'Stonebridge',
   'Greymarch', 'Frosthaven', 'Thornwick', 'Highwater', 'Mistfeld',
   'Oakshade', 'Brimstone', 'Willowrun', 'Ashvale', 'Corvusport',
 ];
 
-const ENTRANCE_NAMES = [
+export const ENTRANCE_NAMES = [
   'The Sunken Crypts', 'Barrowmoor Depths', 'Wyrmfang Warrens', 'The Hollow Catacombs',
   'Gloomhollow Keep', 'The Serpent Maws', 'Ashen Spire', 'The Drowned Chapel',
   'Cinderfen Ruins', 'The Frozen Vaults', 'Obsidian Delve', 'The Whispering Labyrinth',

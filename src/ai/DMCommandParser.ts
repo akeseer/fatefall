@@ -43,16 +43,32 @@ export function directionWord(cmd: string): Direction | null {
 
 // ── Small slot helpers (shared by both understanders) ────────────────────────
 
+/** Small counting words, since people write "slot two" and "the second job". */
+const NUMBER_WORD: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4,
+  first: 1, second: 2, third: 3, fourth: 4,
+};
+const NUMBER_WORDS = Object.keys(NUMBER_WORD).join('|');
+
 function saveSlot(cmd: string): 1 | 2 | 3 | undefined {
   const m = cmd.match(/slot\s*([1-3])/) || cmd.match(/save\s*([1-3])\s*$/);
-  return m ? (parseInt(m[1], 10) as 1 | 2 | 3) : undefined;
+  if (m) return parseInt(m[1], 10) as 1 | 2 | 3;
+  const word = cmd.match(new RegExp(`slot\\s+(${NUMBER_WORDS})\\b`));
+  const n = word ? NUMBER_WORD[word[1]] : 0;
+  return n >= 1 && n <= 3 ? (n as 1 | 2 | 3) : undefined;
 }
 
 function upcastPolicy(arg: string): UpcastPolicy {
   if (/\b(always|max|maximum|all)\b/.test(arg)) return 'always';
   if (/\b(never|off|none|no)\b/.test(arg)) return 'never';
+  // Said the long way round: "burn the biggest slots", "stop wasting the high ones".
+  if (/\b(stop|save|conserve|hold back|hold onto|keep|preserve|spare|ration|dont waste|don't waste|stop wasting)\b/.test(arg)) return 'never';
+  if (/\b(biggest|highest|largest|strongest|top|full power|everything|go big|all out)\b/.test(arg)) return 'always';
   return 'auto';
 }
+
+/** Cautious wording, said any of the many ways a person says "be careful". */
+const CAUTIOUS = /\b(flee|retreat|avoid|avoiding|careful|carefully|caution|cautious|sneak|sneaking|evade|withdraw|stealth|stealthy|quiet|quietly|hide|hiding|safe|safety|slip|slipped|slipping|past|dodge|duck|heads down|low profile|no risk|no risks|no unnecessary|dont start|don't start|dont fight|don't fight|no fighting|not fight|stay out|steer clear|wide berth|back off|pull back|fall back|run away|leave them|nobody dies|survive)\b/;
 
 function timeTarget(cmd: string): TimeTarget {
   if (/(dusk|evening)/.test(cmd) && !/(dawn|morning)/.test(cmd)) return 'dusk';
@@ -60,31 +76,43 @@ function timeTarget(cmd: string): TimeTarget {
   return 'dawn';
 }
 
-/** Parse "formation 2x2 / line / loose". Returns null for bare "formation" (help). */
+/**
+ * Parse "formation 2x2 / line / loose". Returns 'help' for a bare "formation"
+ * with no shape. The shape word is looked for anywhere in the order, so
+ * "form up in a single file line" works as well as "formation 1x4".
+ */
 export function parseFormation(cmd: string): { rows: number; cols: number } | 'help' | null {
-  const formationMatch = cmd.match(/\bformation\s+(?:as\s+|into\s+)?([a-z0-9x]+)\b/i);
-  if (!formationMatch && !/\b(formation|form up|reform|shape)\b/i.test(cmd)) return null;
-  const want = (formationMatch ? formationMatch[1] : '').toLowerCase();
-  if (/^(block|square|2x2|2 x 2)$/.test(want)) return { rows: 2, cols: 2 };
-  if (/^(line|column|single|file|single-file|1x4|1 x 4|4x1|4 x 1)$/.test(want)) return { rows: 4, cols: 1 };
-  if (/^(loose|wide|spread)$/.test(want)) return { rows: 2, cols: 3 };
-  const m = want.match(/^(\d+)\s*x\s*(\d+)$/);
-  if (m) {
+  if (!/\b(formations?|form up|reform|shape)\b/i.test(cmd)) return null;
+  // Asking about formations rather than ordering one.
+  if (/\b(options?|list|choices|help|which|what|show)\b/i.test(cmd)) return 'help';
+  const grid = cmd.match(/\b(\d+)\s*x\s*(\d+)\b/i);
+  if (grid) {
     return {
-      cols: Math.max(1, Math.min(4, parseInt(m[1], 10))),
-      rows: Math.max(1, Math.min(4, parseInt(m[2], 10))),
+      cols: Math.max(1, Math.min(4, parseInt(grid[1], 10))),
+      rows: Math.max(1, Math.min(4, parseInt(grid[2], 10))),
     };
   }
-  if (!formationMatch) return 'help';
-  // "formation <unrecognised word>" falls back to the default block.
-  return { rows: 2, cols: 2 };
+  if (/\b(line|column|single|file|single-file)\b/i.test(cmd)) return { rows: 4, cols: 1 };
+  if (/\b(loose|wide|spread)\b/i.test(cmd)) return { rows: 2, cols: 3 };
+  if (/\b(block|square)\b/i.test(cmd)) return { rows: 2, cols: 2 };
+  // "formation <unrecognised word>" still means a formation change; bare
+  // "formation" is a request for the list of shapes.
+  return /\bformation\s+(?:as\s+|into\s+|a\s+|the\s+)?[a-z0-9]/i.test(cmd) ? { rows: 2, cols: 2 } : 'help';
 }
 
+/**
+ * Split "put the chain mail on the monk" into the gear and who wears it.
+ * Returns an empty item when there is no equip wording at all, so callers can
+ * fall back to the general span rules.
+ */
 function equipSlots(cmd: string): { item: string; member?: string } {
-  const whoMatch = cmd.match(/(?:equip|wield|don|wear|put on)\s+([a-z0-9'\- ]+?)\s+on\s+([a-z ]+)$/);
-  const item = (whoMatch ? whoMatch[1] : cmd.replace(/.*?(?:equip|wield|don|wear|put on)\s*/, ''))
-    .replace(/^(the|a|an)\s+/, '').trim();
-  return whoMatch ? { item, member: whoMatch[2].trim() } : { item };
+  const EQUIP_VERB = /(?:equip|wield|don|wear|put on|strap on|buckle on|kit out with|put|get|give|hand)\s+/;
+  const onWho = cmd.match(/^(.*?)\s+on\s+([a-z][a-z' -]*)$/);
+  const base = onWho ? onWho[1] : cmd;
+  const member = onWho ? onWho[2].replace(/^(the|a|an)\s+/, '').trim() : undefined;
+  const m = base.match(new RegExp(EQUIP_VERB.source + '(.+)$'));
+  const item = m ? strip(m[1]) : '';
+  return member ? { item, member } : { item };
 }
 
 function renameMember(text: string): { oldName: string; newName: string } {
@@ -182,8 +210,14 @@ export function parseDMCommandRegex(rawText: string, ctx: DMContext): DMCommand 
   if (/\b(pause|hold)\b/.test(cmd)) return { intent: 'pause' };
   if (/\b(resume|unpause|carry on|as you were)\b/.test(cmd)) return { intent: 'resume' };
 
+  // Checked before "save" so that "wipe the save" wipes rather than saves.
+  // "abandon" only wipes when it clearly means the run — "abandon the delve"
+  // is an order to climb out, not to erase the party.
+  if (/\b(new game|new run|wipe|erase|fresh start|start over|restart)\b/.test(cmd)
+    || /\babandon\b(?!\s+(?:the\s+|this\s+)?(?:delve|dungeon|crypt|ruins?|camp|quest|job|contract|fight|battle))/.test(cmd)) {
+    return { intent: 'new_game' };
+  }
   if (/\b(save|saved|quick ?save|checkpoint)\b/.test(cmd)) return { intent: 'save', slot: saveSlot(cmd) };
-  if (/\b(new game|new run|abandon|wipe|erase|fresh start|start over|restart)\b/.test(cmd)) return { intent: 'new_game' };
 
   if (/\b(rename party|party name|name party|name the party|rename the party)\b/.test(cmd)) {
     const nameArg = text.replace(/.*?(?:rename party|party name|name party|name the party|rename the party)\s*/i, '').trim();
@@ -192,6 +226,9 @@ export function parseDMCommandRegex(rawText: string, ctx: DMContext): DMCommand 
   if (/\b(rename character|rename)\b/.test(cmd) && /\b(to|as)\b/.test(cmd)) {
     return { intent: 'rename_member', ...renameMember(text) };
   }
+
+  // Trap-search phrases are specific; check them before "look" can claim "look for traps".
+  if (/\b(search for traps|look for traps|find traps|scan for traps|check for traps)\b/.test(cmd)) return { intent: 'search_traps' };
 
   if (/\b(look|look around|examine|survey|inspect|describe the room|describe room)\b/.test(cmd)) return { intent: 'look' };
 
@@ -213,8 +250,14 @@ export function parseDMCommandRegex(rawText: string, ctx: DMContext): DMCommand 
   // Bandit-camp phrases are checked here, ahead of "camp" (long rest) and
   // "report" (status), which otherwise swallow them. They are specific enough
   // that nothing else can want them.
-  if (/\b(raid camp|assault camp|attack camp|hit the camp|storm the camp)\b/.test(cmd)) return { intent: 'raid_camp' };
-  if (/\b(report camp|report hideout|report bandits|report to constable)\b/.test(cmd)) return { intent: 'report_camp' };
+  const CAMP = /(?:the\s+|their\s+|that\s+)?(?:bandit\s+)?(?:camp|hideout)/;
+  if (new RegExp(`\\b(?:raid|assault|attack|hit|storm|sack)\\s+${CAMP.source}\\b`).test(cmd)) return { intent: 'raid_camp' };
+  if (new RegExp(`\\breport\\s+${CAMP.source}\\b`).test(cmd)
+    || /\breport\s+(?:the\s+)?bandits\b|\breport to (?:the )?constable\b/.test(cmd)) {
+    return { intent: 'report_camp' };
+  }
+  // Camp-clue listings, before "camp" can be read as an order to make camp.
+  if (/\b(camp clues|bandit maps|list clues)\b/.test(cmd)) return { intent: 'list_clues' };
 
   if (/\b(wait|hold up|pass the time|bide|wait out|sit tight)\b/.test(cmd)
     && /(dawn|daylight|morning|day|dusk|evening|night|midnight|dark)/.test(cmd)) {
@@ -236,7 +279,8 @@ export function parseDMCommandRegex(rawText: string, ctx: DMContext): DMCommand 
   const useMatch = cmd.match(/^(?:use|drink|quaff|read|cast)\s+(.+)/i);
   if (useMatch) return { intent: 'use_item', arg: useMatch[1] };
 
-  if (/\b(loot|treasure|inventory|pack|gear|what do we carry|what are we carrying)\b/.test(cmd)) return { intent: 'inventory' };
+  // "gear" belongs to the equipment listing below (the help text promises it).
+  if (/\b(loot|treasure|inventory|pack|what do we carry|what are we carrying)\b/.test(cmd)) return { intent: 'inventory' };
 
   const summonMatch = cmd.match(/\b(conjure|summon|spawn)\s+(.+)/);
   if (summonMatch) return { intent: 'summon', monster: summonMatch[2].replace(/[!.]/g, '').trim() };
@@ -288,12 +332,89 @@ export function parseDMCommandRegex(rawText: string, ctx: DMContext): DMCommand 
 
 // ── Slot filling for a model-predicted intent ────────────────────────────────
 
-const ARTICLE = /^(?:the|a|an|some|my|our)\s+/;
-const strip = (s: string) => s.replace(ARTICLE, '').replace(/[!.?]+$/, '').trim();
+const ARTICLE = /^(?:the|a|an|some|my|our|that|this|those|these)\s+/;
+
+/**
+ * Trailing clauses that describe what to do with a thing rather than naming it:
+ * "an owlbear **on them**", "the constable **a visit**". Cutting them keeps the
+ * span close to the actual name so lookups match.
+ */
+const TRAILING_CLAUSE = /\s+(?:on|at|after|into|onto|towards?|against|in|before|so|and|then|when|while|because|a visit|right now|now|please)\b.*$/;
+
+const strip = (s: string) =>
+  s.replace(ARTICLE, '').replace(/[!.?]+$/, '').replace(TRAILING_CLAUSE, '').replace(ARTICLE, '').trim() || s.replace(ARTICLE, '').replace(/[!.?]+$/, '').trim();
+
+/** Conversational framing wrapped around an order: "i want you to …", "could you …". */
+const SUBJECT_FRAME = /^(?:i(?:'d| would)?\s+(?:want|like|need)(?:\s+(?:you|them|the party|everyone))?\s+to|i\s+want|i'?d\s+like|i\s+need|could\s+you(?:\s+all)?|can\s+you|can\s+someone|would\s+you|someone|somebody|please|just|let'?s|we\s+should|you\s+should|they\s+should|we\s+need\s+to|i\s+think\s+you\s+should|i\s+reckon\s+you\s+should|how\s+about\s+you|why\s+don'?t\s+you|make\s+sure\s+you|see\s+that\s+you|be\s+sure\s+to|the\s+party\s+(?:will|should)|they\s+need\s+to|time\s+to|it'?s\s+time\s+to|tell\s+them\s+to|have\s+them|have\s+the\s+party|get\s+them\s+to|get\s+everyone\s+to|everyone|everybody|party|all\s+of\s+you)\b[,\s]+/i;
+
+/** Discourse openers: "ok", "right,", "now", "alright then". */
+const OPENER = /^(?:ok(?:ay)?|alright|right|now|so|well|hey|listen|first|next|then|and|but)\b[,\s]+/i;
+
+/**
+ * Generic verbs of command. Peeling them off leaves the thing being acted on,
+ * which is what the dispatcher looks up: "drop an owlbear" -> "owlbear".
+ */
+const LEAD_VERB = /^(?:go|get|take|give|put|drop|send|throw|toss|grab|pick\s+up|pick|crack\s+open|crack|break\s+out|break|use|have|let|make|bring|fetch|pay|set|point|aim|head|move|push|hand|pass|order|want|need|start|keep|try)\b\s+/i;
+
+/**
+ * The name inside an order. Uses the trigger phrase when one is present, and
+ * otherwise peels conversational framing and leading verbs until what remains
+ * is the thing itself. Returns null when nothing usable is left.
+ */
+/**
+ * Words that are only ever the verb of an order. A span made of nothing but
+ * these names no thing at all, so "conjure" on its own yields no monster.
+ */
+const VERB_ONLY = new Set([
+  'go', 'get', 'take', 'give', 'put', 'drop', 'send', 'throw', 'toss', 'grab', 'pick', 'crack', 'break',
+  'use', 'have', 'let', 'make', 'bring', 'fetch', 'pay', 'set', 'point', 'aim', 'head', 'move', 'push',
+  'hand', 'pass', 'order', 'want', 'need', 'start', 'keep', 'try', 'up', 'off', 'on', 'out', 'in', 'to',
+  'conjure', 'summon', 'spawn', 'manifest', 'unleash', 'drink', 'quaff', 'read', 'cast', 'apply', 'sip',
+  'swig', 'pop', 'down', 'equip', 'wield', 'don', 'wear', 'unequip', 'remove', 'doff', 'stow', 'shed',
+  'lose', 'buy', 'purchase', 'acquire', 'secure', 'sell', 'offload', 'hawk', 'pawn', 'flog', 'shift',
+  'unload', 'travel', 'journey', 'march', 'trek', 'cross', 'talk', 'speak', 'chat', 'visit', 'greet',
+  'meet', 'see', 'find', 'ask', 'call', 'seek', 'look', 'them', 'him', 'her', 'it', 'us', 'someone',
+]);
+
+function openSpan(cmd: string, trigger: RegExp): string | null {
+  const direct = cmd.match(trigger);
+  if (direct && direct[1] && strip(direct[1])) {
+    const s = strip(direct[1]);
+    if (!s.split(/\s+/).every(w => VERB_ONLY.has(w))) return s;
+  }
+
+  let rest = cmd.replace(OPENER, '').replace(SUBJECT_FRAME, '').replace(OPENER, '');
+  for (let i = 0; i < 3; i++) {
+    const peeled = rest.replace(LEAD_VERB, '');
+    if (peeled === rest) break;
+    rest = peeled;
+  }
+  const s = strip(rest);
+  if (!s || !/[a-z]/i.test(s) || s.split(/\s+/).length > 6) return null;
+  // Nothing but command verbs left means the order named no thing.
+  if (s.split(/\s+/).every(w => VERB_ONLY.has(w))) return null;
+  return s;
+}
+
 const after = (cmd: string, re: RegExp): string | null => {
   const m = cmd.match(re);
   return m ? strip(m[1]) : null;
 };
+
+/** The shape alone, for when the model already knows a formation was ordered. */
+function formationShape(cmd: string): { rows: number; cols: number } | null {
+  const grid = cmd.match(/\b(\d+)\s*x\s*(\d+)\b/i);
+  if (grid) {
+    return {
+      cols: Math.max(1, Math.min(4, parseInt(grid[1], 10))),
+      rows: Math.max(1, Math.min(4, parseInt(grid[2], 10))),
+    };
+  }
+  if (/\b(line|column|single|file|single-file)\b/i.test(cmd)) return { rows: 4, cols: 1 };
+  if (/\b(loose|wide|spread)\b/i.test(cmd)) return { rows: 2, cols: 3 };
+  if (/\b(block|square|box)\b/i.test(cmd)) return { rows: 2, cols: 2 };
+  return null;
+}
 
 /**
  * Build the full command for an intent the model chose, pulling slots out of
@@ -324,48 +445,54 @@ export function extractSlots(intent: DMIntent, rawText: string, ctx: DMContext):
     }
     case 'upcast': return { intent, policy: upcastPolicy(cmd) };
     case 'stance': {
-      if (/\b(flee|retreat|avoid|careful|cautious|caution|sneak|evade|withdraw|stealth|quiet|hide|stay safe|no fighting|don'?t fight)\b/.test(cmd)) return { intent, stance: 'cautious' };
-      return { intent, stance: 'aggressive' };
+      // "no more hiding" and "stop sneaking" are orders to fight, so drop the
+      // negated phrase before looking for caution.
+      const positive = cmd.replace(/\bno more \w+/g, ' ').replace(/\bstop \w+/g, ' ').replace(/\benough \w+/g, ' ');
+      return { intent, stance: CAUTIOUS.test(positive) ? 'cautious' : 'aggressive' };
     }
     case 'formation': {
-      const f = parseFormation(cmd);
-      return f && f !== 'help' ? { intent, ...f } : null;
+      const f = formationShape(cmd);
+      return f ? { intent, ...f } : null;
     }
     case 'summon': {
-      const monster = after(cmd, /\b(?:conjure|summon|spawn|call forth|call up|manifest)\s+(.+)/);
+      const monster = openSpan(cmd, /\b(?:conjure|summon|spawn|call forth|call up|manifest|unleash)\s+(.+)/);
       return monster ? { intent, monster } : null;
     }
     case 'use_item': {
-      const arg = after(cmd, /\b(?:use|drink|quaff|read|cast|apply|sip|swig)\s+(.+)/);
+      const arg = openSpan(cmd, /\b(?:use|drink|quaff|read|cast|apply|sip|swig|crack open|break out|pop|down)\s+(.+)/);
       return arg ? { intent, arg } : null;
     }
     case 'equip': {
       const s = equipSlots(cmd);
-      return s.item ? { intent, ...s } : null;
+      if (s.item) return { intent, ...s };
+      const item = openSpan(cmd, /\b(?:equip|wield|don|wear|put on|strap on|buckle on|kit out with)\s+(.+)/);
+      return item ? { intent, item } : null;
     }
     case 'unequip': {
-      const arg = after(cmd, /\b(?:unequip|remove|doff|stow|take off)\s+(.+)/);
+      const arg = openSpan(cmd, /\b(?:unequip|remove|doff|stow|take off|shed|pack away|put away|lose)\s+(.+)/);
       return arg ? { intent, arg } : null;
     }
     case 'journal': return { intent, raw: cmd };
     case 'accept_quest': {
       const idx = cmd.match(/(?:quest|job|posting|contract|task|number|#)\s*(\d)\b/) ?? cmd.match(/\b(\d)\b/);
-      return idx ? { intent, index: parseInt(idx[1], 10) } : { intent };
+      if (idx) return { intent, index: parseInt(idx[1], 10) };
+      const word = cmd.match(new RegExp(`\\b(${NUMBER_WORDS})\\b`));
+      return word ? { intent, index: NUMBER_WORD[word[1]] } : { intent };
     }
     case 'buy': {
-      const item = after(cmd, /\b(?:buy|purchase|get|acquire)\s+(.+)/);
+      const item = openSpan(cmd, /\b(?:buy|purchase|acquire|pick up|stock up on|invest in|secure)\s+(.+)/);
       return item ? { intent, item } : null;
     }
     case 'sell': {
-      const item = after(cmd, /\b(?:sell|offload|hawk|pawn)\s+(.+)/);
+      const item = openSpan(cmd, /\b(?:sell on|sell|offload|hawk|pawn|flog|shift|unload|trade in|cash in|get rid of|part with)\s+(.+)/);
       return item ? { intent, item } : null;
     }
     case 'travel_to': {
-      const destination = after(cmd, /\b(?:travel to|head to|make for|bound for|trek to|go to|walk to|journey to|march to|set out for|set course for|toward|towards)\s+(.+)/);
+      const destination = openSpan(cmd, /\b(?:travel to|head to|head for|make for|make your way to|bound for|trek to|go to|walk to|journey to|march to|set out for|set (?:a )?course for|strike out for|take the road to|push on to|carry on to|cross to|point them at|aim for|over to|off to|round to|across to|towards|toward|to)\s+(.+)/);
       return destination ? { intent, destination } : null;
     }
     case 'talk_to': {
-      const npc = after(cmd, /\b(?:talk to|talk with|speak to|speak with|visit|greet|meet|meet with|chat with|see|find|ask)\s+(.+)/);
+      const npc = openSpan(cmd, /\b(?:talk to|talk with|speak to|speak with|a word with|word with|chat to|chat with|catch up with|check in with|call on|look up|seek out|visit|greet|meet with|meet|see|find|ask)\s+(.+)/);
       return npc ? { intent, npc } : null;
     }
     default:
@@ -406,8 +533,12 @@ export function understand(rawText: string, ctx: DMContext, model: IntentPredict
   if (STRUCTURED_INTENTS.has(regex.intent)) return fromRegex;
 
   const p = model.predict(rawText, ctx);
+  // `feature_inspect` only narrates a feature; it must never displace a regex
+  // match that actually does something with it.
+  const weakerThanRegex = p.intent === 'feature_inspect' && regex.intent !== 'unknown';
   if (
     p.intent !== 'unknown'
+    && !weakerThanRegex
     && p.prob >= model.threshold
     && p.margin >= MODEL_MIN_MARGIN
     && intentAllowed(p.intent, ctx)

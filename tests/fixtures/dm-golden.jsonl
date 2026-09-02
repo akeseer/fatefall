@@ -1,0 +1,157 @@
+{"text":"could everyone please push northward","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"up"}}
+{"text":"i want the whole party moving south now","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"down"}}
+{"text":"take them east, and keep your eyes open","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"right"}}
+{"text":"lets try the western passage","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"left"}}
+{"text":"follow that corridor north","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"up"}}
+{"text":"strike out southward across the fields","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"move","slots":{"direction":"down"}}
+{"text":"nudge them a bit further east","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"right"}}
+{"text":"onwards to the west","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"move","slots":{"direction":"left"}}
+{"text":"i want blood - go looking for a fight","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"aggressive"}}
+{"text":"no more hiding, take the fight to them","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"aggressive"}}
+{"text":"be bold from here on","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"aggressive"}}
+{"text":"keep your heads down and dont start anything","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"cautious"}}
+{"text":"i would rather you slipped past whatever is down there","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"cautious"}}
+{"text":"no unnecessary risks please","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"cautious"}}
+{"text":"stay quiet, avoid every fight you can","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"stance","slots":{"stance":"cautious"}}
+{"text":"bed down for the night right where you are","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"long_rest"}
+{"text":"pitch the tents, we go on in the morning","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"long_rest"}
+{"text":"take a breather and see to the wounded","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"catch your breath for a minute","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"short_rest"}
+{"text":"sit here quietly until the sun comes up","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"wait_until","slots":{"time":"dawn"}}
+{"text":"hold where you are till it gets dark","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"wait_until","slots":{"time":"night"}}
+{"text":"wait out the afternoon until evening falls","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"wait_until","slots":{"time":"dusk"}}
+{"text":"find a way down to the next level","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"i want you further underground","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"take the party one floor lower","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"descend"}
+{"text":"thats enough, get everyone back to the surface","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"call off the delve and climb out","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"leave_dungeon"}
+{"text":"alright, go inside","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"enter_dungeon"}
+{"text":"time to head into the ruins","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"enter_dungeon"}
+{"text":"tell me what this place looks like","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"give me a description of where they are standing","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"look"}
+{"text":"whats the country around them like","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"look"}
+{"text":"how banged up is everybody","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"give me the rundown on the party","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"is anyone about to drop","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"report"}
+{"text":"remind me what the moon is doing tonight","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"calendar"}
+{"text":"what is todays date again","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"calendar"}
+{"text":"read me back what weve done so far","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"i want to see the chronicle","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"journal"}
+{"text":"what are they lugging around","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"show me everything in the packs","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"how much coin have we got","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"inventory"}
+{"text":"who is wearing what right now","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"gear"}
+{"text":"run me through everyones weapons and armour","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"gear"}
+{"text":"roll 2d6 plus three","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"roll","slots":{"expr":"2d6 plus three"}}
+{"text":"i want the casters burning their biggest slots","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"upcast","slots":{"policy":"always"}}
+{"text":"tell the casters to stop wasting high slots","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"upcast","slots":{"policy":"never"}}
+{"text":"drop an owlbear on them","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon","slots":{"monster":"owlbear"}}
+{"text":"send a pack of wolves after the party","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon","slots":{"monster":"pack of wolves"}}
+{"text":"i want a goblin ambush right now","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon","slots":{"monster":"goblin ambush"}}
+{"text":"let a troll come lumbering out","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"summon","slots":{"monster":"troll come lumbering out"}}
+{"text":"have the rogue sweep the floor ahead","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"i want this hallway checked for tripwires","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"is anything rigged around here","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_traps"}
+{"text":"get that thing defused before someone loses a leg","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"have the rogue deal with the mechanism","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"disarm_trap"}
+{"text":"someone crack open a healing potion","ctx":{"featureKind":null,"inCombat":true,"mode":"dungeon"},"intent":"use_item","slots":{"arg":"healing potion"}}
+{"text":"read the fireball scroll at them","ctx":{"featureKind":null,"inCombat":true,"mode":"dungeon"},"intent":"use_item","slots":{"arg":"fireball scroll"}}
+{"text":"have the cleric drink the antidote","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"use_item","slots":{"arg":"antidote"}}
+{"text":"get that longsword into someones hand","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"equip","slots":{"item":"longsword"}}
+{"text":"put the chain mail on the monk","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"equip","slots":{"item":"chain mail","member":"monk"}}
+{"text":"take the shield off","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"unequip","slots":{"arg":"shield off"}}
+{"text":"whats posted on the board today","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"quests"}
+{"text":"see if theres any work going","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"quests"}
+{"text":"sign us up for the second one","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest","slots":{"index":2}}
+{"text":"well take that job","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_quest"}
+{"text":"go collect what were owed","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"time to cash in the contract","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"turn_in_quest"}
+{"text":"lets see what the stalls have","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"take a wander round the market","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"shop"}
+{"text":"grab a couple of healing potions","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"buy","slots":{"item":"couple of healing potions"}}
+{"text":"we should pick up some rope","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"buy","slots":{"item":"rope"}}
+{"text":"offload that spare armour","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"sell","slots":{"item":"spare armour"}}
+{"text":"flog the gems at the market","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"sell","slots":{"item":"gems"}}
+{"text":"go have a word with the blacksmith","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to","slots":{"npc":"blacksmith"}}
+{"text":"i want them to chat to Brenna","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to","slots":{"npc":"brenna"}}
+{"text":"pay the constable a visit","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to","slots":{"npc":"constable"}}
+{"text":"who is knocking about this town","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"give me the names of the locals","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
+{"text":"right, everybody out of town","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"weve dawdled long enough, get on the road","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"depart_town"}
+{"text":"take them back to civilisation","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"i want them safe behind town walls","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"go_to_town"}
+{"text":"set a course for Emberwatch","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to","slots":{"destination":"emberwatch"}}
+{"text":"get them over to Duskhollow","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to","slots":{"destination":"duskhollow"}}
+{"text":"point them at the Sunken Crypts","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"travel_to","slots":{"destination":"sunken crypts"}}
+{"text":"hit that bandit camp hard","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"i want the hideout stormed","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"raid_camp"}
+{"text":"hand the camp map over to the constable","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"report_camp"}
+{"text":"tell the guard where the bandits are holed up","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"report_camp"}
+{"text":"what leads do we have on the bandits","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_clues"}
+{"text":"show me the camp clues we picked up","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"list_clues"}
+{"text":"freeze everything for a second","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"pause"}
+{"text":"stop the clock, i need to think","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"pause"}
+{"text":"never mind my orders, use your own heads","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"off you go then, back to normal","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"forget what i said and carry on","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"resume"}
+{"text":"write this down before something goes wrong","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save"}
+{"text":"stick a checkpoint in slot two","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"save","slots":{"slot":2}}
+{"text":"scrap this lot and roll a fresh party","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"wipe it, im starting again","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"new_game"}
+{"text":"what can i actually tell them to do","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"help"}
+{"text":"rename party The Grey Lanterns","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_party","slots":{"name":"The Grey Lanterns"}}
+{"text":"rename Kael to Ser Kaelan","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"rename_member","slots":{"oldName":"Kael","newName":"Ser Kaelan"}}
+{"text":"get them into a 2x2 block","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation","slots":{"rows":2,"cols":2}}
+{"text":"single file through here","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation","slots":{"rows":4,"cols":1}}
+{"text":"spread out into a loose formation","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation","slots":{"rows":2,"cols":3}}
+{"text":"what formations can they hold","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"formation_help"}
+{"text":"have the cleric say a few words at the altar","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"everyone kneel and pray","ctx":{"featureKind":"altar","inCombat":false,"mode":"dungeon"},"intent":"feature_altar"}
+{"text":"get that vault open and empty it","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"crack the strongbox","ctx":{"featureKind":"vault","inCombat":false,"mode":"dungeon"},"intent":"feature_vault"}
+{"text":"let those poor souls out of the cages","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"get the prisoners free","ctx":{"featureKind":"prison","inCombat":false,"mode":"dungeon"},"intent":"feature_prison"}
+{"text":"block that passage up before they come through","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"feature_chokepoint"}
+{"text":"throw up a barricade here","ctx":{"featureKind":"chokepoint","inCombat":false,"mode":"dungeon"},"intent":"feature_chokepoint"}
+{"text":"put a proper edge on every blade","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"fire the forge up and sharpen everything","ctx":{"featureKind":"forge","inCombat":false,"mode":"dungeon"},"intent":"feature_forge"}
+{"text":"let the wizard bury himself in those books","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"go through the tomes on the shelves","ctx":{"featureKind":"library","inCombat":false,"mode":"dungeon"},"intent":"feature_library"}
+{"text":"everyone take a drink from that fountain","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"have a sip of the water","ctx":{"featureKind":"fountain","inCombat":false,"mode":"dungeon"},"intent":"feature_fountain"}
+{"text":"get that coffin lid off","ctx":{"featureKind":"sarcophagus","inCombat":false,"mode":"dungeon"},"intent":"feature_sarcophagus"}
+{"text":"prise the stone tomb open","ctx":{"featureKind":"sarcophagus","inCombat":false,"mode":"dungeon"},"intent":"feature_sarcophagus"}
+{"text":"someone plant themselves on that throne","ctx":{"featureKind":"throne","inCombat":false,"mode":"dungeon"},"intent":"feature_throne"}
+{"text":"go and sit in the big chair","ctx":{"featureKind":"throne","inCombat":false,"mode":"dungeon"},"intent":"feature_throne"}
+{"text":"scan this passage properly","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_search"}
+{"text":"disable whatever is rigged here","ctx":{"featureKind":"trapped_corridor","inCombat":false,"mode":"dungeon"},"intent":"feature_trapped_disarm"}
+{"text":"clean the place out, take every coin","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"grab all that treasure","ctx":{"featureKind":"treasure_room","inCombat":false,"mode":"dungeon"},"intent":"feature_treasure"}
+{"text":"see what the trader is selling","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_talk"}
+{"text":"take his goods by force","ctx":{"featureKind":"merchant_camp","inCombat":false,"mode":"dungeon"},"intent":"feature_merchant_rob"}
+{"text":"let the wizard have a crack at that mechanism","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"line the symbols up properly","ctx":{"featureKind":"puzzle_room","inCombat":false,"mode":"dungeon"},"intent":"feature_puzzle"}
+{"text":"channel something through that circle","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
+{"text":"pore over those battle maps","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
+{"text":"turn this room over and see what turns up","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_room"}
+{"text":"god this dungeon is creepy","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"i reckon that dragon was tougher than the last one","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"that innkeeper seemed shifty to me","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"unknown"}
+{"text":"how does armour class actually work","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"whats a beholder anyway","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"this is going really well so far","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"poor Kael has had a rough day","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"lovely weather for it","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"unknown"}
+{"text":"asdkfj alskdjf","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"qwerty uiop","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"hmmmm","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"nice one","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"i have no idea what to do next","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"remind me why we came here again","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"unknown"}
+{"text":"tell me a joke","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"the north wind is bitter tonight","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"a camp would be nice about now","ctx":{"featureKind":null,"inCombat":false,"mode":"overworld"},"intent":"unknown"}
+{"text":"do you think the wizard likes her staff","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"that was a close one","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
+{"text":"good luck everyone","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}

@@ -4,7 +4,7 @@ import { SPELLS } from '../data/gameData';
 import { SUBCLASSES, DEITIES, BACKGROUNDS, ALIGNMENTS } from '../ai/DnDGrimoire';
 
 /** Class-appropriate starting gear, equipped on creation. */
-const STARTER_GEAR: Record<string, Omit<InventoryItem, 'id'>[]> = {
+export const STARTER_GEAR: Record<string, Omit<InventoryItem, 'id'>[]> = {
   fighter: [
     { name: 'Longsword', type: 'weapon', description: 'A sturdy blade. 1d8 slashing.', value: 15, power: 8, identified: true },
     { name: 'Chain Mail', type: 'armor', description: 'Heavy armor. AC 16.', value: 75, power: 16, identified: true },
@@ -58,13 +58,13 @@ const STARTER_GEAR: Record<string, Omit<InventoryItem, 'id'>[]> = {
   ],
 };
 
-const FIRST_NAMES = [
+export const FIRST_NAMES = [
   'Thorn', 'Luna', 'Grom', 'Sera', 'Kael', 'Mira', 'Draven', 'Nyx',
   'Aldric', 'Vex', 'Fenris', 'Lyra', 'Orin', 'Thea', 'Zephyr', 'Kira',
   'Borin', 'Cora', 'Eldrin', 'Shade'
 ];
 
-const LAST_NAMES = [
+export const LAST_NAMES = [
   'Ironfoot', 'Shadowmere', 'Stormborn', 'Dragonbane', 'Silverhand',
   'Blackwood', 'Frosthelm', 'Thunderstrike', 'Ashwalker', 'Darkblade',
   'Starweaver', 'Moonshadow', 'Stonefist', 'Hawkwind', 'Brightshield'
@@ -121,7 +121,7 @@ function assignSpells(classId: string): string[] {
   switch (classId) {
     case 'wizard':
       // Arcane casters get damage and utility
-      result.push('fire_bolt', 'magic_missile', 'shield', 'burning_hands', 'misty_step', 'fireball');
+      result.push('fire_bolt', 'magic_missile', 'shield', 'burning_hands', 'misty_step', 'fireball', 'remove_curse');
       break;
     case 'sorcerer':
       result.push('fire_bolt', 'chill_touch', 'magic_missile', 'chromatic_orb', 'scorching_ray', 'fireball');
@@ -133,7 +133,7 @@ function assignSpells(classId: string): string[] {
       result.push('vicious_mockery', 'healing_word', 'thunderwave', 'shatter', 'hold_person');
       break;
     case 'cleric':
-      result.push('sacred_flame', 'cure_wounds', 'bless', 'healing_word', 'spiritual_weapon', 'inflict_wounds');
+      result.push('sacred_flame', 'cure_wounds', 'bless', 'healing_word', 'spiritual_weapon', 'inflict_wounds', 'remove_curse');
       break;
     case 'druid':
       result.push('guidance', 'cure_wounds', 'healing_word', 'thunderwave', 'call_lightning');
