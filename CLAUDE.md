@@ -15,6 +15,11 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
 
 ## Architecture map
 
+- **`src/game/*Controller.ts`** — slices carved out of `Game`. Each takes a
+  small host interface (`RoomFeatureHost`, `BulletinHost`, `MarketHost`) naming
+  exactly what it may touch, and `Game` passes itself and keeps thin
+  pass-throughs. Add to these rather than back to `main.ts`, and prefer asking
+  the host a question (`inTown`) over reading `GameMode` from a controller.
 - **`src/main.ts` — `Game`**. Owns all state. One class, one `requestAnimationFrame`
   loop with a fixed 33 ms simulation step (`gameStep`) and a visible-only watchdog
   timer. `update(dt)` branches on `GameMode` (Overworld / Town / Dungeon) and
