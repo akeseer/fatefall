@@ -23,9 +23,10 @@ import {
   savingThrow,
   tickConditions,
 } from '../rules/Rules';
+import { manhattan } from '../engine/types';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
-import { chooseMonsterTarget, choosePartyFocus } from './TargetAI';
+import { chooseMonsterTarget, choosePartyFocus, shouldMonsterFlee, chooseHealTarget } from './TargetAI';
 
 export interface CombatLog {
   round: number;
@@ -128,6 +129,9 @@ export class CombatEngine {
     this.rollInitiative();
     this.checkFrightfulPresence();
     this.setupBosses();
+    this.reinforcedThisFight = false;
+    this.interceptionUsedThisRound = false;
+    this.vendettaNarrationUsed.clear();
     // The full moon wakes the lycanthrope in every were-beast present.
     if (this.fullMoonLycanthropeBonus > 0) {
       for (const m of this.monsters) {
@@ -240,8 +244,8 @@ export class CombatEngine {
   step(): CombatLog {
     if (!this.isActive) return this.log;
 
-    // Check if combat is over
-    if (this.monsters.every(m => !m.isAlive)) {
+    // Check if combat is over — foes slain OR broken and fled.
+    if (this.monsters.every(m => !m.isAlive || m.fled)) {
       this.endCombat('party');
       return this.log;
     }
@@ -252,10 +256,10 @@ export class CombatEngine {
       return this.log;
     }
 
-    // Remove dead entities from initiative order
+    // Remove dead or fled entities from initiative order
     this.initiativeOrder = this.initiativeOrder.filter(e => {
       if (e instanceof GameCharacter) return e.isAlive;
-      return e.isAlive;
+      return e.isAlive && !e.fled;
     });
 
     if (this.initiativeOrder.length === 0) return this.log;
@@ -266,12 +270,14 @@ export class CombatEngine {
       this.log.round++;
       // The party re-reads the field at the top of each round and designates
       // a focus target so everyone gangs up on one foe instead of scattering.
-      const live = this.monsters.filter(m => m.isAlive);
+      const live = this.monsters.filter(m => m.isAlive && !m.fled);
       if (live.length > 0) {
-        this.roundFocusMonsterId = choosePartyFocus(this.party, this.monsters).target.id;
+        this.roundFocusMonsterId = choosePartyFocus(this.party, this.monsters.filter(m => m.isAlive && !m.fled)).target.id;
       } else {
         this.roundFocusMonsterId = null;
       }
+      // A new round renews the tanks' chance to shield their casters.
+      this.interceptionUsedThisRound = false;
       if (this.partyBlessRounds > 0) {
         this.partyBlessRounds--;
         if (this.partyBlessRounds === 0) {
@@ -363,6 +369,19 @@ export class CombatEngine {
         this.partyTurn(actor);
       }
     } else {
+      // A battered, alert monster cries out for its kin — once per fight.
+      const m = actor as Monster;
+      if (
+        !this.reinforcedThisFight &&
+        m.alertLevel >= 2 &&
+        m.isAlive && !m.fled &&
+        (m.hp / Math.max(1, m.maxHp) < 0.6 || this.log.round >= 3) &&
+        this.onReinforcementsRequested
+      ) {
+        this.reinforcedThisFight = true;
+        this.log.messages.push(`🗣️ ${m.template.name} calls for its kin!`);
+        this.onReinforcementsRequested();
+      }
       this.monsterTurn(actor);
     }
 
@@ -377,6 +396,20 @@ export class CombatEngine {
   /** The hero awaiting a command-menu decision (null when not paused). */
   get decisionActor(): GameCharacter | null {
     return this.pendingDecision;
+  }
+
+  /**
+   * Switch between waiting for the DM on every hero's turn and letting the AI
+   * resolve them. Turning the pause off releases whoever is currently held, so
+   * the fight resumes on the next tick — without this the game waits forever
+   * for a command the player has just stopped being asked for.
+   */
+  setDecisionPause(on: boolean): void {
+    this.decisionPause = on;
+    if (!on) {
+      this.pendingDecision = null;
+      this.queuedOrders.clear();
+    }
   }
 
   /**
@@ -398,6 +431,10 @@ export class CombatEngine {
   public queuedOrders: Map<string, PartyCommand> = new Map();
   /** The party's per-round focus target id so members gang up instead of scattering. */
   private roundFocusMonsterId: string | null = null;
+  /** Set once per round: a tank has thrown themselves in front of a blow. */
+  private interceptionUsedThisRound: boolean = false;
+  /** Vendetta one-liners fire once per hero-per-kind per fight. */
+  private vendettaNarrationUsed: Set<string> = new Set();
 
   submitCommand(cmd: PartyCommand): void {
     const hero = this.pendingDecision;
@@ -443,8 +480,42 @@ export class CombatEngine {
     this.tryLegendaryAction(hero);
   }
 
-  /** Game-side hook: executes an item use for the acting hero (potion/scroll). */
+  /**
+   * Game-side hook: the party heard a call for help. The engine only raises
+   * the alarm once per fight; the game decides whether backup actually
+   * arrives (spawn budget, theme rosters, fairness caps) and feeds it back
+   * through addReinforcements().
+   */
   public onItemCommand?: (itemId: string, holderId: string, actor: GameCharacter) => void;
+  /**
+   * Game-side hook: the party heard a call for help. The engine only raises
+   * the alarm once per fight; the game decides whether backup actually
+   * arrives (spawn budget, theme rosters, fairness caps) and feeds it back
+   * through addReinforcements().
+   */
+  public onReinforcementsRequested?: () => void;
+  /** Set once the alarm has sounded, so one shout can't spam the request. */
+  private reinforcedThisFight: boolean = false;
+
+  /**
+   * Backup arrives mid-fight: rolled into initiative at the back, narrated
+   * as part of the same battle.
+   */
+  addReinforcements(monsters: Monster[]): void {
+    if (!this.isActive || monsters.length === 0) return;
+    this.monsters.push(...monsters);
+    for (const m of monsters) {
+      this.initiativeOrder.push(m);
+      m.alertLevel = 2;
+    }
+    const names = [...new Set(monsters.map(m => m.template.name))].join(', ');
+    this.log.messages.push(`🚨 Reinforcements pour in: ${names} answers the call!`);
+  }
+
+  /** Whether the alarm has already sounded this fight. */
+  get reinforcementsRequested(): boolean {
+    return this.reinforcedThisFight;
+  }
   /** Game-side hook: the party attempts to flee the fight. */
   public onFleeCommand?: (caller: GameCharacter) => void;
 
@@ -624,14 +695,56 @@ export class CombatEngine {
       }
       // 'item' commands were executed game-side before the turn; fall through
       // to a weapon attack so the action isn't wasted.
-    } else if (affordableSpells.length > 0 && Math.random() < 0.4) {
+    } else if (affordableSpells.length > 0) {
       // A cursed ally jumps the queue: the trained hand lifts the binding.
       const allyCursed = this.party.members.some(m => m.isAlive && m.findCursedEquipped());
       const priority = allyCursed
         ? affordableSpells.find(s => s.id === 'remove_curse' && this.party.members.some(m => m.findCursedEquipped()))
         : undefined;
-      const spell = priority ?? affordableSpells[Math.floor(Math.random() * affordableSpells.length)];
-      if (this.castSpell(character, spell)) return;
+      if (priority) {
+        if (this.castSpell(character, priority)) return;
+      }
+
+      // Contextual spell choice instead of a 40% coin flip:
+      // 1. heal when the party needs it (triage),
+      // 2. buff early while everyone stands,
+      // 3. otherwise damage — AoE into clusters, big slots on big HP pools,
+      //    cantrips to conserve slots on near-dead focus targets.
+      const aliveMonsters = this.monsters.filter(m => m.isAlive && !m.fled);
+      const woundedAllies = this.party.alive.filter(m => m.hp < m.maxHp * 0.5).length;
+      const healSpells = affordableSpells.filter(s => s.healing);
+      const earlyRound = this.log.round <= 2;
+
+      if (woundedAllies > 0 && healSpells.length > 0 && (woundedAllies >= 2 || Math.random() < 0.6)) {
+        const heal = healSpells.sort((a, b) => a.level - b.level)[0];
+        if (this.castSpell(character, heal)) return;
+      }
+
+      const damageSpells = affordableSpells.filter(s => s.damage && s.level > 0);
+      const buffSpells = affordableSpells.filter(s => !s.damage && !s.healing && s.level > 0 && s.level <= 2);
+      if (buffSpells.length > 0 && earlyRound && woundedAllies === 0 && Math.random() < 0.5) {
+        const buff = buffSpells.sort((a, b) => a.level - b.level)[0];
+        if (this.castSpell(character, buff)) return;
+      }
+
+      if (damageSpells.length > 0) {
+        const avgHp = aliveMonsters.length > 0
+          ? aliveMonsters.reduce((s, m) => s + m.hp, 0) / aliveMonsters.length
+          : 0;
+        // A big spell against a nearly-dead focus target wastes slots; hold
+        // back and let the cantrip finish the job.
+        const focus = this.roundFocusMonsterId ? aliveMonsters.find(m => m.id === this.roundFocusMonsterId) : undefined;
+        const bigSpells = damageSpells.filter(s => s.level > 0 && (s.level > 1 || avgHp > 20));
+        const pool = focus && focus.hp <= 10 && bigSpells.length > 0 ? damageSpells.filter(s => s.level === 0) : damageSpells;
+        const spell = pool.length > 0 ? pool[0] : damageSpells[0];
+        if (spell && this.castSpell(character, spell)) return;
+      }
+
+      // Last resort: cantrips are free actions of war.
+      const cantrips = affordableSpells.filter(s => s.level === 0);
+      if (cantrips.length > 0 && Math.random() < 0.4) {
+        if (this.castSpell(character, cantrips[Math.floor(Math.random() * cantrips.length)])) return;
+      }
     }
 
     // Default: weapon attack with condition modifiers and bless bonus.
@@ -843,20 +956,46 @@ export class CombatEngine {
         this.log.messages.push(forcedAllyTarget.heal(healing));
         return true;
       }
-      const injured = this.party.alive
-        .filter(m => m.hp < m.maxHp)
-        .sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
-      if (injured.length === 0) return false;
-      const slotLevel = this.chooseSlotFor(caster, spell);
+      // Triage: the downed ally comes first (they're rolling death saves),
+      // then the ally closest to dropping. Upcast only as far as the
+      // emergency demands — a scrape gets a base-level slot.
+      const triage = chooseHealTarget(this.party);
+      if (!triage.target) return false;
+      const ally = triage.target;
+      let slotLevel = this.chooseSlotFor(caster, spell);
       if (slotLevel === null) return false;
-      const ally = injured[0];
+      // Right-size the slot: don't upcast past what the emergency needs.
+      const emergency = triage.urgency === 'dying';
+      if (emergency) {
+        // Dying ally: upcast if we can afford it — every die buys another
+        // chance to bring them above 0 HP.
+        const affordable: number[] = [];
+        for (let lvl = spell.level; lvl <= 9; lvl++) {
+          if ((caster.spellSlots[lvl] ?? 0) > 0) affordable.push(lvl);
+        }
+        if (affordable.length > 0) slotLevel = affordable[0];
+      } else if (triage.urgency === 'wounded' && slotLevel > spell.level) {
+        // Non-critical wounds get the base slot; save the big ones.
+        slotLevel = spell.level;
+        if ((caster.spellSlots[spell.level] ?? 0) <= 0) {
+          // Base slot spent — fall back to whatever chooseSlotFor gave us.
+          slotLevel = this.chooseSlotFor(caster, spell) ?? slotLevel;
+          if ((caster.spellSlots[spell.level] ?? 0) > 0) slotLevel = spell.level;
+        }
+      }
+      if (slotLevel === null) return false;
       const [dicePart] = spell.healing.split('+');
       const [diceCount, diceSize] = dicePart.split('d').map(Number);
       // Upcast: +1 die per slot level above the spell's base level.
       let dice = diceCount || 1;
       if (slotLevel > spell.level) dice += slotLevel - spell.level;
       const healing = rollDice(dice, diceSize || 4) + caster.spellcastingMod;
-      this.log.messages.push(`${caster.name} casts ${spell.name}!`);
+      const why = triage.urgency === 'dying'
+        ? ' — the fallen come first!'
+        : triage.urgency === 'critical'
+          ? ' — they are one hit from going down!'
+          : '';
+      this.log.messages.push(`${caster.name} casts ${spell.name} on ${ally.name}${why}`);
       this.log.messages.push(ally.heal(healing));
       return true;
     }
@@ -925,6 +1064,16 @@ export class CombatEngine {
       });
       this.log.messages.push(narration);
       this.log.messages.push(victim.takeDamage(damage));
+      // Spells leave memory too: the victim now knows which hand burned it.
+      if (victim.isAlive) {
+        if (victim.tormentorId === caster.id) victim.grudge++;
+        else {
+          victim.tormentorId = caster.id;
+          victim.grudge = 1;
+        }
+      } else {
+        this.noteKinVengeance(caster, victim);
+      }
       return true;
     }
 
@@ -977,6 +1126,12 @@ export class CombatEngine {
     if (known > 0) {
       opts.attackRollBonus = (opts.attackRollBonus || 0) + known;
     }
+    // Vendetta: this hero has been downed by this kind before. Old hate
+    // sharpens the eye — +1 to hit, +2 once the debt is twice paid.
+    const vendetta = attacker.vendettas[target.template.id] ?? 0;
+    if (vendetta > 0) {
+      opts.attackRollBonus = (opts.attackRollBonus || 0) + (vendetta >= 2 ? 2 : 1);
+    }
     // Giant Strength: the potion's fury adds weight to every blow.
     const strBuff = this.potionBuffs[attacker.id]?.damageBonus ?? 0;
     if (strBuff > 0) {
@@ -1008,9 +1163,23 @@ export class CombatEngine {
     }
 
     const result = attacker.attack(target, opts);
+    // Old hate narrates itself the first time a vendetta lands.
+    if (result.hit && vendetta > 0 && !this.vendettaNarrationUsed.has(attacker.id + ':' + target.template.id)) {
+      this.vendettaNarrationUsed.add(attacker.id + ':' + target.template.id);
+      this.log.messages.push(`⚔️ "${['This one is for last time.', 'I owe your kind a debt.', 'You remember me now, don\'t you?'][Math.floor(Math.random() * 3)]}" — ${attacker.name} fights with old hate against the ${target.template.name}.`);
+    }
     // The finished moon-forge edge bites deepest when the strike lands true and hard.
     if (this.moonForgeBlade && result.hit && (result.message.includes('CRIT') || result.message.includes('CRITICAL'))) {
       result.damage += 4;
+    }
+    // Combat memory: a landed blow marks the striker. Monsters remember who
+    // hurts them and go looking for that hero when their turn comes round.
+    if (result.hit) {
+      if (target.tormentorId === attacker.id) target.grudge++;
+      else {
+        target.tormentorId = attacker.id;
+        target.grudge = 1;
+      }
     }
     const narration = generateCombatTurnNarration({
       attackerName: attacker.name,
@@ -1025,12 +1194,47 @@ export class CombatEngine {
     this.log.messages.push(narration);
     if (result.hit) {
       this.log.messages.push(target.takeDamage(result.damage, { crit: result.message.includes('CRITICAL') }));
+      if (!target.isAlive) this.noteKinVengeance(attacker, target);
     }
+  }
+
+  /**
+   * Kin-vengeance: when a monster falls, its surviving packmates fix their
+   * grudge on the killer — they fight angrier and hunt that hero down.
+   */
+  private noteKinVengeance(killer: GameCharacter, victim: Monster): void {
+    const kin = this.monsters.filter(m => m.isAlive && !m.fled && m.template.id === victim.template.id && m !== victim);
+    if (kin.length === 0) return;
+    for (const m of kin) {
+      m.tormentorId = killer.id;
+      m.grudge = Math.max(m.grudge, 2);
+    }
+    const names = [...new Set(kin.map(m => m.template.name))].join(', ');
+    this.log.messages.push(`🩸 The ${names} ${kin.length === 1 ? 'watches' : 'watch'} ${victim.template.name} fall — their rage turns to ${killer.name}!`);
   }
 
   private monsterTurn(monster: Monster) {
     const alive = this.party.alive;
     if (alive.length === 0) return;
+
+    // Morale check: a broken creature bolts instead of fighting to the death.
+    if (
+      !monster.fled &&
+      shouldMonsterFlee(monster, {
+        alliesAlive: this.monsters.filter(m => m.isAlive && !m.fled && m !== monster).length,
+        alliesFled: this.monsters.filter(m => m.fled).length,
+        foesStanding: this.party.alive.length,
+        round: this.log.round,
+      })
+    ) {
+      monster.fled = true;
+      const packmates = this.monsters.filter(m => m.fled && m !== monster).length;
+      const line = packmates > 0
+        ? `${monster.template.name} breaks and flees into the dark — ${packmates + 1} ${packmates === 1 ? 'foe has' : 'foes have'} now fled!`
+        : `${monster.template.name} breaks and flees into the dark, leaving its allies behind!`;
+      this.log.messages.push(`💨 ${line}`);
+      return;
+    }
 
     // Tactical target selection: finish downed heroes, deny the healer, and
     // punish the squishy backline instead of whaling on a random hero.
@@ -1039,6 +1243,18 @@ export class CombatEngine {
       this.log.messages.push(`\uD83C\uDFF0 ${monster.template.name} fixates on ${target.name} \u2014 ${reason}.`);
     }
     const mods = getAttackModifiers(monster, target);
+    // Pack Tactics (5e): swarming beasts and humanoids gain advantage when a
+    // living, un-fled ally stands beside their target — numbers are a weapon.
+    if (!mods.advantage && !mods.disadvantage) {
+      const packSize = this.monsters.filter(m =>
+        m.isAlive && !m.fled && m !== monster &&
+        m.template.id === monster.template.id &&
+        manhattan(m.tile, target.tile) <= 2,
+      ).length;
+      if (packSize >= 2) {
+        mods.advantage = true;
+      }
+    }
     // Gloom-day undead strike with supernatural fury (full-moon lycanthropes
     // are handled by their own awakening transformation in startCombat).
     const gloom = monster.template.type === 'undead' ? this.gloomDayUndeadBonus : 0;
@@ -1047,6 +1263,48 @@ export class CombatEngine {
     const effectiveAc = target.ac + this.defenseBonus + this.townBuffAC + this.tavernBuffAC
       + Math.max(0, -this.weatherAttackMod)
       - gloom;
+    // A tank's oath: bodyblock one strike aimed at the backline each round.
+    if (!this.interceptionUsedThisRound) {
+      const isCaster = /cleric|wizard|sorcerer|druid|bard|warlock/.test(target.charClass.id);
+      if (isCaster) {
+        const guardian = this.party.alive.find(m =>
+          m !== target &&
+          ['fighter', 'paladin', 'barbarian'].includes(m.charClass.id) &&
+          !m.hasCondition('paralyzed') && !m.hasCondition('stunned') && !m.hasCondition('unconscious') &&
+          manhattan(m.tile, target.tile) <= 2,
+        );
+        if (guardian) {
+          this.interceptionUsedThisRound = true;
+          this.log.messages.push(`🛡️ ${guardian.name} throws ${guardian.charClass.id === 'paladin' ? 'a holy shield' : 'a shoulder'} in front of ${target.name} — the blow is theirs to take!`);
+          const guardianMods = getAttackModifiers(monster, guardian);
+          const gAc = guardian.ac + this.defenseBonus + this.townBuffAC + this.tavernBuffAC + Math.max(0, -this.weatherAttackMod) - gloom;
+          const gResult = monster.attack(gAc, guardianMods);
+          this.log.messages.push(generateCombatTurnNarration({
+            attackerName: monster.template.name,
+            defenderName: guardian.name,
+            defenderType: 'party',
+            hit: gResult.hit,
+            damage: gResult.damage,
+            critical: gResult.message.includes('CRIT'),
+            killingBlow: gResult.hit && !guardian.isAlive,
+          }));
+          if (gResult.hit) {
+            const gCrit = gResult.message.includes('CRIT') || guardian.isDying;
+            this.log.messages.push(guardian.takeDamage(gResult.damage, { crit: gCrit }));
+            this.applyMonsterSpecial(monster, guardian);
+            this.handleConcentrationBreak(guardian);
+            // Interception is deliberate sacrifice: the blow enrages the
+            // monster at the wall of steel blocking it, not the caster.
+            if (monster.tormentorId === guardian.id) monster.grudge++;
+            else {
+              monster.tormentorId = guardian.id;
+              monster.grudge = Math.max(monster.grudge, 2);
+            }
+          }
+          return;
+        }
+      }
+    }
     const result = monster.attack(effectiveAc, mods);
     if (gloom > 0 && result.hit) result.damage += 2;
     // Rich combat narration
@@ -1065,6 +1323,17 @@ export class CombatEngine {
       this.log.messages.push(target.takeDamage(result.damage, { crit }));
       this.applyMonsterSpecial(monster, target);
       this.handleConcentrationBreak(target);
+      if (!target.isAlive) this.noteHeroDowned(target, monster);
+    }
+  }
+
+  /** A hero falls: the monster remembers its kind, the hero remembers the kind. */
+  private noteHeroDowned(hero: GameCharacter, monster: Monster): void {
+    hero.vendettas[monster.template.id] = (hero.vendettas[monster.template.id] ?? 0) + 1;
+    const kin = this.monsters.filter(m => m.isAlive && !m.fled && m.template.id === monster.template.id);
+    for (const m of kin) {
+      m.tormentorId = hero.id;
+      m.grudge = Math.max(m.grudge, 2);
     }
   }
 
@@ -1169,16 +1438,23 @@ export class CombatEngine {
     this.log.winner = winner;
 
     if (winner === 'party') {
-      // Grant XP
+      // Grant XP — driven-off foes yield half their bounty: the party won,
+      // but the creature lives to menace another day.
       let totalXp = 0;
+      let fledCount = 0;
       for (const m of this.monsters) {
-        totalXp += m.template.xp;
+        if (m.fled) {
+          fledCount++;
+          totalXp += Math.ceil(m.template.xp / 2);
+        } else {
+          totalXp += m.template.xp;
+        }
       }
       const xpEach = Math.ceil(totalXp / Math.max(1, this.party.alive.length));
       // Tavern rumor buff: bonus XP per fight.
       const tavernXpBonus = this.tavernBuffXp > 0 ? this.tavernBuffXp : 0;
       const finalXpEach = xpEach + tavernXpBonus;
-      this.log.messages.push(`Victory! +${totalXp} total XP (${finalXpEach} each${tavernXpBonus > 0 ? ' + ' + tavernXpBonus + ' tavern bonus' : ''})`);
+      this.log.messages.push(`Victory! +${totalXp} total XP (${finalXpEach} each${tavernXpBonus > 0 ? ' + ' + tavernXpBonus + ' tavern bonus' : ''})${fledCount > 0 ? ` — ${fledCount} ${fledCount === 1 ? 'foe fled' : 'foes fled'}, denied its full bounty` : ''}`);
       for (const member of this.party.alive) {
         member.addXp(finalXpEach);
       }

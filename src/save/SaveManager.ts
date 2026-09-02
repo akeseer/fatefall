@@ -57,6 +57,8 @@ export interface SavedCharacter {
   spellSlots: Record<number, number>;
   knownSpells: string[];
   pendingConcentrationBreak: boolean;
+  /** Vendetta ledger (v6+): monster template ids this hero was downed by → times. */
+  vendettas?: Record<string, number>;
   personality: Personality;
   subclass?: string;
   deity?: string;
@@ -236,6 +238,8 @@ interface SavedCharacterV1 {
   spellSlots: Record<number, number>;
   knownSpells: string[];
   pendingConcentrationBreak: boolean;
+  /** Vendetta ledger (v6+): monster template ids this hero was downed by → times. */
+  vendettas?: Record<string, number>;
   personality: Personality;
   subclass?: string;
   deity?: string;

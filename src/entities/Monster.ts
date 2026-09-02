@@ -37,6 +37,12 @@ export class Monster {
   public hp: number;
   public maxHp: number;
   public isAlive: boolean = true;
+  /** True once morale broke and this creature fled the fight (not slain — no loot, reduced XP). */
+  public fled: boolean = false;
+  /** Combat memory: who hurt this creature most (party member id). */
+  public tormentorId: string | null = null;
+  /** How hard the grudge burns — grows with every wound from the same hand. */
+  public grudge: number = 0;
   public alertLevel: number = 0; // 0 = unaware, 1 = suspicious, 2 = hostile
   public patrolPoints: Vector2[] = [];
   public patrolIndex: number = 0;

@@ -77,6 +77,18 @@ export function chooseMonsterTarget(
   monster: Monster,
   opts: { maxReach?: number } = {},
 ): MonsterTargetChoice {
+  // Combat memory: the member who has hurt this creature most dominates its
+  // attention — if they're standing anywhere near, the grudge takes over.
+  if (monster.tormentorId && monster.grudge >= 2) {
+    const nemesis = party.members.find(m => m.id === monster.tormentorId && m.isAlive);
+    if (nemesis) {
+      const dist = manhattan(monster.tile, nemesis.tile);
+      if (dist <= (opts.maxReach ?? 4) + 2) {
+        return { target: nemesis, reason: 'vengeance — that one has hurt it worst' };
+      }
+    }
+  }
+
   const maxReach = opts.maxReach ?? 4; // tiles the monster can realistically engage
   const candidates = party.members.filter(m => m.isAlive);
   if (candidates.length === 0) {
@@ -187,6 +199,93 @@ export function choosePartyFocus(
     return b.hp - a.hp;
   })[0];
   return { target: biggest, reason: `the biggest threat (CR ${biggest.template.cr})` };
+}
+
+// ── Healer triage: who needs the healing most ──────────────────────────
+
+export interface TriageChoice {
+  target: GameCharacter | null;
+  /** How desperately the party needs this cast. */
+  urgency: 'dying' | 'critical' | 'wounded' | 'none';
+}
+
+/**
+ * Triage for healing magic. A real healer doesn't top off the healthiest
+ * sword-arm — they run to whoever is bleeding out:
+ *   1. a downed ally rolling death saves (get them up before they die),
+ *   2. the lowest-HP standing ally (one hit from joining them),
+ *   3. the most-wounded standing ally as a fallback.
+ */
+export function chooseHealTarget(party: Party): TriageChoice {
+  const living = party.members.filter(m => m.isAlive);
+  if (living.length === 0) return { target: null, urgency: 'none' };
+
+  // 1. Anyone down but not dead — every round they roll toward death.
+  const downed = living
+    .filter(m => m.hp <= 0)
+    .sort((a, b) => a.hp - b.hp)[0];
+  if (downed) return { target: downed, urgency: 'dying' };
+
+  // 2. The standing ally closest to dropping.
+  const wounded = living
+    .filter(m => m.hp < m.maxHp)
+    .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp);
+  if (wounded.length > 0) {
+    const worst = wounded[0];
+    const hpPct = worst.hp / worst.maxHp;
+    if (hpPct < 0.3) return { target: worst, urgency: 'critical' };
+    return { target: worst, urgency: 'wounded' };
+  }
+
+  return { target: null, urgency: 'none' };
+}
+
+// ── Monster morale: when to break and run ─────────────────────────────
+
+/** Kinds that fight to the death: they feel no fear, or dying is the point. */
+const FEARLESS_TYPES = new Set(['undead', 'construct', 'ooze', 'plant']);
+
+/**
+ * Should this monster break and run? Real 5e fights rarely end in a
+ * slaughter — broken packs scatter, wounded humanoids bolt for the exit,
+ * and the party gets a victory that costs less and reads better.
+ *
+ * Moral checks happen on the monster's turn: a hurt creature weighs its
+ * remaining strength against the carnage around it. Fearless kinds and
+ * bosses never check. A small jitter keeps whole packs from fleeing in
+ * lockstep.
+ */
+export function shouldMonsterFlee(
+  monster: Monster,
+  context: { alliesAlive: number; alliesFled: number; foesStanding: number; round: number },
+): boolean {
+  // These things do not feel fear — they must be destroyed.
+  if (FEARLESS_TYPES.has(monster.template.type)) return false;
+  // Bosses fight to the end (and their legendary kits assume it).
+  if (monster.isBoss) return false;
+  // Already gone.
+  if (monster.fled) return false;
+
+  const hpPct = monster.hp / Math.max(1, monster.maxHp);
+  // Too hurt to keep fighting — the core flight trigger.
+  if (hpPct < 0.35) return true;
+
+  // Morale pressure: alone against a standing, healthy party.
+  const alone = context.alliesAlive <= 1;
+  const partyDominant = context.foesStanding >= 2 && context.round >= 2;
+  if (alone && partyDominant) return true;
+
+  // Watching friends die saps courage: half the pack gone by round 3+.
+  const packBroken =
+    context.round >= 3 &&
+    (context.alliesFled + Math.max(0, context.alliesAlive - 1)) >= 2 &&
+    context.foesStanding >= 2;
+  if (packBroken) return Math.random() < 0.5;
+
+  // Small chance a lightly hurt creature loses its nerve when friends run.
+  if (context.alliesFled > 0 && hpPct < 0.7 && Math.random() < 0.25) return true;
+
+  return false;
 }
 
 // ── In-combat convenience for a monster ganging up on the party ──────

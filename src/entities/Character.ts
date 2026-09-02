@@ -170,6 +170,8 @@ export class GameCharacter {
 
   /** Set by takeDamage when a concentration save just failed. */
   public pendingConcentrationBreak: boolean = false;
+  /** Vendetta ledger: monster template ids this hero was downed by → times. Survives between fights. */
+  public vendettas: Record<string, number> = {};
 
   // AI personality
   public personality: Personality;

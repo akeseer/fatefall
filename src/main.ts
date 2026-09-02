@@ -823,14 +823,41 @@ class Game {
 
   start() {
     // Already looping — never spawn a second frame chain.
-    if (this.running && this.rafId !== null) return;
+    if (this.running && (this.rafId !== null || this.watchdogId !== null)) return;
     this.lastTimestamp = performance.now();
     this.accumulator = 0;
     this.consecutiveErrors = 0;
     this.errorHalt = false;
     this.running = true;
     this.runStarted = true;
+    // Both are armed here, not just the frame request. A window that is
+    // visible but never painted (occluded, or a host that withholds frames)
+    // gets no first animation frame at all, and the watchdog cannot rescue a
+    // loop that has not run once — so the game would simply never start.
     this.rafId = requestAnimationFrame(this.gameStep);
+    this.armWatchdog();
+  }
+
+  /**
+   * Wake the loop after the tab comes back into view. Safe to call at any
+   * time: it does nothing unless a run is going and the loop has gone quiet.
+   */
+  resumeLoop(): void {
+    if (!this.running || !this.runStarted) return;
+    // Do not credit the time spent hidden to the simulation.
+    this.lastTimestamp = performance.now();
+    this.accumulator = 0;
+    if (this.watchdogId === null) this.armWatchdog();
+    if (this.rafId === null) this.rafId = requestAnimationFrame(this.gameStep);
+  }
+
+  /** Schedule the fallback step for a visible window that gets no frames. */
+  private armWatchdog(): void {
+    if (this.watchdogId !== null) clearTimeout(this.watchdogId);
+    this.watchdogId = setTimeout(() => {
+      this.watchdogId = null;
+      if (this.running && document.visibilityState === 'visible') this.gameStep(performance.now());
+    }, Game.WATCHDOG_MS);
   }
 
   /**
@@ -871,10 +898,7 @@ class Game {
     this.rafId = requestAnimationFrame(this.gameStep);
     // Browsers stop animation frames for occluded windows even when the tab
     // is technically visible; a hidden tab stays paused (no reschedule).
-    this.watchdogId = setTimeout(() => {
-      this.watchdogId = null;
-      if (this.running && document.visibilityState === 'visible') this.gameStep(performance.now());
-    }, Game.WATCHDOG_MS);
+    this.armWatchdog();
   };
 
   /**
@@ -1413,9 +1437,24 @@ class Game {
       this.hud.addCombatMessage(`Darkness hampers the party — attacks struggle in the gloom (-${-nightPenalty} attack rolls).`, '#aab');
     }
     this.combatEngine.startCombat(monsters);
+    // A monster's mid-fight cry for help can pull unalerted kin from the rest
+    // of the floor into the battle — same kind, capped squad, not every time.
+    this.combatEngine.onReinforcementsRequested = () => {
+      if (Math.random() > 0.35) return; // the shout usually dies in the dark
+      const engaged = new Set(this.combatEngine.monsters.map(m => m));
+      const living = this.combatEngine.monsters.filter(m => m.isAlive && !m.fled);
+      const kinds = new Set(living.map(m => m.template.id));
+      const reserve = this.monsters.filter(m => !engaged.has(m) && m.isAlive && m.alertLevel >= 1 && kinds.has(m.template.id));
+      const squad = reserve.slice(0, 1 + (Math.random() < 0.3 ? 1 : 0));
+      if (squad.length === 0) return;
+      this.combatEngine.addReinforcements(squad);
+      const names = [...new Set(squad.map(m => m.template.name))].join(' and ');
+      this.hud.addCombatMessage(`🚨 ${names} answers the call — the fight grows!`, '#c86');
+    };
     // FF command menu: Manual mode pauses every hero's turn until the DM
     // picks; Auto lets the AI resolve. The toggle lives in the battle window.
-    this.combatEngine.decisionPause = this.hud.battleView.getMode() === 'manual';
+    this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
+    this.wireBattleModeToggle();
     // A fresh fight starts with a clean order queue.
     this.combatEngine.queuedOrders.clear();
     this.combatEngine.onItemCommand = (itemId, holderId, actor) => {
@@ -1566,6 +1605,23 @@ class Game {
     );
   }
 
+  /**
+   * Keep the engine in step with the battle window's Manual/Auto toggle.
+   * The toggle used to change only the button: the engine stayed paused on a
+   * hero who would never be given an order, and the fight stopped for good.
+   */
+  private wireBattleModeToggle(): void {
+    this.hud.battleView.onModeChange = this.guard((mode) => {
+      this.combatEngine.setDecisionPause(mode === 'manual');
+      if (mode === 'auto') {
+        this.hud.battleView.hideCommandMenu();
+        this.hud.addCombatMessage('The party fights on its own judgment.', '#8cf');
+      } else {
+        this.hud.addCombatMessage('The party waits on your word each turn.', '#8cf');
+      }
+    });
+  }
+
   private updateCombat() {
     // FF command menu: when a hero awaits the DM's order, hold the tick
     // clock — the fight literally waits for the menu pick, then resumes.
@@ -1618,16 +1674,22 @@ class Game {
         this.combatEngine.queuedOrders.clear();
         this.hud.battleView.hideCommandMenu();
         if (log.winner === 'party') {
-          // Remove dead monsters — but keep their stats for the loot roll first.
-          const slainMonsters = this.monsters.filter(m => !m.isAlive);
-          this.history.kills += slainMonsters.length;
+          // Remove dead AND fled monsters — keep their stats for the loot roll first.
+          const slainMonsters = this.monsters.filter(m => !m.isAlive || m.fled);
+          const escaped = slainMonsters.filter(m => m.fled);
+          this.history.kills += slainMonsters.length - escaped.length;
           this.history.victories++;
-          this.monsters = this.monsters.filter(m => m.isAlive);
+          this.monsters = this.monsters.filter(m => m.isAlive && !m.fled);
+          if (escaped.length > 0) {
+            const names = [...new Set(escaped.map(m => m.template.name))];
+            this.hud.addCombatMessage(`💨 The ${names.join(' and ')} ${escaped.length === 1 ? 'flees' : 'flee'} into the wilds with its life — the field is yours.`, '#9a8');
+          }
 
           // Bestiary ledger — tally per monster kind and sing out first-time kills.
           const firstKills: string[] = [];
-          for (const m of slainMonsters) {
-            const prev = this.history.killLedger[m.template.id] ?? 0;
+        for (const m of slainMonsters) {
+          if (m.fled) continue; // escaped foes earn no bestiary kill credit
+          const prev = this.history.killLedger[m.template.id] ?? 0;
             this.history.killLedger[m.template.id] = prev + 1;
             if (prev === 0) firstKills.push(m.template.id);
             if (m.template.name.includes('(Boss)')) this.bossSlainThisFloor = true;
@@ -1653,13 +1715,15 @@ class Game {
             'victory'
           ), '#ca8');
           // Treasure — D&D loot tables keyed to the slain creatures' CR.
-          const loot = this.rollAndGrantLoot(slainMonsters);
+          // Escaped creatures carry their pockets with them.
+          const corpses = slainMonsters.filter(m => !m.fled);
+          const loot = this.rollAndGrantLoot(corpses);
           // Victory fanfare + loot summary panel over the battle window.
-          const xpEach = Math.ceil(slainMonsters.reduce((s, m) => s + m.template.xp, 0) / Math.max(1, this.party.alive.length));
+          const xpEach = Math.ceil(corpses.reduce((s, m) => s + m.template.xp, 0) / Math.max(1, this.party.alive.length));
           const kindOf = (i: InventoryItem): 'magic' | 'potion' | 'scroll' | 'treasure' | 'other' =>
             i.type === 'potion' ? 'potion' : i.type === 'scroll' ? 'scroll' : i.type === 'treasure' ? 'treasure' : 'other';
           const tally = new Map<string, number>();
-          for (const m of slainMonsters) tally.set(m.template.name, (tally.get(m.template.name) ?? 0) + 1);
+          for (const m of corpses) tally.set(m.template.name, (tally.get(m.template.name) ?? 0) + 1);
           this.hud.battleView.showSpoils({
             xpEach,
             gold: loot.goldValue,
@@ -1668,7 +1732,7 @@ class Game {
             boss: slainMonsters.some(m => /boss/i.test(m.template.name) || m.isBoss),
           });
           // A full-moon hunt leaves trophies the smith will pay or forge for.
-          const packSlain = slainMonsters.filter(m => m.moonPack);
+          const packSlain = corpses.filter(m => m.moonPack);
           if (packSlain.length > 0) {
             const trophies: string[] = [];
             const fangs = packSlain.length;
@@ -2593,6 +2657,7 @@ class Game {
           spellSlots: m.spellSlots,
           knownSpells: m.knownSpells,
           pendingConcentrationBreak: m.pendingConcentrationBreak,
+          vendettas: m.vendettas,
           bonusAttackBonus: m.bonusAttackBonus,
           equipment: m.equipment,
           personality: m.personality,
@@ -2768,6 +2833,7 @@ class Game {
       char.spellSlots = { ...s.spellSlots } as Record<number, number>;
       char.knownSpells = [...s.knownSpells];
       char.pendingConcentrationBreak = s.pendingConcentrationBreak;
+      char.vendettas = { ...(s.vendettas ?? {}) };
       char.personality = { ...s.personality };
       char.subclass = s.subclass;
       char.deity = s.deity;
@@ -2827,7 +2893,8 @@ class Game {
       // Re-open the battle window for a restored in-combat save.
       this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
       this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
-      this.combatEngine.decisionPause = this.hud.battleView.getMode() === 'manual';
+      this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
+      this.wireBattleModeToggle();
       this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
       this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
       this.hud.battleView.update({
@@ -6474,7 +6541,14 @@ function startGame() {
   // Persist when the tab hides or closes (only once a run has actually begun).
   window.addEventListener('beforeunload', () => { if (game.runStarted) game.saveGame(); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && game.runStarted) game.saveGame();
+    if (document.visibilityState === 'hidden') {
+      if (game.runStarted) game.saveGame();
+      return;
+    }
+    // Coming back into view. The world pauses while hidden, and in a window
+    // that is visible but never painted there is no animation frame to wake
+    // it, so the loop is nudged explicitly rather than left waiting.
+    game.resumeLoop();
   });
 }
 

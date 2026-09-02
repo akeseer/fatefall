@@ -21,6 +21,7 @@ import { TileMap, TileType } from '../world/TileMap';
 import type { Room } from '../world/DungeonGenerator';
 import { Vector2, Direction, manhattan } from '../engine/types';
 import { SPELLS, isCaster, getCasterType } from '../data/gameData';
+import type { Spell } from '../data/gameData';
 
 // ── Role Classification ──────────────────────────────
 
@@ -295,7 +296,9 @@ function chooseSupportSpell(
   );
 
   if (healSpells.length > 0 && state.membersBelowHalf > 0) {
-    healSpells.sort((a, b) => (b.level) - (a.level));
+    // Right-sized healing: cheapest spell that helps, smallest slot that fits
+    // the emergency. No burning 3rd-level slots to top off a scratch.
+    healSpells.sort((a, b) => a.level - b.level);
     const best = healSpells[0];
     const slotLevel = findBestSlot(caster, best.level);
     if (slotLevel !== null) {
@@ -309,10 +312,23 @@ function chooseSupportSpell(
   );
 
   if (buffSpells.length > 0 && state.avgHpPct > 0.6) {
-    const chosen = buffSpells[Math.floor(Math.random() * buffSpells.length)];
-    const slotLevel = findBestSlot(caster, chosen.level);
-    if (slotLevel !== null) {
-      return { spellId: chosen.id, slotLevel, reason: `Buffing the party` };
+    // Contextual buff choice instead of a coin flip: Bless (an attack/save
+    // force multiplier) when the party is hurting, protective buffs when
+    // we're healthy, otherwise the cheapest thing we can afford.
+    const pickBuff = (): { spell: Spell; why: string } | null => {
+      const bless = buffSpells.find(s => /bless/i.test(s.name));
+      const protective = buffSpells.find(s => /shield|armor|ward|resist|protection|sanctuary/i.test(s.name));
+      if (state.avgHpPct < 0.85 && bless) return { spell: bless, why: 'Blessing the party for the fight ahead' };
+      if (protective) return { spell: protective, why: `Warding the party with ${protective.name}` };
+      const cheapest = [...buffSpells].sort((a, b) => a.level - b.level)[0];
+      return cheapest ? { spell: cheapest, why: `Buffing the party with ${cheapest.name}` } : null;
+    };
+    const picked = pickBuff();
+    if (picked) {
+      const slotLevel = findBestSlot(caster, picked.spell.level);
+      if (slotLevel !== null) {
+        return { spellId: picked.spell.id, slotLevel, reason: picked.why };
+      }
     }
   }
 
