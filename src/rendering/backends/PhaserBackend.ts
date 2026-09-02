@@ -403,12 +403,18 @@ export class PhaserBackend implements RenderBackend {
 
       const cx = c.x + c.w / 2;
       const cy = c.y + c.h / 2;
-      const radius = c.w / 2;
-      // Outward rings first, so each inner ring paints over the one around it.
+      const thickness = c.w / 2 / GRADIENT_BANDS;
+      // Rings are stroked rather than filled because these ramps are nearly all
+      // translucent: a real gradient composites one colour per pixel, whereas
+      // stacked discs would blend thirty-two of them and turn a 0.08 alpha torch
+      // glow into a solid blob. A stroke of width `thickness` centred half a band
+      // in covers each annulus exactly once, and the innermost one covers the
+      // centre. The smoothness is raised because a 32-gon is visible at this size.
       for (let i = GRADIENT_BANDS; i > 0; i--) {
         const paint = this.sample(c.stops, (i - 0.5) / GRADIENT_BANDS);
-        g.fillStyle(paint.rgb, paint.alpha * c.alpha);
-        g.fillCircle(cx, cy, (radius * i) / GRADIENT_BANDS);
+        const mid = thickness * (i - 0.5);
+        g.lineStyle(thickness, paint.rgb, paint.alpha * c.alpha);
+        g.strokeEllipse(cx, cy, mid * 2, mid * 2, 64);
       }
       return;
     }
@@ -420,15 +426,15 @@ export class PhaserBackend implements RenderBackend {
     const acrossX = Math.abs(c.w) >= Math.abs(c.h);
     const span = acrossX ? c.w : c.h;
     const step = span / GRADIENT_BANDS;
-    // A pixel of overlap keeps rounding from opening seams between the bands.
-    const overlap = span < 0 ? -1 : 1;
+    // Bands butt up against each other rather than overlapping: they share an
+    // exact edge, and doubling a pixel would show as a seam on a translucent wash.
     for (let i = 0; i < GRADIENT_BANDS; i++) {
       const paint = this.sample(c.stops, (i + 0.5) / GRADIENT_BANDS);
       g.fillStyle(paint.rgb, paint.alpha * c.alpha);
       if (acrossX) {
-        g.fillRect(c.x + step * i, c.y, step + overlap, c.h);
+        g.fillRect(c.x + step * i, c.y, step, c.h);
       } else {
-        g.fillRect(c.x, c.y + step * i, c.w, step + overlap);
+        g.fillRect(c.x, c.y + step * i, c.w, step);
       }
     }
   }
