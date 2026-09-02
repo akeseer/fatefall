@@ -12,6 +12,7 @@ import { TileMap, TileType } from './TileMap';
 import { OVERWORLD_WIDTH, OVERWORLD_HEIGHT, Vector2, manhattan } from '../engine/types';
 import { archetypeForTown, TOWN_ARCHETYPES, TownArchetypeId } from './TownTypes';
 import { OverworldPOI, generatePOIs } from './OverworldPOI';
+import { WorldRegion, generateWorldRegions } from './WorldRegions';
 
 export interface OverworldTown {
   id: string;
@@ -46,6 +47,8 @@ export interface Overworld {
   spawnTownId: string;
   /** Discoverable points of interest on the overworld. */
   pois: OverworldPOI[];
+  /** Named territories used by narration and destination scoring. */
+  regions: WorldRegion[];
 }
 
 export const TOWN_NAMES = [
@@ -553,8 +556,10 @@ export function generateOverworld(): Overworld {
 
   // Generate points of interest
   const pois = generatePOIs(map, towns, 'overworld_pois', 40);
+  // Give the huge coordinate field a readable geography the AI can remember.
+  const regions = generateWorldRegions(map, towns, entrances);
 
-  return { map, towns, entrances, spawnTownId: towns[0]?.id ?? '', pois };
+  return { map, towns, entrances, spawnTownId: towns[0]?.id ?? '', pois, regions };
 }
 
 export function getTownById(overworld: Overworld, id: string): OverworldTown | undefined {

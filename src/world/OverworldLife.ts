@@ -253,17 +253,21 @@ export function stepWanderers(wanderers: Wanderer[], map: TileMap): void {
     // Walk the cached A* route — it bends around lakes, mountains and
     // fenced fields, so wanderers stop head-butting obstacles.
     if (w.path && w.path.length > 0) {
-      const next = w.path[w.path.length - 1];
+      // astarPath returns [first step ... goal]. Consume the front of the
+      // route; taking the last tile would make surface life walk backward.
+      const next = w.path[0];
       const nx = next.x;
       const ny = next.y;
       const t = map.getTile(nx, ny);
-      const ok = isPerson ? isRoadTile(t) || t === TileType.Road || t === TileType.Bridge || map.isWalkable(nx, ny) : map.isWalkable(nx, ny);
+      const ok = isPerson ? isRoadTile(t) || map.isWalkable(nx, ny) : map.isWalkable(nx, ny);
       if (ok) {
         w.tile.x = nx;
         w.tile.y = ny;
-      }
-      w.path.pop();
-      if (w.tile.x === w.target.x && w.tile.y === w.target.y) {
+        w.path.shift();
+        if (w.tile.x === w.target.x && w.tile.y === w.target.y) w.path = [];
+      } else {
+        // A dynamic obstruction invalidates the remainder; re-plan from the
+        // current tile on the next update rather than dropping a route step.
         w.path = [];
       }
       continue;

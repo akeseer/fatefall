@@ -116,8 +116,9 @@ export function astarPath(
   const hDist = (idx: number): number => {
     const x = idx % w;
     const y = (idx / w) | 0;
-    // Manhattan distance (4-way movement) — admissible for min cost 1.
-    return Math.abs(x - to.x) + Math.abs(y - to.y);
+    // Roads cost 0.6, so scale the Manhattan lower bound by the cheapest
+    // possible step. This keeps A* admissible while still guiding long routes.
+    return (Math.abs(x - to.x) + Math.abs(y - to.y)) * 0.6;
   };
 
   g[startIdx] = 0;
@@ -160,9 +161,10 @@ export function astarPath(
     }
   }
 
-  // Budget exhausted (or open set drained): return the closest partial path,
-  // so a huge map still yields forward progress instead of a standstill.
-  if (bestIdx !== startIdx) {
+  // Only return a partial route when the explicit safety budget was reached.
+  // If the open set drained naturally, the goal is genuinely unreachable;
+  // pretending otherwise makes callers repeatedly walk toward a dead end.
+  if (expanded >= maxNodes && bestIdx !== startIdx) {
     return reconstruct(prev, bestIdx, w);
   }
   return [];
@@ -230,6 +232,7 @@ export function dijkstraField(
 
 /** True when a walkable route exists (cheap A* with a tiny budget). */
 export function isReachable(map: TileMap, from: Vector2, to: Vector2): boolean {
+  if (from.x === to.x && from.y === to.y) return true;
   return astarPath(map, from, to, { maxNodes: 6000 }).length > 0
     ? true
     : astarPath(map, from, to, { maxNodes: 30000 }).length > 0;

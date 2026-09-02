@@ -4,6 +4,10 @@ import { TileMap } from './world/TileMap';
 import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
 import { assignFeature, assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
 import { RoomFeatureController } from './game/RoomFeatureController';
+import { RecordingContext } from './rendering/RecordingContext';
+import { CanvasBackend } from './rendering/backends/CanvasBackend';
+import { createBackend, type RenderBackendId } from './rendering/backends';
+import type { RenderBackend } from './rendering/DrawCommand';
 import { BulletinBoardController } from './game/BulletinBoardController';
 import { MarketController } from './game/MarketController';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
@@ -15,7 +19,8 @@ import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
 import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, createClock, dayChangeNarration, tickClock, timeOfDayFromPhase } from './world/DayNightSystem';
 import { CalendarDay, calendarFromElapsed } from './world/CalendarSystem';
 import { BIOME_EVENTS, Wanderer, isWildlife, randomTravelEvent, scatterWildlife, spawnOverworldLife, stepWanderers } from './world/OverworldLife';
-import { astarPath, dijkstraField } from './world/Pathfinding';
+import { astarPath } from './world/Pathfinding';
+import { WorldRegion, generateWorldRegions, regionAt, regionSummary } from './world/WorldRegions';
 import { FESTIVAL_FLAVOR, TownLifeState, initTownLife, isCaravanWanderer, sanitizeTownLife, tickTownLife, rollArrivalEvent, eventFor, townPriceModifier, rollTavernBuff, getTavernBuffNarration, refreshBulletinBoard } from './world/TownLife';
 import { TOWN_ARCHETYPES, TownServiceId, ReputationShopItem } from './world/TownTypes';
 import { Ambush, findAmbushTiles, getAmbushChance, rollAmbush } from './world/Ambushes';
@@ -35,7 +40,7 @@ import type { MenuConsumable } from './ui/BattleView';
 import { AIDirector } from './ai/AIDirector';
 import { HUD, GameSpeed } from './ui/HUD';
 import { createParty, createCharacter } from './game/CharacterFactory';
-import { Direction, TILE_SIZE, Vector2, manhattan, vec2 } from './engine/types';
+import { Direction, GAME_HEIGHT, GAME_WIDTH, TILE_SIZE, Vector2, manhattan, vec2 } from './engine/types';
 import { TileType } from './world/TileMap';
 import { rollDice, abilityModifier, getSpellById, isCaster, ordinal, CLASSES, RACES, SPELLS } from './data/gameData';
 import { CompendiumEntry } from './ui/DnDCompendium';
@@ -160,6 +165,12 @@ class Game {
   public party: Party;
   public sprites: SpriteRenderer;
   public mapRenderer: MapRenderer;
+  /** Every frame is described here before a backend draws it. */
+  private readonly recorder = new RecordingContext();
+  /** Whichever graphics library is showing the world. Canvas 2D by default. */
+  public backend: RenderBackend = new CanvasBackend();
+  /** True once a backend has finished starting; frames are dropped until then. */
+  private backendReady = false;
   public combatEngine: CombatEngine;
   public aiDirector: AIDirector;
   /** Adaptive difficulty: consecutive dominant wins (positive) or battered fights (negative). */
@@ -183,6 +194,9 @@ class Game {
   // ── Overworld / quest state ──
   public mode: GameMode = GameMode.Overworld;
   public overworld: Overworld | null = null;
+  /** Named territories keep the surface readable to the AI and player. */
+  public worldRegions: WorldRegion[] = [];
+  private lastOverworldRegionId: string | null = null;
   public wanderers: Wanderer[] = [];
   public quests: Quest[] = [];
   public activeQuestId: string | null = null;
@@ -267,7 +281,10 @@ class Game {
     this.map = new TileMap();
     this.camera.setBounds(this.map.width, this.map.height);
     this.sprites = new SpriteRenderer();
-    this.mapRenderer = new MapRenderer(this.renderer.ctx, this.sprites);
+    // The renderer draws into the recorder, not the canvas. It takes a
+    // CanvasRenderingContext2D and the recorder answers that shape, so nothing
+    // in MapRenderer or Sprites had to change.
+    this.mapRenderer = new MapRenderer(this.recorder as unknown as CanvasRenderingContext2D, this.sprites);
 
     // Create party
     const members = createParty(4);
@@ -1924,8 +1941,30 @@ class Game {
 
   // ── Rendering ───────────────────────────────────
 
+  /**
+   * Switch graphics library. The heavy ones are imported only when asked for,
+   * so a player on the default canvas never downloads them.
+   */
+  async useBackend(id: RenderBackendId): Promise<void> {
+    const next = await createBackend(id);
+    await next.init(this.renderer.canvas, GAME_WIDTH, GAME_HEIGHT);
+    this.backend.destroy();
+    this.backend = next;
+    this.backendReady = true;
+    try {
+      localStorage.setItem('fatefall.renderer', id);
+    } catch {
+      /* private mode: the choice just will not stick */
+    }
+    this.hud.addCombatMessage(`Renderer: ${next.name}.`, '#8cf');
+  }
+
   private render() {
-    this.renderer.clear();
+    // The frame is described into a recorder rather than drawn straight to a
+    // context, so the same frame can be replayed by any backend. The map
+    // renderer and the sprite functions are unchanged; they simply receive a
+    // recorder where they used to receive a canvas context.
+    this.recorder.begin('#0a0a12');
     const moveMs = Math.max(140, Math.min(600, this.tickInterval * 0.55));
     if (this.mode === GameMode.Overworld || this.mode === GameMode.Town) {
       const campTiles = this.banditCamps.camps.filter(c => c.discovered && !c.resolved).map(c => c.tile);
@@ -1972,6 +2011,7 @@ class Game {
         this.dungeonRecentTiles
       );
     }
+    if (this.backendReady) this.backend.submit(this.recorder.end());
   }
 
   // ── Helpers ─────────────────────────────────────
@@ -2295,6 +2335,7 @@ class Game {
         towns: this.overworld.towns,
         entrances: this.overworld.entrances,
         spawnTownId: this.overworld.spawnTownId,
+        regions: this.worldRegions,
       } : null,
       wanderers: this.wanderers.map(w => ({ ...w, tile: { ...w.tile }, target: { ...w.target } })),
       townLife: this.townLife,
@@ -2445,7 +2486,9 @@ class Game {
         entrances: save.overworld.entrances,
         spawnTownId: save.overworld.spawnTownId,
         pois: this.pois,
+        regions: save.overworld.regions ?? generateWorldRegions(owMap, save.overworld.towns, save.overworld.entrances),
       };
+      this.worldRegions = this.overworld.regions;
       this.map = owMap;
       // Old saves predate the mountain ring at the world's edge — apply it so
       // a restored party can't march into the void.
@@ -3270,6 +3313,8 @@ class Game {
     // Fresh world — the overworld breadcrumb trail resets.
     this.overworldRecentTiles = [];
     this.wanderers = spawnOverworldLife(this.overworld);
+    this.worldRegions = this.overworld.regions ?? generateWorldRegions(this.map, this.overworld.towns, this.overworld.entrances);
+    this.lastOverworldRegionId = null;
     this.townLife = initTownLife(this.overworld);
     this.townLifeTimer = 0;
     this.ambushCooldownUntil = 0;
@@ -3448,12 +3493,12 @@ class Game {
         this.overworldPath = this.bfsOverworldPath(leader.tile, target);
       }
       if (this.overworldPath.length === 0) break;
-      const next = this.overworldPath[this.overworldPath.length - 1];
+      const next = this.overworldPath[0];
       const dx = Math.sign(next.x - leader.tile.x);
       const dy = Math.sign(next.y - leader.tile.y);
       const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
       if (this.moveParty(dir)) {
-        this.overworldPath.pop();
+        this.overworldPath.shift();
         moved++;
       } else {
         this.overworldPath = [];
@@ -3483,7 +3528,7 @@ class Game {
         // never trace a square (no blind wandering in fixed order).
         this.overworldPath = this.bfsOverworldPath(leader.tile, target);
         if (this.overworldPath.length > 0) {
-          const next = this.overworldPath[this.overworldPath.length - 1];
+          const next = this.overworldPath[0];
           const dx = Math.sign(next.x - leader.tile.x);
           const dy = Math.sign(next.y - leader.tile.y);
           const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
@@ -3918,12 +3963,12 @@ class Game {
     }
 
     // Follow the cached route.
-    const next = this.dungeonRoute[this.dungeonRoute.length - 1];
+    const next = this.dungeonRoute[0];
     const dx = Math.sign(next.x - leader.tile.x);
     const dy = Math.sign(next.y - leader.tile.y);
     const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
     if (this.moveParty(dir)) {
-      this.dungeonRoute.pop();
+      this.dungeonRoute.shift();
       return true;
     }
     // Blocked (door still shut, party scattered): re-solve next tick.
@@ -6051,6 +6096,12 @@ function startGame() {
   game.hud.onMainMenu = () => game.returnToMainMenu();
   game.hud.showStartScreen(saves);
 
+  // Bring the renderer up before the first frame. A backend that fails to
+  // start is not fatal: the game falls back to the canvas it has always used.
+  void game.useBackend(pickBackend()).catch(err => {
+    console.warn('[render] backend failed to start, staying on canvas.', err);
+  });
+
   // The DM intent model loads alongside the start screen, so it is ready long
   // before the first order. A failure here is not fatal: the regex parser
   // understands every documented order on its own.
@@ -6069,6 +6120,21 @@ function startGame() {
     // it, so the loop is nudged explicitly rather than left waiting.
     game.resumeLoop();
   });
+}
+
+/**
+ * Which renderer to use. Canvas 2D is the default because it is the only one
+ * that costs no runtime dependency; the others are opt-in, remembered per
+ * browser, and settable from the console for a quick comparison.
+ */
+function pickBackend(): RenderBackendId {
+  try {
+    const stored = localStorage.getItem('fatefall.renderer');
+    if (stored === 'pixi' || stored === 'phaser' || stored === 'canvas') return stored;
+  } catch {
+    /* private mode: fall through to the default */
+  }
+  return 'canvas';
 }
 
 /** Parse '2d4+2' style healing dice out of an item description. */

@@ -17,6 +17,7 @@ import { Direction, Vector2 } from '../engine/types';
 import { Ability, maxSlotsFor } from '../data/gameData';
 import { SavedTrap } from '../traps/Traps';
 import { OverworldEntrance, OverworldTown } from '../world/Overworld';
+import { WorldRegion } from '../world/WorldRegions';
 import { Wanderer } from '../world/OverworldLife';
 import { OverworldPOI } from '../world/OverworldPOI';
 import { Quest } from '../quests/Quests';
@@ -26,7 +27,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 
 export interface SavedCharacter {
   id: string;
@@ -152,6 +153,8 @@ export interface SaveData {
     towns: OverworldTown[];
     entrances: OverworldEntrance[];
     spawnTownId: string;
+    /** Named regional atlas (v11+); older saves regenerate it on load. */
+    regions?: WorldRegion[];
   } | null;
   /** Wandering life on the overworld (v4+). */
   wanderers?: Wanderer[];
@@ -298,6 +301,8 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 8) current = migrateV8toV9(current);
   if (!current) return null;
   if (current.version === 9) current = migrateV9toV10(current);
+  if (!current) return null;
+  if (current.version === 10) current = migrateV10toV11(current);
   return current;
 }
 
@@ -308,6 +313,11 @@ function migrateV6toV7(data: SaveData): SaveData | null {
   if (typeof s.clockPhase !== 'number') s.clockPhase = 0.3; // late morning
   if (typeof s.clockElapsed !== 'number') s.clockElapsed = 0.3 * STAMP;
   return s as SaveData;
+}
+
+/** v10 → v11: named overworld regions are regenerated when absent. */
+function migrateV10toV11(data: SaveData): SaveData | null {
+  return { ...data, version: 11 };
 }
 
 /**
