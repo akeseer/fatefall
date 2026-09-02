@@ -25,6 +25,7 @@ import {
 } from '../rules/Rules';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
+import { chooseMonsterTarget, choosePartyFocus } from './TargetAI';
 
 export interface CombatLog {
   round: number;
@@ -45,8 +46,8 @@ export interface CombatAction {
  * target selection, rolls and narration stay engine-side.
  */
 export type PartyCommand =
-  | { type: 'attack' }
-  | { type: 'spell'; spellId: string }
+  | { type: 'attack'; targetMonsterId?: string }
+  | { type: 'spell'; spellId: string; targetMonsterId?: string; targetAllyId?: string }
   | { type: 'item'; itemId: string; holderId: string; itemName?: string }
   | { type: 'flee' };
 
@@ -263,6 +264,14 @@ export class CombatEngine {
     if (this.currentTurnIndex >= this.initiativeOrder.length) {
       this.currentTurnIndex = 0;
       this.log.round++;
+      // The party re-reads the field at the top of each round and designates
+      // a focus target so everyone gangs up on one foe instead of scattering.
+      const live = this.monsters.filter(m => m.isAlive);
+      if (live.length > 0) {
+        this.roundFocusMonsterId = choosePartyFocus(this.party, this.monsters).target.id;
+      } else {
+        this.roundFocusMonsterId = null;
+      }
       if (this.partyBlessRounds > 0) {
         this.partyBlessRounds--;
         if (this.partyBlessRounds === 0) {
@@ -285,6 +294,15 @@ export class CombatEngine {
     const actorName = actor instanceof GameCharacter ? actor.name : actor.template.name;
     for (const name of expired) {
       this.log.messages.push(`${actorName} is no longer ${name}.`);
+    }
+
+    // A leeching curse drinks from its bearer as their turn begins.
+    if (actor instanceof GameCharacter && actor.hp > 0) {
+      const cursed = actor.findCursedEquipped();
+      if (cursed && (cursed.curseKind ?? 'leeching') === 'leeching') {
+        const msg = actor.takeDamage(1);
+        this.log.messages.push(`🩸 The ${cursed.name} feeds — ${msg}`);
+      }
     }
 
     // Dying characters roll death saves instead of acting; stabilized ones lie still.
@@ -329,6 +347,13 @@ export class CombatEngine {
       if (actor.pendingItemUse) {
         actor.pendingItemUse = false;
         this.log.messages.push(`${actor.name} is busy with the item's effects — no time for more.`);
+      } else if (this.queuedOrders.has(actor.id)) {
+        // A Tab-queued order (set while another hero's menu was open) executes
+        // now instead of re-pausing — the player already decided this turn.
+        const cmd = this.queuedOrders.get(actor.id)!;
+        this.queuedOrders.delete(actor.id);
+        this.log.messages.push(`⏳ ${actor.name} follows the standing order.`);
+        this.submitCommandFor(actor, cmd);
       } else if (this.decisionPause) {
         // FF-style command menu: pause on the hero's turn until the DM picks.
         this.pendingDecision = actor;
@@ -369,6 +394,11 @@ export class CombatEngine {
    * Execute a command chosen from the FF command menu, then resume the turn.
    * The AI handles targeting and rolls; the DM picks the intent.
    */
+  /** Orders queued via the battle menu's Tab-cycle, consumed at each hero's turn. */
+  public queuedOrders: Map<string, PartyCommand> = new Map();
+  /** The party's per-round focus target id so members gang up instead of scattering. */
+  private roundFocusMonsterId: string | null = null;
+
   submitCommand(cmd: PartyCommand): void {
     const hero = this.pendingDecision;
     if (!hero || !this.isActive) return;
@@ -387,6 +417,27 @@ export class CombatEngine {
       return;
     }
 
+    this.partyTurn(hero, cmd);
+    this.currentTurnIndex++;
+    this.tryLegendaryAction(hero);
+  }
+
+  /**
+   * Execute a queued command for a specific hero outside the normal pause
+   * flow. Items resolve game-side (pendingItemUse), everything else runs the
+   * normal turn path, then the turn index advances.
+   */
+  private submitCommandFor(hero: GameCharacter, cmd: PartyCommand): void {
+    if (cmd.type === 'item') {
+      hero.pendingItemUse = true;
+      this.onItemCommand?.(cmd.itemId, cmd.holderId, hero);
+      this.currentTurnIndex++;
+      return;
+    }
+    if (cmd.type === 'flee') {
+      this.onFleeCommand?.(hero);
+      return;
+    }
     this.partyTurn(hero, cmd);
     this.currentTurnIndex++;
     this.tryLegendaryAction(hero);
@@ -527,12 +578,28 @@ export class CombatEngine {
       return;
     }
 
-    // Pick target: nearest
+    // Pick target: the party's round focus (so everyone gangs up) — unless the
+    // DM picked a specific foe from the battle menu, which always wins, or it
+    // has already fallen, which drops to the nearest-alive fallback.
     let target = alive[0];
     let minDist = Infinity;
     for (const m of alive) {
       const d = Math.abs(m.tile.x - character.tile.x) + Math.abs(m.tile.y - character.tile.y);
       if (d < minDist) { minDist = d; target = m; }
+    }
+    const orderedFoe = forced && 'targetMonsterId' in forced && forced.targetMonsterId
+      ? this.monsters.find(m => m.id === forced.targetMonsterId && m.isAlive)
+      : undefined;
+    if (orderedFoe) {
+      target = orderedFoe;
+    } else if (this.roundFocusMonsterId) {
+      const focus = this.monsters.find(m => m.id === this.roundFocusMonsterId && m.isAlive);
+      if (focus) {
+        // Focus wins when it's a reasonable push or already bloodied; never
+        // drag the ranged across the map for a full-health distant foe.
+        const focusReachable = Math.abs(focus.tile.x - character.tile.x) + Math.abs(focus.tile.y - character.tile.y) <= 6;
+        if (focusReachable || focus.hp <= 14) target = focus;
+      }
     }
 
     // AI decision: attempt a spell the caster can actually afford.
@@ -547,7 +614,9 @@ export class CombatEngine {
     if (forced) {
       if (forced.type === 'spell') {
         const spell = SPELLS.find(s => s.id === forced.spellId);
-        if (spell && character.canCastSpell(spell.level) && this.castSpell(character, spell)) return;
+        const monsterTarget = forced.targetMonsterId ? this.monsters.find(m => m.id === forced.targetMonsterId && m.isAlive) : undefined;
+        const allyTarget = forced.targetAllyId ? this.party.members.find(m => m.id === forced.targetAllyId) : undefined;
+        if (spell && character.canCastSpell(spell.level) && this.castSpell(character, spell, monsterTarget, allyTarget)) return;
         this.log.messages.push(`${character.name} cannot cast that right now — falls back to their blade.`);
       } else if (forced.type === 'flee') {
         this.log.messages.push(`${character.name} looks for an opening to disengage!`);
@@ -556,7 +625,12 @@ export class CombatEngine {
       // 'item' commands were executed game-side before the turn; fall through
       // to a weapon attack so the action isn't wasted.
     } else if (affordableSpells.length > 0 && Math.random() < 0.4) {
-      const spell = affordableSpells[Math.floor(Math.random() * affordableSpells.length)];
+      // A cursed ally jumps the queue: the trained hand lifts the binding.
+      const allyCursed = this.party.members.some(m => m.isAlive && m.findCursedEquipped());
+      const priority = allyCursed
+        ? affordableSpells.find(s => s.id === 'remove_curse' && this.party.members.some(m => m.findCursedEquipped()))
+        : undefined;
+      const spell = priority ?? affordableSpells[Math.floor(Math.random() * affordableSpells.length)];
       if (this.castSpell(character, spell)) return;
     }
 
@@ -566,6 +640,9 @@ export class CombatEngine {
     const pickTarget = (): Monster | null => {
       const candidates = this.monsters.filter(m => m.isAlive && m.id !== charmSource);
       if (candidates.length === 0) return null;
+      // Next victim: the round focus if alive (keep the gang-up going), else nearest.
+      const focus = this.roundFocusMonsterId ? candidates.find(m => m.id === this.roundFocusMonsterId) : undefined;
+      if (focus) return focus;
       let best = candidates[0];
       let bestDist = Infinity;
       for (const m of candidates) {
@@ -652,8 +729,19 @@ export class CombatEngine {
   }
 
   /** Resolve a character spell; returns true when the turn is spent casting. */
-  private castSpell(caster: GameCharacter, spell: Spell): boolean {
+  private castSpell(caster: GameCharacter, spell: Spell, forcedMonsterTarget?: Monster, forcedAllyTarget?: GameCharacter): boolean {
     // ── Control & support effects ──
+    if (spell.id === 'remove_curse') {
+      // Castable out of combat too: the AI lifts an ally's curse if it can.
+      const afflicted = this.party.members.find(m => m.isAlive && m.findCursedEquipped());
+      if (!afflicted) return false; // nobody is cursed — don't waste the slot
+      const slotLevel = this.chooseSlotFor(caster, spell);
+      if (slotLevel === null) return false;
+      const item = afflicted.findCursedEquipped()!;
+      afflicted.liftCurse();
+      this.log.messages.push(`${caster.name} casts Remove Curse — tracing sigils over ${afflicted.name}'s ${item.name}. The binding parts, and the item can be removed.`);
+      return true;
+    }
     if (spell.id === 'hold_person') {
       const humanoid = this.monsters.find(m => m.isAlive && m.template.type === 'humanoid');
       if (!humanoid) return false;
@@ -743,6 +831,18 @@ export class CombatEngine {
 
     // ── Healing ──
     if (spell.healing) {
+      if (forcedAllyTarget && forcedAllyTarget.isAlive) {
+        const slotLevel = this.chooseSlotFor(caster, spell);
+        if (slotLevel === null) return false;
+        const [dicePart] = spell.healing.split('+');
+        const [diceCount, diceSize] = dicePart.split('d').map(Number);
+        let dice = diceCount || 1;
+        if (slotLevel > spell.level) dice += slotLevel - spell.level;
+        const healing = rollDice(dice, diceSize || 4) + caster.spellcastingMod;
+        this.log.messages.push(`${caster.name} casts ${spell.name} on ${forcedAllyTarget.name}!`);
+        this.log.messages.push(forcedAllyTarget.heal(healing));
+        return true;
+      }
       const injured = this.party.alive
         .filter(m => m.hp < m.maxHp)
         .sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
@@ -767,7 +867,11 @@ export class CombatEngine {
       if (victims.length === 0) return false;
       const slotLevel = this.chooseSlotFor(caster, spell);
       if (slotLevel === null) return false;
-      const victim = victims[Math.floor(Math.random() * victims.length)];
+      const victim = (forcedMonsterTarget && forcedMonsterTarget.isAlive)
+        ? forcedMonsterTarget
+        : (this.roundFocusMonsterId
+            ? (victims.find(m => m.id === this.roundFocusMonsterId) ?? victims[0])
+            : victims[Math.floor(Math.random() * victims.length)]);
       const [dicePart] = spell.damage.split(' ');
       const [diceCount, diceSize] = dicePart.split('d').map(Number);
       let dice = diceCount || 1;
@@ -925,11 +1029,15 @@ export class CombatEngine {
   }
 
   private monsterTurn(monster: Monster) {
-    // Pick random alive party member
     const alive = this.party.alive;
     if (alive.length === 0) return;
 
-    const target = alive[Math.floor(Math.random() * alive.length)];
+    // Tactical target selection: finish downed heroes, deny the healer, and
+    // punish the squishy backline instead of whaling on a random hero.
+    const { target, reason } = chooseMonsterTarget(this.party, monster, { maxReach: 6 });
+    if (reason !== 'closest reachable threat') {
+      this.log.messages.push(`\uD83C\uDFF0 ${monster.template.name} fixates on ${target.name} \u2014 ${reason}.`);
+    }
     const mods = getAttackModifiers(monster, target);
     // Gloom-day undead strike with supernatural fury (full-moon lycanthropes
     // are handled by their own awakening transformation in startCombat).

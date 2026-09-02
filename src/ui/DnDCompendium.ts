@@ -409,12 +409,12 @@ export class DnDCompendium {
   constructor(host: HTMLElement) {
     this.host = host;
     this.host.insertAdjacentHTML('beforeend', `
-      <div id="compendium-overlay" style="display:none; position:absolute; inset:0; z-index:40; background:rgba(5,6,12,0.96); color:#ddd; font-family:monospace;">
+      <div id="compendium-overlay" class="dp-theme" style="display:none; position:absolute; inset:0; z-index:46; background:radial-gradient(ellipse at 50% 28%, #0d1118 0%, #07090e 60%, #040508 100%); color:#d6dce8;">
         <div style="height:100%; display:flex; flex-direction:column; padding:18px; box-sizing:border-box;">
-          <div style="display:flex; align-items:center; gap:10px; border-bottom:1px solid #3a3a48; padding-bottom:12px;">
-            <div style="flex:1; color:#ffd76a; font-size:18px; font-weight:bold;">D&D Compendium</div>
-            <div style="color:#777; font-size:11px;" id="compendium-count"></div>
-            <button id="btn-close-compendium" title="Close compendium" style="padding:5px 10px; background:#332b2b; color:#eaa; border:1px solid #6a4444; cursor:pointer; font-family:monospace;">Close</button>
+          <div style="display:flex; align-items:center; gap:10px; border-bottom:1px solid #2a3242; padding-bottom:12px;">
+            <div class="dp-title" style="flex:1; color:#e8c56a; font-size:19px; font-weight:700; letter-spacing:2px; text-shadow:0 0 14px rgba(232,197,106,0.28);">D&D Compendium</div>
+            <div style="color:#8a94a6; font-size:11px;" id="compendium-count"></div>
+            <button id="btn-close-compendium" class="dp-btn-gold" title="Close compendium" style="padding:5px 12px; font-size:12px; cursor:pointer;">Close</button>
           </div>
           <div style="display:flex; gap:8px; margin:12px 0 8px;">
             <input id="compendium-search" type="search" placeholder="Search creatures, spells, rules..." style="flex:1; min-width:0; padding:8px; background:#12131b; color:#eee; border:1px solid #454759; font-family:monospace;">
@@ -426,7 +426,7 @@ export class DnDCompendium {
             <label id="compendium-playable-label" title="Only kinds with a playable stat block & sprite (the 124-monster roster)" style="color:#b8a; font-size:12px; display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;">
               <input type="checkbox" id="compendium-playable" checked style="cursor:pointer;"> Playable only
             </label>
-            <button id="compendium-reset" title="Clear all filters" style="padding:6px 10px; background:#2a2433; color:#b8a; border:1px solid #54406a; cursor:pointer; font-family:monospace; font-size:11px;">Reset</button>
+            <button id="compendium-reset" class="dp-btn" title="Clear all filters" style="padding:6px 12px; cursor:pointer; font-size:11px;">Reset</button>
           </div>
           <div style="flex:1; min-height:0; display:flex; gap:12px;">
             <div id="compendium-list" style="width:37%; min-width:220px; overflow-y:auto; border-right:1px solid #30313d; padding-right:8px;"></div>

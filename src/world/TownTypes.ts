@@ -40,6 +40,7 @@ export type TownServiceId =
   | 'train_magic'
   | 'heal'
   | 'identify'
+  | 'remove_curse'
   | 'enchant'
   | 'craft'
   | 'bounty_board'
@@ -107,6 +108,12 @@ const SERVICES: Record<TownServiceId, Omit<TownService, 'id'>> = {
     description: 'The wizard identifies a magical item in your inventory.',
     cost: 30,
     effect: 'Reveals the properties of one unidentified item.',
+  },
+  remove_curse: {
+    name: 'Rite of Curse-Lifting',
+    description: 'The temple clergy perform a rite that parts a cursed item from its bearer.',
+    cost: 120,
+    effect: 'Lifts the curse on one equipped cursed item so it can be removed.',
   },
   enchant: {
     name: 'Enchant Weapon',
@@ -375,7 +382,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'temple', name: 'Temple of the Tides', icon: '✨',
         description: 'A seaside temple dedicated to the sea gods. Prayers are offered for safe voyages.',
-        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate')],
+        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate'), svc('remove_curse')],
         hasShop: false,
       },
       {
@@ -414,7 +421,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'temple', name: "Shrine of Earth's Heart", icon: '✨',
         description: 'A dwarven shrine carved into living rock. The priests bless miners before each descent.',
-        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate')],
+        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate'), svc('remove_curse')],
         hasShop: false,
       },
     ],
@@ -447,7 +454,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'clinic', name: 'Arcane Infirmary', icon: '💚',
         description: 'Mage-healers treat wounds with a mix of magic and medicine.',
-        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate')],
+        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate'), svc('remove_curse')],
         hasShop: false,
       },
     ],
@@ -480,7 +487,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'temple', name: 'Waystone Shrine', icon: '✨',
         description: 'A simple stone shrine at the town\'s edge. Travelers pray for safe passage.',
-        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate')],
+        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate'), svc('remove_curse')],
         hasShop: false,
       },
     ],
@@ -567,7 +574,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'temple', name: 'Village Chapel', icon: '⛪',
         description: 'A small stone chapel. The priest blesses the crops and heals the sick.',
-        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate')],
+        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate'), svc('remove_curse')],
         hasShop: false,
       },
       {
@@ -666,7 +673,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'temple', name: 'Sun Temple', icon: '☀️',
         description: 'A temple dedicated to the sun gods. Its dome glitters with gold leaf.',
-        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate')],
+        services: [svc('heal'), svc('temple_blessing'), svc('temple_donate'), svc('remove_curse')],
         hasShop: false,
       },
       {

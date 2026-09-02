@@ -11,6 +11,17 @@
 import { MAGIC_ITEMS, MagicItem } from '../ai/DnDKnowledge';
 import { InventoryItem } from '../entities/Character';
 import { rollDice } from '../data/gameData';
+import { rollTieredGear } from './TieredGear';
+
+/** Pick a curse flavor that fits the slain creature's kind. */
+function pickCurseKind(type?: string): 'leeching' | 'clumsy' | 'heavy' | 'doomed' {
+  const pool: Array<'leeching' | 'clumsy' | 'heavy' | 'doomed'> = type && /undead|fiend|shadow/i.test(type)
+    ? ['leeching', 'doomed', 'leeching']
+    : type && /giant|construct|beast/i.test(type)
+      ? ['heavy', 'clumsy', 'heavy']
+      : ['clumsy', 'heavy', 'leeching', 'doomed'];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 export interface CoinPurse {
   cp: number;
@@ -460,6 +471,28 @@ export function rollCombatLoot(sources: LootSource[], dungeonLevel: number): Loo
   const narration: string[] = [];
   let hoard = false;
 
+  // Tiered mundane gear (+1/+2/+3): a separate drop channel from named magic
+  // items, so the progression ladder between plain steel and legendaries has
+  // actual rungs. Chance and cap scale with the foe's CR and dungeon depth.
+  const addTieredGear = (cr: number, isBoss: boolean, type?: string): void => {
+    const cap = Math.min(3, 1 + Math.floor(cr / 8) + Math.floor(dungeonLevel / 5) + (isBoss ? 1 : 0));
+    const chance = Math.min(0.35, 0.04 + cr * 0.012 + dungeonLevel * 0.01 + (isBoss ? 0.25 : 0));
+    if (Math.random() >= chance) return;
+    // An evil-bearing corpse sometimes leaves its curse behind on the gear.
+    const cursedPiece = cr >= 3 && Math.random() < 0.12;
+    const piece = rollTieredGear({ maxBonus: cap, minBonus: Math.max(1, cap - 1) });
+    if (cursedPiece) {
+      piece.cursed = true;
+      piece.curseKind = pickCurseKind(type);
+      piece.description += ' Something about it is… off.';
+    }
+    items.push(piece);
+    narration.push(`Among the spoils: ${piece.name} — ${piece.description}`);
+    if (cursedPiece) {
+      narration.push(`⚠ A cold breath stirs from the ${piece.name} — handle with care.`);
+    }
+  };
+
   const addCoins = (c: CoinPurse) => {
     coins.cp += c.cp; coins.sp += c.sp; coins.ep += c.ep; coins.gp += c.gp; coins.pp += c.pp;
   };
@@ -472,6 +505,7 @@ export function rollCombatLoot(sources: LootSource[], dungeonLevel: number): Loo
     addCoins(drop.coins);
     items.push(...drop.items);
     individualItems.push(...drop.items);
+    addTieredGear(src.cr, Boolean(src.isBoss), src.type);
     for (const mi of drop.magicItems) {
       magicItems.push(mi);
       items.push(magicToInventoryItem(mi));
@@ -503,6 +537,7 @@ export function rollCombatLoot(sources: LootSource[], dungeonLevel: number): Loo
     const h = rollHoard(hoardCr, hoardSource.type);
     addCoins(h.coins);
     items.push(...h.gems);
+    addTieredGear(hoardCr, true, hoardSource.type);
     for (const mi of h.magicItems) {
       magicItems.push(mi);
       items.push(magicToInventoryItem(mi));

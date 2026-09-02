@@ -316,6 +316,7 @@ export const SPELLS: Spell[] = [
   // Level 3-4
   { id: 'call_lightning', name: 'Call Lightning', level: 3, school: 'Conjuration', castingTime: '1 action', range: '120 ft', duration: 'Concentration, 10 min', description: 'A storm cloud births bolts of lightning at your command.', damage: '3d10 lightning', save: 'dex' },
   { id: 'blight_spell', name: 'Blight', level: 4, school: 'Necromancy', castingTime: '1 action', range: '30 ft', duration: 'Instantaneous', description: 'Necromantic energy withers the target.', damage: '8d8 necrotic', save: 'con' },
+  { id: 'remove_curse', name: 'Remove Curse', level: 3, school: 'Abjuration', castingTime: '1 action', range: 'Touch', duration: 'Instantaneous', description: 'All curses affecting one creature or object end instantly.' },
   { id: 'cone_of_cold_playable', name: 'Cone of Cold', level: 5, school: 'Evocation', castingTime: '1 action', range: '60 ft cone', duration: 'Instantaneous', description: 'A blast of killing cold erupts from your hands.', damage: '8d8 cold', save: 'con' },
   // ── More Cantrips ──
   { id: 'poison_spray', name: 'Poison Spray', level: 0, school: 'Conjuration', castingTime: '1 action', range: '10 ft', duration: 'Instantaneous', description: 'You extend your hand and project a puff of noxious gas.', damage: '1d12 poison', save: 'con' },

@@ -28,6 +28,12 @@ export interface InventoryItem {
   identified?: boolean;
   /** Numeric power value (damage, healing, etc.). */
   power?: number;
+  /** Cursed items bind to the wearer until remove curse / temple rite. */
+  cursed?: boolean;
+  /** Once revealed (by a telltale check or identification), the curse is known. */
+  curseKnown?: boolean;
+  /** Optional mechanical curse flavor: which penalty it carries. */
+  curseKind?: 'leeching' | 'clumsy' | 'heavy' | 'doomed';
 }
 
 /** The four body slots a character can fill with gear. */
@@ -55,6 +61,40 @@ export function slotForItem(item: InventoryItem): EquipSlot | null {
 export function magicBonusOf(item: InventoryItem): number {
   const m = (item.name + ' ' + (item.effect ?? '')).match(/\+(\d)/);
   return m ? parseInt(m[1], 10) : 0;
+}
+
+/** True once an item has been cursed by its encounter of origin. */
+export function isCursed(item: InventoryItem): boolean {
+  return item.cursed === true;
+}
+
+/**
+ * The telltale signs a cursed item shows before it's equipped — vague but
+ * real warnings, the classic "it hums with a low, hungry note".
+ */
+export function curseTelltale(item: InventoryItem): string | null {
+  if (!isCursed(item)) return null;
+  const kind = item.type === 'weapon' ? 'blade' : item.type === 'armor' ? 'armor' : 'trinket';
+  const SIGNS: Record<string, string[]> = {
+    weapon: [
+      'the steel drinks the light around it a shade too eagerly',
+      'a faint whisper rides the edge of hearing when it is lifted',
+      'the grip is cold, and stays cold no matter how long it is held',
+    ],
+    armor: [
+      'the clasps are tarnished as if by old tears',
+      'a low hum settles in the bones when it is worn',
+      'it fits too well, as if it already knows its owner',
+    ],
+    trinket: [
+      'the stone at its heart pulses out of rhythm with any living heart',
+      'your reflection in it lags half a beat behind',
+      'it is warmer than the air around it, like something breathing',
+    ],
+  };
+  const pool = SIGNS[kind] ?? SIGNS.trinket;
+  const idx = (item.name.length + (item.value ?? 0)) % pool.length;
+  return pool[idx];
 }
 
 // ── Weapon & armor proficiency tables (5e-flavored) ─────────────────────────
@@ -252,7 +292,9 @@ export class GameCharacter {
     const weapon = this.equipment.weapon;
     const proficient = !weapon || this.isProficientWithWeapon(weapon);
     const profPart = proficient ? proficiencyBonus(this.level) : 0;
-    return profPart + this.bonusAttackBonus + this.weaponMagicBonus;
+    // The 'clumsy' curse fumbles the wielder's hands: -2 to hit.
+    const clumsy = this.findCursedEquipped()?.curseKind === 'clumsy' ? -2 : 0;
+    return profPart + this.bonusAttackBonus + this.weaponMagicBonus + clumsy;
   }
 
   /** True when the equipped weapon is outside the class's training. */
@@ -299,6 +341,8 @@ export class GameCharacter {
     if (armor) ac = Math.max(ac, armor.power ?? 11);
     if (this.equipment.shield) ac += this.equipment.shield.power ?? 2;
     if (this.equipment.trinket) ac += magicBonusOf(this.equipment.trinket) || 1;
+    // The 'heavy' curse weighs the wearer down: -1 AC.
+    if (this.findCursedEquipped()?.curseKind === 'heavy') ac -= 1;
     this.ac = ac;
   }
 
@@ -330,17 +374,61 @@ export class GameCharacter {
     if (previous) this.inventory.push(previous);
     this.recomputeAC();
     const slotLabel = { weapon: 'wields', armor: 'dons', shield: 'raises', trinket: 'fastens' }[slot];
+    // A cursed item binds the moment it is worn — the truth arrives too late.
+    if (isCursed(item)) {
+      item.curseKnown = true;
+      return { ok: true, line: `${this.name} ${slotLabel} ${item.name}. ${this.curseBites(item)}` };
+    }
     return { ok: true, line: `${this.name} ${slotLabel} ${item.name}.` };
   }
 
-  /** Remove a slot's gear back to the pack. Returns the narration or null. */
+  /** The narration when a curse takes hold on equip. */
+  private curseBites(item: InventoryItem): string {
+    const kind = item.curseKind ?? 'leeching';
+    switch (kind) {
+      case 'clumsy': return `The moment it settles, ${this.name}'s fingers forget their cunning — the item grips back. (-2 to hit)`;
+      case 'heavy': return `It settles like a stone — ${this.name} feels the weight of someone else's regrets. (-1 AC)`;
+      case 'doomed': return `A whisper names ${this.name} to something far below. Monsters will hunt this one. (-1 to all saves)`;
+      default: return `${this.name} feels a slow pull at their strength — the ${item.name} is drinking. (leeches 1 HP per combat round)`;
+    }
+  }
+
+  /**
+   * Try to remove an equipped item. Cursed gear refuses unless the curse
+   * has been lifted (item.cursed cleared by remove curse / temple rite).
+   */
   unequip(slot: EquipSlot): string | null {
     const item = this.equipment[slot];
     if (!item) return null;
+    if (isCursed(item)) {
+      return `The ${item.name} will not come off — it clings like a second skin. Only a remove curse spell or a temple's rite can part them.`;
+    }
     this.equipment[slot] = undefined;
     this.inventory.push(item);
     this.recomputeAC();
     return `${this.name} stows their ${item.name}.`;
+  }
+
+  /** Lift a curse in place: the item stays equipped but comes off freely after. */
+  liftCurse(): string | null {
+    for (const slot of ['weapon', 'armor', 'shield', 'trinket'] as EquipSlot[]) {
+      const item = this.equipment[slot];
+      if (item && isCursed(item)) {
+        item.cursed = false;
+        item.curseKnown = true;
+        return `The pall over the ${item.name} lifts — ${this.name} breathes easier. It can be removed now.`;
+      }
+    }
+    return null;
+  }
+
+  /** The equipped cursed item, if any. */
+  findCursedEquipped(): InventoryItem | null {
+    for (const slot of ['weapon', 'armor', 'shield', 'trinket'] as EquipSlot[]) {
+      const item = this.equipment[slot];
+      if (item && isCursed(item)) return item;
+    }
+    return null;
   }
 
   /** Human-readable equipped-gear summary for UI and DM inspection. */
@@ -493,6 +581,8 @@ export class GameCharacter {
 
   /** d20 + ability mod (+proficiency if it's a class save). Nat 20 succeeds, nat 1 fails. */
   makeSavingThrow(ability: Ability, dc: number, extraBonus: number = 0): SaveResult {
+    // The 'doomed' curse draws hostile attention: -1 to all saves.
+    if (this.findCursedEquipped()?.curseKind === 'doomed') extraBonus -= 1;
     // Petrified and paralyzed creatures automatically fail STR and DEX saves.
     if ((ability === 'str' || ability === 'dex') &&
         (this.hasCondition('petrified') || this.hasCondition('paralyzed'))) {
