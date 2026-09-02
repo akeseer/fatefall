@@ -1,0 +1,54 @@
+# CLAUDE.md — working notes for this codebase
+
+Fatefall is a zero-runtime-dependency browser RPG in vanilla TypeScript + Vite.
+The player is the Dungeon Master; the party is autonomous.
+
+## Commands
+
+```bash
+npm run dev      # dev server (127.0.0.1:5173)
+npm run build    # tsc --noEmit (strict) then vite build
+npm test         # vitest run; tests live in tests/**/*.test.ts
+```
+
+Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
+
+## Architecture map
+
+- **`src/main.ts` — `Game`**. Owns all state. One class, one `requestAnimationFrame`
+  loop with a fixed 33 ms simulation step (`gameStep`) and a visible-only watchdog
+  timer. `update(dt)` branches on `GameMode` (Overworld / Town / Dungeon) and
+  `GamePhase` (Exploration / Combat). Three consecutive thrown errors halt the sim
+  and show a HUD banner (`handleStepError`); UI callbacks are wrapped with `guard()`.
+- **DM orders**: `handleDMCommand` → understanding → `dispatchDMCommand`. The pure
+  parser and intent types live in `src/ai/DMCommand.ts` / `src/ai/DMCommandParser.ts`;
+  the trained intent model is `src/ai/IntentModel.ts` (weights in `public/models/`).
+- **`src/ai/AIDirector.ts`** — the party's tactical planner. Returns an `AIAction`
+  union that `Game.aiTick` dispatches on. Combat decisions live in `CombatEngine`.
+- **`src/combat/CombatEngine.ts`** — DOM-free. `step()` returns a `CombatLog` whose
+  messages the game feeds to the HUD. Mutates the `Party`/`Monster` objects it is given.
+- **`src/world/`** — `Overworld` (towns, entrances, POIs), `TownLife` (rumors,
+  festivals, bulletin boards, quest givers per town), `DungeonGenerator` (seedable via
+  `hashSeed`), `RoomFeatures` (one optional feature per room), weather/day-night/calendar.
+- **`src/save/SaveManager.ts`** — three localStorage slots. `SAVE_VERSION` guards the
+  schema; `migrateSave` is a linear chain of `migrateVNtoVN+1` steps.
+- **`src/ui/HUD.ts`** — builds the DOM overlay from a template string. The log is
+  append-only HTML strings (`addCombatMessage`).
+
+## Conventions and gotchas
+
+- **Adding a save field**: declare it optional on `SaveData`, bump `SAVE_VERSION`,
+  add a `migrateVNtoVN+1` step and a line in the `migrateSave` ladder, write it in
+  `Game.toSaveData()`, read it with `?? default` in `Game.restore()`. Add a test in
+  `tests/save-migrate.test.ts`.
+- **Adding a `TileType` or `RoomFeatureKind`**: several exhaustive `Record`s must be
+  updated or `tsc` fails — `TILE_COLORS` in `TileMap.ts`, `VARIANTS` in
+  `RoomFeatures.ts`, `Game.FEATURE_HINT`, and `drawFeature` in `MapRenderer.ts`.
+- **Kill ledger keys are monster template ids** (`m.template.id`), not display names.
+  Anything that counts kills must use template ids.
+- `DiceEvents` and `LuckDie` are module-level singletons; tests call
+  `resetDiceEvents()` / `grantLuckDie(null)` in `beforeEach`.
+- `main.ts` uses LF line endings; `.gitattributes` normalizes the repo to LF.
+- The DM regex cascade is the labelling oracle for the intent model. When you change
+  a command's wording, regenerate the canonical fixture and retrain (see
+  `tools/train/README.md`).
