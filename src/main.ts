@@ -4,6 +4,7 @@ import { TileMap } from './world/TileMap';
 import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
 import { assignFeature, assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
 import { RoomFeatureController } from './game/RoomFeatureController';
+import { BulletinBoardController } from './game/BulletinBoardController';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
 import { understand, IntentPredictor } from './ai/DMCommandParser';
 import { IntentModel, loadIntentModel, intentModelEnabled, setIntentModelEnabled } from './ai/IntentModel';
@@ -13,6 +14,7 @@ import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
 import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, createClock, dayChangeNarration, tickClock, timeOfDayFromPhase } from './world/DayNightSystem';
 import { CalendarDay, calendarFromElapsed } from './world/CalendarSystem';
 import { BIOME_EVENTS, Wanderer, isWildlife, randomTravelEvent, scatterWildlife, spawnOverworldLife, stepWanderers } from './world/OverworldLife';
+import { astarPath, dijkstraField } from './world/Pathfinding';
 import { FESTIVAL_FLAVOR, TownLifeState, initTownLife, isCaravanWanderer, sanitizeTownLife, tickTownLife, rollArrivalEvent, eventFor, townPriceModifier, rollTavernBuff, getTavernBuffNarration, refreshBulletinBoard } from './world/TownLife';
 import { TOWN_ARCHETYPES, TownServiceId, ReputationShopItem } from './world/TownTypes';
 import { Ambush, findAmbushTiles, getAmbushChance, rollAmbush } from './world/Ambushes';
@@ -225,7 +227,7 @@ class Game {
   private bossSlainThisFloor: boolean = false;
 
   /** A running account of what this party has done — feeds room narration. */
-  private history: PartyHistory = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
+  public history: PartyHistory = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
   private visitedRooms: Set<number> = new Set();
 
   private tickTimer: number = 0;
@@ -2182,6 +2184,9 @@ class Game {
    * Act on a room-feature intent for the room the party stands in. The work
    * itself lives in RoomFeatureController; Game only supplies the context.
    */
+  /** True while the party is standing in a town. */
+  get inTown(): boolean { return this.mode === GameMode.Town; }
+
   /** Everything that happens when the party uses a room's feature. */
   private readonly roomFeatures = new RoomFeatureController(this);
 
@@ -3889,42 +3894,13 @@ class Game {
   }
 
   /** BFS shortest path (leader-only) across the overworld tiles. */
+  /**
+   * A* route from the party to a target, honoring terrain costs. Roads beat
+   * mountains; the search itself can't trace loops. Falls back to [] only
+   * when genuinely unreachable — partial paths cover huge maps.
+   */
   private bfsOverworldPath(from: Vector2, to: Vector2): Vector2[] {
-    const w = this.map.width;
-    const h = this.map.height;
-    const prev = new Int32Array(w * h).fill(-1);
-    const startIdx = from.y * w + from.x;
-    const targetIdx = to.y * w + to.x;
-    if (startIdx < 0 || startIdx >= w * h || targetIdx < 0 || targetIdx >= w * h) return [];
-    const q: number[] = [startIdx];
-    prev[startIdx] = startIdx;
-    let head = 0;
-    let found = false;
-    while (head < q.length) {
-      const cur = q[head++];
-      if (cur === targetIdx) { found = true; break; }
-      const cx = cur % w;
-      const cy = (cur / w) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = cx + dx;
-        const ny = cy + dy;
-        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-        const ni = ny * w + nx;
-        if (prev[ni] !== -1) continue;
-        if (!this.map.isWalkable(nx, ny)) continue;
-        prev[ni] = cur;
-        q.push(ni);
-      }
-    }
-    if (!found) return [];
-    const path: Vector2[] = [];
-    let cur = targetIdx;
-    let guard = 0;
-    while (cur !== startIdx && guard++ < 10000) {
-      path.push({ x: cur % w, y: (cur / w) | 0 });
-      cur = prev[cur];
-    }
-    return path;
+    return astarPath(this.map, from, to, { maxNodes: 30000 });
   }
 
   /** Where should the party march? Quest entrance, or home to town. */
@@ -5105,165 +5081,18 @@ class Game {
     this.hud.townPanel.refresh();
   }
 
-  // ── Bulletin board tasks ────────────────────────────────────────────────
+  // ── Bulletin board tasks ──────────────────────────────────
 
-  /** Every task on every board, so progress can land wherever the party is. */
-  private allBulletinTasks(): BulletinTask[] {
-    if (!this.townLife) return [];
-    return Object.values(this.townLife.byTown).flatMap(t => t.bulletinTasks ?? []);
-  }
+  /** The town's small jobs: taking them on, tracking them, paying them out. */
+  private readonly bulletin = new BulletinBoardController(this);
 
-  /** Accepted, unfinished tasks — the only ones that can make progress. */
-  private activeBulletinTasks(): BulletinTask[] {
-    return this.allBulletinTasks().filter(t => t.accepted && !t.completed);
-  }
-
-  /** Take a task on. Progress is measured from this moment, not from the run. */
-  private acceptBulletinTask(task: BulletinTask): void {
-    if (task.accepted) {
-      this.hud.addCombatMessage(`The party has already taken on "${task.title}".`, '#8a8');
-      return;
-    }
-    task.accepted = true;
-    task.progress = 0;
-    if (task.kind === 'slay' && task.targetKind) {
-      task.baselineKills = this.history.killLedger[task.targetKind] ?? 0;
-    }
-    if (task.kind === 'escort' || task.kind === 'deliver') {
-      task.targetTownId = this.currentTown?.id;
-    }
-    this.hud.addCombatMessage(`📋 Task accepted: ${task.title}`, '#ffd700');
-    this.hud.addCombatMessage(`   ${task.detail}`, '#8cf');
-    this.hud.addCombatMessage(`   ${bulletinObjective(task)}`, '#8a8');
-    this.hud.townPanel.refresh();
-  }
-
-  /** Announce a task whose objective has just been met. */
-  private announceBulletinReady(task: BulletinTask): void {
-    if (task.completed) return;
-    task.completed = true;
-    this.hud.addCombatMessage(`📋 Task ready to claim: ${task.title} — report in town.`, '#ffd700');
-    this.hud.townPanel.refresh();
-  }
-
-  /** Slay tasks read the kill ledger, so they count kills made since accepting. */
-  private bulletinSlayProgress(): void {
-    for (const task of this.activeBulletinTasks()) {
-      if (task.kind !== 'slay' || !task.targetKind) continue;
-      const total = this.history.killLedger[task.targetKind] ?? 0;
-      task.progress = Math.min(task.targetCount, Math.max(0, total - (task.baselineKills ?? 0)));
-      if (task.progress >= task.targetCount) this.announceBulletinReady(task);
-    }
-  }
-
-  /** Collect tasks tick up as the party hauls finds out of the dark. */
-  private bulletinCollectProgress(found: number): void {
-    if (found <= 0) return;
-    for (const task of this.activeBulletinTasks()) {
-      if (task.kind !== 'collect') continue;
-      task.progress = Math.min(task.targetCount, task.progress + found);
-      if (task.progress >= task.targetCount) this.announceBulletinReady(task);
-    }
-  }
-
-  /**
-   * Scout tasks count rooms the party opens up. This counts up as each new
-   * room is entered rather than diffing a total, because the room tally resets
-   * on every floor and a baseline taken in town would never be reached again.
-   */
-  private bulletinScoutProgress(rooms: number = 0): void {
-    if (rooms <= 0) return;
-    for (const task of this.activeBulletinTasks()) {
-      if (task.kind !== 'scout') continue;
-      task.progress = Math.min(task.targetCount, task.progress + rooms);
-      if (task.progress >= task.targetCount) this.announceBulletinReady(task);
-    }
-  }
-
-  /** Escorts and deliveries resolve on reaching a town other than the poster's. */
-  private bulletinArrivalProgress(townId: string): void {
-    for (const task of this.activeBulletinTasks()) {
-      if (task.kind !== 'escort' && task.kind !== 'deliver') continue;
-      if (task.targetTownId && task.targetTownId === townId) continue;
-      task.progress = task.targetCount;
-      this.announceBulletinReady(task);
-    }
-  }
-
-  private completeBulletinTask(task: BulletinTask): void {
-    if (this.mode !== GameMode.Town) {
-      this.hud.addCombatMessage('Board work is claimed in town.', '#886');
-      return;
-    }
-    if (!task.accepted) {
-      this.acceptBulletinTask(task);
-      return;
-    }
-    if (!bulletinObjectiveMet(task)) {
-      this.hud.addCombatMessage(
-        `"${task.title}" is not done yet — ${bulletinProgress(task)}. ${bulletinObjective(task)}`,
-        '#886',
-      );
-      return;
-    }
-    if (task.progress >= task.targetCount && !task.completed) task.completed = true;
-
-    // Grant rewards. addXp is used so a level-up actually fires.
-    this.addGold(task.rewardGold);
-    for (const m of this.party.members) {
-      // addXp, not a raw xp bump, so the level-up actually fires.
-      if (m.addXp(task.rewardXp)) {
-        this.hud.addCombatMessage(`⬆ ${m.name} reaches level ${m.level}!`, '#7c7');
-      }
-    }
-    // Reputation reward
-    if (this.currentTown && this.townLife) {
-      const tl = this.townLife.byTown[this.currentTown.id];
-      if (tl) {
-        tl.townReputation = Math.min(100, tl.townReputation + task.repReward);
-      }
-    }
-
-    // Claimed work leaves the board.
-    if (this.townLife) {
-      for (const entry of Object.values(this.townLife.byTown)) {
-        entry.bulletinTasks = (entry.bulletinTasks ?? []).filter(t => t.id !== task.id);
-      }
-    }
-
-    this.hud.addCombatMessage(`📋 Task complete: ${task.title}`, '#ffd700');
-    this.hud.addCombatMessage(`   +${task.rewardGold} gp, +${task.rewardXp} XP, +${task.repReward} reputation`, '#8cf');
-    this.hud.setParty(this.party);
-    this.hud.townPanel.refresh();
-  }
-
-  /** "tasks" — read the board and the party's in-flight work back to the DM. */
-  private listBulletinTasks(): void {
-    const local = this.currentTown && this.townLife
-      ? this.townLife.byTown[this.currentTown.id]?.bulletinTasks ?? []
-      : [];
-    const carried = this.activeBulletinTasks().filter(t => !local.includes(t));
-    if (local.length === 0 && carried.length === 0) {
-      this.hud.addCombatMessage('No board work in hand. Boards are posted in town.', '#888');
-      return;
-    }
-    if (local.length > 0) {
-      this.hud.addCombatMessage('📋 Bulletin board:', '#ca8');
-      local.forEach((t, i) => {
-        const state = t.completed ? '✅ ready to claim' : t.accepted ? bulletinProgress(t) : 'not taken';
-        this.hud.addCombatMessage(`  ${i + 1}. ${bulletinIcon(t.kind)} ${t.title} — ${state}`, '#a89');
-        this.hud.addCombatMessage(`     ${t.rewardGold} gp, ${t.rewardXp} XP. ${bulletinObjective(t)}`, '#888');
-      });
-      this.hud.addCombatMessage('  Say "accept task 2" to take one on.', '#888');
-    }
-    if (carried.length > 0) {
-      this.hud.addCombatMessage('📋 Work in hand from other towns:', '#ca8');
-      for (const t of carried) {
-        this.hud.addCombatMessage(`  ${bulletinIcon(t.kind)} ${t.title} — ${bulletinProgress(t)}`, '#a89');
-      }
-    }
-  }
-
+  private acceptBulletinTask(task: BulletinTask): void { this.bulletin.acceptBulletinTask(task); }
+  private completeBulletinTask(task: BulletinTask): void { this.bulletin.completeBulletinTask(task); }
+  private listBulletinTasks(): void { this.bulletin.listBulletinTasks(); }
+  private bulletinSlayProgress(): void { this.bulletin.bulletinSlayProgress(); }
+  private bulletinCollectProgress(found: number): void { this.bulletin.bulletinCollectProgress(found); }
+  private bulletinScoutProgress(rooms: number): void { this.bulletin.bulletinScoutProgress(rooms); }
+  private bulletinArrivalProgress(townId: string): void { this.bulletin.bulletinArrivalProgress(townId); }
 
   private restAtInn(): void {
     if (this.mode !== GameMode.Town) return;
