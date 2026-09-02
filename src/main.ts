@@ -821,6 +821,9 @@ class Game {
   /** Never simulate more than this many steps per frame after a stall or a hidden tab. */
   private static readonly MAX_STEPS_PER_FRAME = 3;
   private rafId: number | null = null;
+  /** Timer that steps the sim when a visible-but-occluded window gets no animation frames. */
+  private watchdogId: ReturnType<typeof setTimeout> | null = null;
+  private static readonly WATCHDOG_MS = 100;
   private accumulator: number = 0;
   private consecutiveErrors: number = 0;
   /** Set when repeated errors halted the sim; cleared by the pause toggle / resume order. */
@@ -845,7 +848,8 @@ class Game {
    * clamp keeps it from fast-forwarding when the tab returns.
    */
   private gameStep = (now: number) => {
-    this.rafId = null;
+    if (this.rafId !== null) { cancelAnimationFrame(this.rafId); this.rafId = null; }
+    if (this.watchdogId !== null) { clearTimeout(this.watchdogId); this.watchdogId = null; }
     // Stopped on purpose (e.g. back to the main menu) — just idle.
     if (!this.running) return;
 
@@ -873,6 +877,12 @@ class Game {
     }
 
     this.rafId = requestAnimationFrame(this.gameStep);
+    // Browsers stop animation frames for occluded windows even when the tab
+    // is technically visible; a hidden tab stays paused (no reschedule).
+    this.watchdogId = setTimeout(() => {
+      this.watchdogId = null;
+      if (this.running && document.visibilityState === 'visible') this.gameStep(performance.now());
+    }, Game.WATCHDOG_MS);
   };
 
   /**
