@@ -10,6 +10,7 @@
 import { TileMap, TileType } from './TileMap';
 import { Overworld } from './Overworld';
 import { Vector2 } from '../engine/types';
+import { astarPath } from './Pathfinding';
 
 export type WandererKind =
   | 'traveler' | 'merchant' | 'guard' | 'pilgrim' | 'scout'
@@ -31,6 +32,9 @@ export interface Wanderer {
   phase: number; // per-wanderer animation phase
   /** Recently visited tiles — new targets avoid them so nobody paces in circles. */
   recent: { x: number; y: number }[];
+  /** Cached A* route to the current target (tiles left to walk). Optional
+   * so old saves without it load clean — absence just means "pick a route". */
+  path?: Vector2[];
 }
 
 const TRAVELER_LINES = [
@@ -224,33 +228,63 @@ export function spawnOverworldLife(overworld: Overworld): Wanderer[] {
 export function stepWanderers(wanderers: Wanderer[], map: TileMap): void {
   for (const w of wanderers) {
     if (w.speed <= 0) continue;
+    const isPerson = w.kind === 'traveler' || w.kind === 'merchant' || w.kind === 'guard' || w.kind === 'pilgrim' || w.kind === 'scout';
+
+    // Arrived? Park, remember the spot, and pick a new destination — the
+    // route there is solved once with A* instead of blind sign-stepping.
     if (w.tile.x === w.target.x && w.tile.y === w.target.y) {
-      // Remember this spot; new targets avoid recent ground so the wanderer
-      // drifts outward instead of pacing a loop between two patches.
       w.recent.push({ x: w.tile.x, y: w.tile.y });
       if (w.recent.length > 6) w.recent.shift();
-      // New target: people follow roads, wildlife wanders nearby terrain.
-      if (w.kind === 'traveler' || w.kind === 'merchant' || w.kind === 'pilgrim' || w.kind === 'scout') {
-        const spot = pickRoadSpot(map, w.tile, 10, w.recent);
-        if (spot) w.target = spot;
+      let spot: Vector2 | null = null;
+      if (isPerson) {
+        spot = pickRoadSpot(map, w.tile, 10, w.recent);
       } else {
-        const spot = pickWildSpot(map, w.tile, 8, w.kind, w.recent);
-        if (spot) w.target = spot;
+        spot = pickWildSpot(map, w.tile, 8, w.kind, w.recent);
+      }
+      if (spot) {
+        w.target = spot;
+        w.path = astarPath(map, w.tile, spot, { maxNodes: 2500 });
+      } else {
+        w.path = [];
       }
       continue;
     }
-    const dx = Math.sign(w.target.x - w.tile.x);
-    const dy = Math.sign(w.target.y - w.tile.y);
-    const nx = w.tile.x + dx;
-    const ny = w.tile.y + dy;
-    const t = map.getTile(nx, ny);
-    const isPerson = w.kind === 'traveler' || w.kind === 'merchant' || w.kind === 'guard' || w.kind === 'pilgrim' || w.kind === 'scout';
-    const ok = isPerson ? isRoadTile(t) : map.isWalkable(nx, ny);
-    if (ok) {
-      w.tile.x = nx;
-      w.tile.y = ny;
-    } else {
-      w.target = { ...w.tile };
+
+    // Walk the cached A* route — it bends around lakes, mountains and
+    // fenced fields, so wanderers stop head-butting obstacles.
+    if (w.path && w.path.length > 0) {
+      const next = w.path[w.path.length - 1];
+      const nx = next.x;
+      const ny = next.y;
+      const t = map.getTile(nx, ny);
+      const ok = isPerson ? isRoadTile(t) || t === TileType.Road || t === TileType.Bridge || map.isWalkable(nx, ny) : map.isWalkable(nx, ny);
+      if (ok) {
+        w.tile.x = nx;
+        w.tile.y = ny;
+      }
+      w.path.pop();
+      if (w.tile.x === w.target.x && w.tile.y === w.target.y) {
+        w.path = [];
+      }
+      continue;
+    }
+
+    // No cached route (old save, or the path failed): re-solve once; if that
+    // fails too, straight-line stepping as a last resort.
+    w.path = astarPath(map, w.tile, w.target, { maxNodes: 2500 });
+    if (w.path.length === 0) {
+      const dx = Math.sign(w.target.x - w.tile.x);
+      const dy = Math.sign(w.target.y - w.tile.y);
+      const nx = w.tile.x + dx;
+      const ny = w.tile.y + dy;
+      const t = map.getTile(nx, ny);
+      const ok = isPerson ? isRoadTile(t) : map.isWalkable(nx, ny);
+      if (ok) {
+        w.tile.x = nx;
+        w.tile.y = ny;
+      } else {
+        w.target = { ...w.tile }; // boxed in — pick a new destination
+      }
     }
   }
 }

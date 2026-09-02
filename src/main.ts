@@ -5,6 +5,7 @@ import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
 import { assignFeature, assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
 import { RoomFeatureController } from './game/RoomFeatureController';
 import { BulletinBoardController } from './game/BulletinBoardController';
+import { MarketController } from './game/MarketController';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
 import { understand, IntentPredictor } from './ai/DMCommandParser';
 import { IntentModel, loadIntentModel, intentModelEnabled, setIntentModelEnabled } from './ai/IntentModel';
@@ -210,7 +211,7 @@ class Game {
   private clock: ClockState = createClock();
   private lastClockStage: TimeOfDay = 'dawn';
   /** The named calendar day (weekday + moon) derived from the clock. */
-  private calendar: CalendarDay = calendarFromElapsed(this.clock.elapsed);
+  public calendar: CalendarDay = calendarFromElapsed(this.clock.elapsed);
   /** Pending guard hire from town service — applied when entering the next dungeon. */
   public pendingGuardHire: { name: string; classId: string } | null = null;
   /** The party forged a silvered weapon from moon-touched materials. */
@@ -229,6 +230,10 @@ class Game {
   /** A running account of what this party has done — feeds room narration. */
   public history: PartyHistory = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
   private visitedRooms: Set<number> = new Set();
+  /** Cached A* route the dungeon exploration brain is currently walking. */
+  private dungeonRoute: Vector2[] = [];
+  /** Room index the cached route leads to (−1 = no route). */
+  private dungeonRouteGoal: number = -1;
 
   private tickTimer: number = 0;
   private tickInterval: number = 800; // ms between AI actions
@@ -684,8 +689,10 @@ class Game {
   }
 
   generateNewDungeon(opts?: { name?: string; theme?: LocationTemplate | null }): void {
-    // Fresh floor — the breadcrumb trail resets.
+    // Fresh floor — the breadcrumb trail and any cached exploration route reset.
     this.dungeonRecentTiles = [];
+    this.dungeonRoute = [];
+    this.dungeonRouteGoal = -1;
     // Leaving a floor? Summarize the dice cast here before moving down.
     if (this.rooms.length > 0) {
       const leaving = getDiceStats().byFloor[this.dungeonLevel];
@@ -1248,26 +1255,11 @@ class Game {
         break;
       }
       case 'idle': {
-        // When idle, try to find stairs to descend or doors to explore.
-        const idleStairs = this.getNearbyTilesByType(TileType.StairsDown, leader.tile, 10);
-        if (idleStairs.length > 0) {
-          const s = idleStairs[0];
-          const dx = Math.sign(s.x - leader.tile.x);
-          const dy = Math.sign(s.y - leader.tile.y);
-          const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
-          if (this.moveParty(dir)) {
-            this.hud.addCombatMessage(`${leader.name} heads for the stairwell...`, '#cc8');
-          } else {
-            this.hud.addCombatMessage(action.message, '#888');
-          }
-        } else {
-          // Wander a random direction.
-          const wanderDir = pick([Direction.Right, Direction.Left, Direction.Up, Direction.Down]);
-          if (this.moveParty(wanderDir)) {
-            this.hud.addCombatMessage(`${leader.name} wanders onward, searching for a way forward...`, '#888');
-          } else {
-            this.hud.addCombatMessage(action.message, '#888');
-          }
+        // The exploration brain picks a real destination — the nearest
+        // unvisited room, or the stairwell once every room is seen — and the
+        // party walks an A* route there instead of shuffling into walls.
+        if (!this.exploreStep()) {
+          this.hud.addCombatMessage(`${leader.name} finds no way forward from here.`, '#888');
         }
         break;
       }
@@ -3895,6 +3887,84 @@ class Game {
 
   /** BFS shortest path (leader-only) across the overworld tiles. */
   /**
+   * The dungeon exploration brain. Chooses the nearest unexplored room as a
+   * frontier target (stairwell first once everything is seen), walks an A*
+   * route cached across ticks, and returns false only when the floor is
+   * fully explored AND the stairs are unreachable — i.e. truly stuck.
+   *
+   * One step per call; the route persists so long corridors aren't re-solved
+   * every tick.
+   */
+  private exploreStep(): boolean {
+    const leader = this.party.leader;
+
+    // Room-level frontier: nearest unvisited room by A* cost, prefer stairs.
+    const goal = this.pickExplorationTarget();
+    if (goal === null) return false;
+
+    // Re-solve only when the cached route is stale (new goal, or the party
+    // drifted off it — knocked back by combat, say).
+    if (this.dungeonRouteGoal !== goal || this.dungeonRoute.length === 0) {
+      const target = goal === -1
+        ? this.findStairsTile()
+        : { x: this.rooms[goal].cx, y: this.rooms[goal].cy };
+      if (!target) return false;
+      this.dungeonRoute = astarPath(this.map, leader.tile, target, { maxNodes: 8000 });
+      this.dungeonRouteGoal = goal;
+      if (this.dungeonRoute.length === 0) {
+        this.dungeonRouteGoal = -1;
+        return false;
+      }
+    }
+
+    // Follow the cached route.
+    const next = this.dungeonRoute[this.dungeonRoute.length - 1];
+    const dx = Math.sign(next.x - leader.tile.x);
+    const dy = Math.sign(next.y - leader.tile.y);
+    const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
+    if (this.moveParty(dir)) {
+      this.dungeonRoute.pop();
+      return true;
+    }
+    // Blocked (door still shut, party scattered): re-solve next tick.
+    this.dungeonRoute = [];
+    this.dungeonRouteGoal = -1;
+    return false;
+  }
+
+  /**
+   * Frontier scoring: which room to head for? Unvisited rooms win; the
+   * stairwell (-1 sentinel, routed to the stairs tile) wins once everything
+   * is seen. Nearest by straight-line cost keeps exploration tight instead
+   * of ping-ponging across the floor.
+   */
+  private pickExplorationTarget(): number | null {
+    const leader = this.party.leader;
+    let best = -1;
+    let bestCost = Infinity;
+    for (let i = 0; i < this.rooms.length; i++) {
+      if (this.visitedRooms.has(i)) continue;
+      const r = this.rooms[i];
+      const cost = Math.abs(r.cx - leader.tile.x) + Math.abs(r.cy - leader.tile.y);
+      if (cost < bestCost) { bestCost = cost; best = i; }
+    }
+    if (best !== -1) return best;
+    // All rooms visited: descend (or leave, if the quest is done — the
+    // go_down_stairs handler already covers that case).
+    return -1;
+  }
+
+  /** Nearest walkable-adjacent stairs tile, or null. */
+  private findStairsTile(): Vector2 | null {
+    for (let y = 0; y < this.map.height; y++) {
+      for (let x = 0; x < this.map.width; x++) {
+        if (this.map.getTile(x, y) === TileType.StairsDown) return { x, y };
+      }
+    }
+    return null;
+  }
+
+  /**
    * A* route from the party to a target, honoring terrain costs. Roads beat
    * mountains; the search itself can't trace loops. Falls back to [] only
    * when genuinely unreachable — partial paths cover huge maps.
@@ -4954,7 +5024,7 @@ class Game {
   }
 
   /** Spend gold across the party, richest first. True if fully paid. */
-  private spendGold(n: number): boolean {
+  spendGold(n: number): boolean {
     let remaining = n;
     const sorted = [...this.party.members].sort((a, b) => b.gold - a.gold);
     for (const m of sorted) {
@@ -4966,120 +5036,15 @@ class Game {
     return remaining <= 0;
   }
 
-  private partyInventory(): InventoryItem[] {
-    return this.party.members.flatMap(m => m.inventory);
-  }
+  /** The shop: stock, prices, and goods changing hands. */
+  private readonly market = new MarketController(this);
 
-  private addItemToParty(item: InventoryItem): void {
-    this.party.leader.inventory.push({ ...item });
-  }
-
-  /** The smithy's enchantment rack — tiered gear rolled once per town visit. */
-  private shopTieredStock: InventoryItem[] = [];
-  private shopTieredTownId: string | null = null;
-
-  private marketStock(): InventoryItem[] {
-    const base = [...MARKET_POTIONS, ...MARKET_SCROLLS];
-    if (!this.currentTown) return base;
-    // Tiered gear: rolled fresh when the party arrives in a new town.
-    // Wealthier towns (higher priceModifier) stock higher tiers.
-    if (this.shopTieredTownId !== this.currentTown.id) {
-      const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
-      const wealth = archetype?.priceModifier ?? 1;
-      const maxBonus = wealth >= 1.25 ? 3 : wealth >= 1.0 ? 2 : 1;
-      const count = 2 + Math.floor(Math.random() * 3); // 2-4 pieces per visit
-      const stock: InventoryItem[] = [];
-      const seen = new Set<string>();
-      for (let i = 0; i < count * 3 && stock.length < count; i++) {
-        const piece = rollTieredGear({ maxBonus, minBonus: Math.max(1, maxBonus - 1) });
-        if (seen.has(piece.name)) continue;
-        seen.add(piece.name);
-        stock.push(piece);
-      }
-      this.shopTieredStock = stock;
-      this.shopTieredTownId = this.currentTown.id;
-    }
-    return [...base, ...this.shopTieredStock];
-  }
-
-  private buyItem(item: InventoryItem): void {
-    if (this.mode !== GameMode.Town) return;
-    const baseCost = item.value ?? 0;
-    // Apply dynamic pricing from archetype + prosperity + festival + caravan.
-    let cost = baseCost;
-    if (this.currentTown && this.townLife) {
-      const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
-      const dynamicMod = townPriceModifier(this.townLife, this.currentTown.id, archetype?.priceModifier ?? 1);
-      // Market day: goods are abundant and the squares are thronged — 10% off.
-      const marketMod = this.calendar.isMarketday ? 0.9 : 1;
-      cost = Math.max(1, Math.floor(baseCost * dynamicMod * marketMod));
-    }
-    if (!this.spendGold(cost)) {
-      this.hud.addCombatMessage(`Not enough gold for ${item.name} (${cost} gp).`, '#c66');
-      this.hud.townPanel.refresh();
-      return;
-    }
-    // Track prosperity for future discounts.
-    if (this.currentTown && this.townLife) {
-      this.townLife.byTown[this.currentTown.id].prosperitySpent += cost;
-    }
-    this.addItemToParty(item);
-    // Tiered gear is a physical rack piece — once sold, it's gone.
-    this.shopTieredStock = this.shopTieredStock.filter(s => s.id !== item.id);
-    this.hud.addCombatMessage(`🛒 ${this.party.leader.name} buys ${item.name} for ${cost} gp.`, '#ffd700');
-    this.hud.townPanel.refresh();
-  }
-
-  private sellItem(item: InventoryItem): void {
-    if (this.mode !== GameMode.Town) return;
-    const member = this.party.members.find(m => m.inventory.includes(item));
-    if (!member) return;
-    let price = Math.floor((item.value ?? 0) / 2);
-    // Apply dynamic pricing (sell price also affected).
-    if (this.currentTown && this.townLife) {
-      const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
-      const dynamicMod = townPriceModifier(this.townLife, this.currentTown.id, archetype?.priceModifier ?? 1);
-      // Market day: buyers are plenty and ready — wares fetch 25% more.
-      const marketMod = this.calendar.isMarketday ? 1.25 : 1;
-      price = Math.max(1, Math.floor(price * dynamicMod * marketMod));
-    }
-    member.gold += price;
-    member.inventory = member.inventory.filter(i => i !== item);
-    this.hud.addCombatMessage(`⚖ ${member.name} sells ${item.name} for ${price} gp.`, '#ca8');
-    this.hud.townPanel.refresh();
-  }
-
-  private buyRepItem(repItem: ReputationShopItem): void {
-    if (this.mode !== GameMode.Town || !this.currentTown || !this.townLife) return;
-    const rep = this.townLife.byTown[this.currentTown.id]?.townReputation ?? 0;
-    if (rep < repItem.repRequired) {
-      this.hud.addCombatMessage(`Reputation too low. Need ${repItem.repRequired}, have ${rep}.`, '#c66');
-      this.hud.townPanel.refresh();
-      return;
-    }
-    let cost = repItem.value;
-    if (this.currentTown && this.townLife) {
-      const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
-      const dynamicMod = townPriceModifier(this.townLife, this.currentTown.id, archetype?.priceModifier ?? 1);
-      cost = Math.max(1, Math.floor(cost * dynamicMod));
-    }
-    if (!this.spendGold(cost)) {
-      this.hud.addCombatMessage(`Not enough gold for ${repItem.name} (${cost} gp).`, '#c66');
-      this.hud.townPanel.refresh();
-      return;
-    }
-    const item: InventoryItem = {
-      id: `rep_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-      name: repItem.name,
-      type: repItem.type === 'ring' || repItem.type === 'wondrous' ? 'treasure' : repItem.type as any,
-      value: repItem.value,
-      description: repItem.description,
-      power: repItem.power,
-    };
-    this.party.leader.inventory.push(item);
-    this.hud.addCombatMessage(`${this.party.leader.name} acquires ${repItem.name} from the reputation shop for ${cost} gp!`, '#ffd700');
-    this.hud.townPanel.refresh();
-  }
+  private partyInventory(): InventoryItem[] { return this.market.partyInventory(); }
+  private addItemToParty(item: InventoryItem): void { this.market.addItemToParty(item); }
+  private marketStock(): InventoryItem[] { return this.market.marketStock(); }
+  private buyItem(item: InventoryItem): void { this.market.buyItem(item); }
+  private sellItem(item: InventoryItem): void { this.market.sellItem(item); }
+  private buyRepItem(repItem: ReputationShopItem): void { this.market.buyRepItem(repItem); }
 
   // ── Bulletin board tasks ──────────────────────────────────
 
@@ -5844,7 +5809,11 @@ class Game {
         this.hud.townPanel.show();
         if (cmd.intent !== 'shop') {
           const query = cmd.item.toLowerCase();
-          const item = [...this.marketStock(), ...this.partyInventory()].find(i => i.name.toLowerCase().includes(query));
+          // Buy from the shelves, sell from the packs. Searching both at once
+          // meant "sell a potion of healing" found the shop's copy first and
+          // then quietly sold nothing, because the party did not own it.
+          const shelf = cmd.intent === 'buy' ? this.marketStock() : this.partyInventory();
+          const item = shelf.find(i => i.name.toLowerCase().includes(query));
           if (item) {
             if (cmd.intent === 'buy') this.buyItem(item);
             else this.sellItem(item);
