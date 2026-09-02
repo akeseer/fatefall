@@ -26,12 +26,28 @@ seconds, on tab hide, and on close.
 - Pick a save slot on the start screen. The party leaves town for its first quest on
   its own if you do nothing for a while.
 - The **DM** button (or the input bar at the bottom) takes orders. Type `help` for
-  the list the party understands.
+  the list the party understands, though you do not have to stick to it — see below.
 - Speed controls run the world from 0.25× to 4×; Pause freezes it.
 - Combat opens a battle screen. It runs automatically, or flip it to manual and
   command each hero.
 - Typing `roll d20` banks a **Luck die**: the party's next d20 roll is fated to that
   result, for better or worse.
+
+## Talking to the party
+
+You do not have to memorise commands. "Could everyone please push northward",
+"how banged up is everybody" and "drop an owlbear on them" all work, because the
+game ships its own small language model, trained from scratch on its own
+vocabulary. It runs in the browser in about 50 microseconds per order, with no
+API key, no download and no runtime dependency.
+
+Written orders are still handled by an exact parser, which is also the fallback,
+so nothing breaks if the model is switched off. On a set of 157 hand-written
+orders the parser alone reads 34% and the two together read 95%.
+
+The chip next to the `DM ❯` prompt shows which is in use; click it, or type
+`model off` / `model on`, to switch. See [`tools/train/`](tools/train/README.md)
+for how the model is built and retrained.
 
 ## Project layout
 

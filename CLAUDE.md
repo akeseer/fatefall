@@ -20,9 +20,14 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   timer. `update(dt)` branches on `GameMode` (Overworld / Town / Dungeon) and
   `GamePhase` (Exploration / Combat). Three consecutive thrown errors halt the sim
   and show a HUD banner (`handleStepError`); UI callbacks are wrapped with `guard()`.
-- **DM orders**: `handleDMCommand` → understanding → `dispatchDMCommand`. The pure
-  parser and intent types live in `src/ai/DMCommand.ts` / `src/ai/DMCommandParser.ts`;
-  the trained intent model is `src/ai/IntentModel.ts` (weights in `public/models/`).
+- **DM orders**: `handleDMCommand` → `understand()` → `dispatchDMCommand`. Intent
+  types live in `src/ai/DMCommand.ts`, the pure regex parser in
+  `src/ai/DMCommandParser.ts`, and the trained classifier in `src/ai/IntentModel.ts`
+  (weights in `public/models/`, pipeline in `tools/train/` — read its README before
+  touching either). `understand()` prefers the regex for orders whose arguments are
+  syntax (dice, names, save slots) and otherwise takes the model when it clears its
+  confidence bar. Adding an intent means updating `INTENTS` (append only — the
+  weights file records the order) and retraining.
 - **`src/ai/AIDirector.ts`** — the party's tactical planner. Returns an `AIAction`
   union that `Game.aiTick` dispatches on. Combat decisions live in `CombatEngine`.
 - **`src/combat/CombatEngine.ts`** — DOM-free. `step()` returns a `CombatLog` whose
