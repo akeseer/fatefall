@@ -287,12 +287,12 @@ class Game {
 
     this.hud.onSpeedChange = (speed) => this.setSpeed(speed);
     this.hud.onPauseToggle = () => this.togglePause();
-    this.hud.onNewDungeon = () => this.handleNewWorldButton();
-    this.hud.onCompendiumAction = (entry, mode) => this.handleCompendiumAction(entry, mode);
+    this.hud.onNewDungeon = this.guard(() => this.handleNewWorldButton());
+    this.hud.onCompendiumAction = this.guard((entry, mode) => this.handleCompendiumAction(entry, mode));
     this.hud.setKillLedgerProvider(() => this.history.killLedger);
     this.hud.questProvider = () => this.activeQuest() ?? null;
     this.hud.questStateProvider = () => this.questState();
-    this.hud.onDMCommand = (text) => this.handleDMCommand(text);
+    this.hud.onDMCommand = this.guard((text) => this.handleDMCommand(text));
     this.hud.onSave = () => this.saveGame(false);
 
     // When a fated Luck die is spent, narrate the resolution.
@@ -304,7 +304,7 @@ class Game {
     });
 
     // Town panel wiring — quest board + market talk straight back to the game.
-    this.hud.onTownOpen = () => this.handleTownOpen();
+    this.hud.onTownOpen = this.guard(() => this.handleTownOpen());
     this.hud.townPanel.townProvider = () => this.currentTown;
     this.hud.townPanel.rumorProvider = () => {
       const tl = this.townLife?.byTown[this.currentTown?.id ?? ''];
@@ -319,12 +319,12 @@ class Game {
     this.hud.townPanel.goldProvider = () => this.partyGold();
     this.hud.townPanel.inventoryProvider = () => this.partyInventory();
     this.hud.townPanel.buyStockProvider = () => this.marketStock();
-    this.hud.townPanel.onAcceptQuest = (q) => this.acceptQuest(q);
-    this.hud.townPanel.onReportQuest = (q) => this.reportQuest(q);
-    this.hud.townPanel.onBuy = (item) => this.buyItem(item);
-    this.hud.townPanel.onSell = (item) => this.sellItem(item);
-    this.hud.townPanel.onRest = () => this.restAtInn();
-    this.hud.townPanel.onDepart = () => this.departTown();
+    this.hud.townPanel.onAcceptQuest = this.guard((q) => this.acceptQuest(q));
+    this.hud.townPanel.onReportQuest = this.guard((q) => this.reportQuest(q));
+    this.hud.townPanel.onBuy = this.guard((item) => this.buyItem(item));
+    this.hud.townPanel.onSell = this.guard((item) => this.sellItem(item));
+    this.hud.townPanel.onRest = this.guard(() => this.restAtInn());
+    this.hud.townPanel.onDepart = this.guard(() => this.departTown());
     this.hud.townPanel.questGiverProvider = () => {
       if (!this.currentTown || !this.townLife) return [];
       return this.townLife.byTown[this.currentTown.id]?.questGivers ?? [];
@@ -339,17 +339,17 @@ class Game {
       const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
       return townPriceModifier(this.townLife, this.currentTown.id, archetype?.priceModifier ?? 1);
     };
-    this.hud.townPanel.onUseService = (serviceId) => this.useTownService(serviceId);
+    this.hud.townPanel.onUseService = this.guard((serviceId) => this.useTownService(serviceId));
     this.hud.townPanel.townRepProvider = () => {
       if (!this.currentTown || !this.townLife) return 0;
       return this.townLife.byTown[this.currentTown.id]?.townReputation ?? 0;
     };
-    this.hud.townPanel.onBuyRepItem = (item) => this.buyRepItem(item);
+    this.hud.townPanel.onBuyRepItem = this.guard((item) => this.buyRepItem(item));
     this.hud.townPanel.bulletinProvider = () => {
       if (!this.currentTown || !this.townLife) return [];
       return this.townLife.byTown[this.currentTown.id]?.bulletinTasks ?? [];
     };
-    this.hud.townPanel.onBulletinComplete = (task) => this.completeBulletinTask(task);
+    this.hud.townPanel.onBulletinComplete = this.guard((task) => this.completeBulletinTask(task));
 
     // Every new run begins in the open world, outside a town.
     this.generateOverworld();
@@ -816,35 +816,97 @@ class Game {
   public activeSlot: number = 0;
   public frameCount: number = 0;
 
+  /** Fixed simulation step in ms (~30 sim ticks/s); rendering runs at display rate. */
+  private static readonly SIM_STEP_MS = 33;
+  /** Never simulate more than this many steps per frame after a stall or a hidden tab. */
+  private static readonly MAX_STEPS_PER_FRAME = 3;
+  private rafId: number | null = null;
+  private accumulator: number = 0;
+  private consecutiveErrors: number = 0;
+  /** Set when repeated errors halted the sim; cleared by the pause toggle / resume order. */
+  private errorHalt: boolean = false;
+
   start() {
-    this.lastTimestamp = Date.now();
+    // Already looping — never spawn a second frame chain.
+    if (this.running && this.rafId !== null) return;
+    this.lastTimestamp = performance.now();
+    this.accumulator = 0;
+    this.consecutiveErrors = 0;
+    this.errorHalt = false;
     this.running = true;
     this.runStarted = true;
-    this.gameStep();
+    this.rafId = requestAnimationFrame(this.gameStep);
   }
 
-  private gameStep = () => {
+  /**
+   * One animation frame: advance the sim by as many fixed steps as real time
+   * allows (capped), then draw once. requestAnimationFrame does not fire in a
+   * hidden tab, so the world pauses while backgrounded and the elapsed-time
+   * clamp keeps it from fast-forwarding when the tab returns.
+   */
+  private gameStep = (now: number) => {
+    this.rafId = null;
     // Stopped on purpose (e.g. back to the main menu) — just idle.
     if (!this.running) return;
 
-    const now = Date.now();
-    const dt = Math.min(50, now - this.lastTimestamp);
+    const elapsed = Math.min(250, Math.max(0, now - this.lastTimestamp));
     this.lastTimestamp = now;
-    this.lastDt = dt;
 
-    this.frameCount++;
-
-    try {
-      this.update(dt);
-      this.render();
-    } catch (err) {
-      console.error('Game step error:', err);
+    if (!this.errorHalt) {
+      this.accumulator += elapsed;
+      try {
+        let steps = 0;
+        while (this.accumulator >= Game.SIM_STEP_MS && steps < Game.MAX_STEPS_PER_FRAME) {
+          this.frameCount++;
+          this.lastDt = Game.SIM_STEP_MS;
+          this.update(Game.SIM_STEP_MS);
+          this.accumulator -= Game.SIM_STEP_MS;
+          steps++;
+        }
+        // Drop any backlog we could not catch up on rather than spiralling.
+        if (steps >= Game.MAX_STEPS_PER_FRAME) this.accumulator = 0;
+        this.render();
+        this.consecutiveErrors = 0;
+      } catch (err) {
+        this.handleStepError(err);
+      }
     }
 
-    setTimeout(this.gameStep, 33);
+    this.rafId = requestAnimationFrame(this.gameStep);
   };
 
+  /**
+   * A thrown error inside the sim or a UI handler. One-off glitches are logged
+   * and the loop carries on; a run of them halts the sim and tells the player,
+   * instead of silently repeating the failure every frame.
+   */
+  private handleStepError(err: unknown): void {
+    console.error('Game step error:', err);
+    this.consecutiveErrors++;
+    if (this.consecutiveErrors < 3 || this.errorHalt) return;
+    this.errorHalt = true;
+    this.paused = true;
+    this.hud.setPausedIndicator(true);
+    const detail = err instanceof Error ? err.message : String(err);
+    this.hud.showErrorBanner(
+      `Something broke and the game has paused itself. Your last autosave is safe. ` +
+      `Press Pause (or type "resume") to try to continue. Details: ${detail}`,
+    );
+  }
+
+  /** Wrap a UI-driven handler in the same safety net as the game loop. */
+  private guard<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
+    return (...args: T) => {
+      try {
+        fn(...args);
+      } catch (err) {
+        this.handleStepError(err);
+      }
+    };
+  }
+
   private update(dt: number) {
+    if (this.errorHalt) return;
     // Persist the run every few seconds (also on tab hide / page unload).
     this.saveTimer += dt;
     if (this.saveTimer >= 8000) {
@@ -1354,7 +1416,7 @@ class Game {
       this.hud.battleView.close();
       this.partyRetreat();
     };
-    this.hud.battleView.onCommand = this.handleBattleCommand;
+    this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
     this.phase = GamePhase.Combat;
     this.combatTickTimer = 0;
     this.refreshBossBar();
@@ -1813,6 +1875,17 @@ class Game {
 
   private togglePause() {
     this.paused = !this.paused;
+    this.hud.setPausedIndicator(this.paused);
+    if (!this.paused) this.clearErrorHalt();
+  }
+
+  /** Lift a self-inflicted error pause (new run, restore, or the player resuming). */
+  private clearErrorHalt(): void {
+    if (!this.errorHalt) return;
+    this.errorHalt = false;
+    this.consecutiveErrors = 0;
+    this.accumulator = 0;
+    this.hud.hideErrorBanner();
   }
 
   /** Narrate the surface around the leader (towns, entrances, biomes). */
@@ -2564,6 +2637,7 @@ class Game {
     this.dmStance = save.dmStance;
     this.dmDirection = save.dmDirection ?? undefined;
     this.paused = false;
+    this.clearErrorHalt();
 
     // Party (mutated in place so engine/AI references stay valid)
     this.party.members.length = 0;
@@ -2669,7 +2743,7 @@ class Game {
       }
       // Re-open the battle window for a restored in-combat save.
       this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
-      this.hud.battleView.onCommand = this.handleBattleCommand;
+      this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
       this.combatEngine.decisionPause = this.hud.battleView.getMode() === 'manual';
       this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
       this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
@@ -3218,6 +3292,7 @@ class Game {
     this.dmStance = 'auto';
     this.dmDirection = undefined;
     this.paused = false;
+    this.clearErrorHalt();
     this.combatEngine.isActive = false;
     this.combatEngine.initiativeOrder = [];
     this.combatEngine.currentTurnIndex = 0;

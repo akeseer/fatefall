@@ -160,6 +160,7 @@ export class HUD {
         </div>
         <div id="quest-bar" style="display:none; flex:1 1 auto; min-width:0; background:rgba(8,12,24,0.88); border:1px solid #3a4a6a; border-radius:3px; padding:4px 10px; font-family:monospace; font-size:11px; box-shadow:0 2px 10px rgba(0,0,0,0.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
         <div id="weather-chip" style="display:none; flex:0 0 auto; align-items:center; background:rgba(8,12,24,0.85); border:1px solid #4a5a6a; border-radius:3px; padding:4px 10px; font-family:monospace; font-size:11px; color:#cfe0f2; white-space:nowrap;"></div>
+        <div id="error-banner" role="alert" style="display:none; position:absolute; top:34px; left:0; right:0; margin:0 auto; max-width:720px; background:rgba(60,12,12,0.96); border:1px solid #c44; border-radius:4px; padding:8px 12px; font-family:monospace; font-size:12px; color:#f4c6c6; box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; white-space:normal;"></div>
         <div id="delve-mood-chip" style="display:none; flex:0 0 auto; align-items:center; background:rgba(20,8,24,0.9); border:1px solid #6a4a7a; border-radius:3px; padding:4px 10px; font-family:monospace; font-size:11px; color:#e0c8f0; white-space:nowrap; box-shadow:0 0 10px rgba(150,80,200,0.25);"></div>
       </div>
 
@@ -719,6 +720,26 @@ export class HUD {
     const btn = this.overlay.querySelector('#btn-pause') as HTMLElement;
     btn.textContent = this.isPaused ? '▶ Play' : '⏸ Pause';
     this.onPauseToggle?.();
+  }
+
+  /** Sync the pause button to a pause the game decided on itself (no callback). */
+  setPausedIndicator(paused: boolean) {
+    this.isPaused = paused;
+    const btn = this.overlay.querySelector('#btn-pause') as HTMLElement | null;
+    if (btn) btn.textContent = paused ? '▶ Play' : '⏸ Pause';
+  }
+
+  /** A one-line red notice for when the game had to stop itself. */
+  showErrorBanner(message: string) {
+    const el = this.overlay.querySelector('#error-banner') as HTMLElement | null;
+    if (!el) return;
+    el.textContent = `⚠ ${message}`;
+    el.style.display = 'block';
+  }
+
+  hideErrorBanner() {
+    const el = this.overlay.querySelector('#error-banner') as HTMLElement | null;
+    if (el) el.style.display = 'none';
   }
 
   get isGamePaused(): boolean {
