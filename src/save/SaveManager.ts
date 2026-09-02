@@ -59,6 +59,8 @@ export interface SavedCharacter {
   pendingConcentrationBreak: boolean;
   /** Vendetta ledger (v6+): monster template ids this hero was downed by → times. */
   vendettas?: Record<string, number>;
+  /** Combat-ability uses remaining this rest (v6+). */
+  abilityUses?: Record<string, number>;
   personality: Personality;
   subclass?: string;
   deity?: string;
@@ -246,6 +248,8 @@ interface SavedCharacterV1 {
   pendingConcentrationBreak: boolean;
   /** Vendetta ledger (v6+): monster template ids this hero was downed by → times. */
   vendettas?: Record<string, number>;
+  /** Combat-ability uses remaining this rest (v6+). */
+  abilityUses?: Record<string, number>;
   personality: Personality;
   subclass?: string;
   deity?: string;

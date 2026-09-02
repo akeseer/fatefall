@@ -84,6 +84,26 @@ export const COMBAT_ABILITIES: CombatAbility[] = [
     description: 'Striking with advantage adds bonus damage dice — the blade finds the gaps.',
     minLevel: 1,
   },
+  {
+    id: 'arcane_jolt',
+    name: 'Arcane Jolt',
+    classId: 'artificer',
+    usesPerRest: (level) => (level >= 9 ? 3 : 2),
+    description: 'Channel a spark of infused magic into your strike: extra force damage.',
+    effect: 'attack',
+    bonusDamageDice: (level) => ({ count: level >= 9 ? 2 : 1, size: 6 }),
+    minLevel: 2,
+  },
+  {
+    id: 'blood_mite',
+    name: 'Blood Mite',
+    classId: 'blood_hunter',
+    usesPerRest: (level) => Math.max(1, Math.floor(level / 4)),
+    description: 'Pay in blood to curse a foe: your strikes against it sear with crimson rite damage.',
+    effect: 'attack',
+    bonusDamageDice: (level) => ({ count: Math.max(1, Math.floor(level / 5) + 1), size: 6 }),
+    minLevel: 1,
+  },
 ];
 
 /** Look up the active (non-passive) ability for a class, if any. */

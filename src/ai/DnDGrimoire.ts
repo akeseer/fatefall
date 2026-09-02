@@ -285,6 +285,8 @@ export const SUBCLASSES: Record<string, string[]> = {
   sorcerer: ['Draconic Bloodline (dragon ancestor, scaled resilience)', 'Wild Magic (surges of chaos)', 'Storm Sorcery (wind and thunder flight)', 'Shadow Sorcery (hounds of ill omen)', 'Divine Soul (celestial bloodline)'],
   warlock: ['Fiend Pact (hellish bargains)', 'Great Old One (alien whispers)', 'Archfey (feystep charms)', 'Hexblade (weapon-bound shadow)', 'Celestial (light-pact healer)'],
   monk: ['Open Hand (technique of the flowing strike)', 'Shadow (ninjutsu silence)', 'Four Elements (ki-bending of water, earth, fire, air)', 'Kensei (weapon saint)', 'Way of Mercy (mask of pain, healing hands)'],
+  artificer: ['Alchemist (elixirs and experimental draughts)', 'Artillerist (eldritch cannon)', 'Battle Smith (steel defender companion)', 'Armorer (arcane armor, thunder gauntlets)'],
+  blood_hunter: ['Order of the Ghostslayer (swiftest against the dead)', 'Order of the Lycan (hunted hybrid rage)', 'Order of the Profane Soul (pact blade hemocraft)', 'Order of the Mutagenic (mutagens brewed from pain)'],
 };
 
 // ── Planes of Existence ──────────────────────────────

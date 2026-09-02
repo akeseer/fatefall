@@ -1,4 +1,5 @@
 import { GameCharacter } from '../entities/Character';
+import type { CombatAbility } from '../combat/Abilities';
 import { Monster } from '../entities/Monster';
 import { SpriteRenderer } from '../entities/Sprites';
 import { BIND_ORDER, BindAction, BindMap, DEFAULT_KEYBINDS, labelFor, loadKeybinds, saveKeybinds } from './Keybinds';
@@ -135,6 +136,8 @@ export class BattleView {
   private menuItems: MenuConsumable[] = [];
   /** Spells the acting hero can afford, provided by the game each pause. */
   private menuSpells: Spell[] = [];
+  /** The acting hero's usable class ability, if any. */
+  private menuAbility: CombatAbility | null = null;
   /** Which submenu pane is showing. */
   private menuPane: 'root' | 'spell' | 'item' = 'root';
   /** Numbered buttons of the current menu pane, in order — keyboard 1-9 targets. */
@@ -886,6 +889,7 @@ export class BattleView {
     switch (cmd.type) {
       case 'attack': return '⚔ Attack';
       case 'flee': return '🏃 Flee';
+      case 'ability': return '⚡ Skill';
       case 'item': return `🧪 ${cmd.itemName ?? 'Item'}`;
       case 'spell': {
         const name = this.menuSpells.find(s => s.id === cmd.spellId)?.name
@@ -1043,10 +1047,11 @@ export class BattleView {
    * Show the command menu paused on a hero's turn. The game supplies the
    * castable spells and usable consumables; the DM picks and the game runs it.
    */
-  showCommandMenu(hero: GameCharacter, spells: Spell[], items: MenuConsumable[]): void {
+  showCommandMenu(hero: GameCharacter, spells: Spell[], items: MenuConsumable[], ability: CombatAbility | null = null): void {
     this.menuHero = hero;
     this.menuSpells = spells;
     this.menuItems = items;
+    this.menuAbility = ability;
     this.menuPane = 'root';
     this.parkedHeroId = hero.id;
     this.menuIsQueued = false;
@@ -1090,7 +1095,7 @@ export class BattleView {
     const lines: string[] = [];
     const verb = name === 'careful' ? 'holds the line' : name === 'reckless' ? 'howls into the fray' : 'calls the standard';
     lines.push(`⚑ Formation: the party ${verb} — ${preset.hint}.`);
-    const labelOf = (hero: GameCharacter, c: PartyCommand) => c.type === 'attack' ? 'Attack' : c.type === 'flee' ? 'Flee' : c.type === 'item' ? 'Item' : (this.spellsFor?.(hero).find(s => s.id === c.spellId)?.name ?? 'Spell');
+    const labelOf = (hero: GameCharacter, c: PartyCommand) => c.type === 'attack' ? 'Attack' : c.type === 'flee' ? 'Flee' : c.type === 'item' ? 'Item' : c.type === 'ability' ? 'Skill' : (this.spellsFor?.(hero).find(s => s.id === c.spellId)?.name ?? 'Spell');
     const resolve = (hero: GameCharacter): PartyCommand => {
       const mapped = preset.roles[hero.charClass?.id ?? ''] ?? { type: 'attack' as const };
       if (mapped.type !== 'spell') return mapped;
@@ -1254,6 +1259,11 @@ export class BattleView {
       this.menuEl.appendChild(menuBtn('🧪 Item', this.menuItems.length > 0 ? `${this.menuItems.length} usable` : 'pack empty', () => {
         if (this.menuItems.length > 0) { this.menuPane = 'item'; this.renderMenu(); }
       }, false, labelFor(this.binds.item)));
+      if (this.menuAbility) {
+        const usesLeft = this.menuHero.abilityUses[this.menuAbility.id] ?? 0;
+        this.menuEl.appendChild(menuBtn(`⚡ ${this.menuAbility.name}`, `${this.menuAbility.description} (${usesLeft} use${usesLeft === 1 ? '' : 's'} left)`, () =>
+          this.pickCommand({ type: 'ability' }), false, 'E'));
+      }
       this.menuEl.appendChild(menuBtn('🏃 Flee', 'disengage the fight', () =>
         this.pickCommand({ type: 'flee' }), true, labelFor(this.binds.flee)));
       // Formation presets: queue a standard opener for the whole party.

@@ -184,6 +184,29 @@ export const CLASSES: CharacterClass[] = [
     weaponProficiencies: ['Simple weapons', 'Shortswords'],
     skillChoices: ['Acrobatics', 'Athletics', 'History', 'Insight', 'Religion', 'Stealth'],
   },
+  {
+    id: 'artificer',
+    name: 'Artificer',
+    description: 'A magical inventor who wields gadgetry and infusions — half engineer, half spellcaster, turning odds and ends into wonders.',
+    hitDie: 8,
+    primaryAbilities: ['int', 'con'],
+    savingThrows: ['con', 'int'],
+    armorProficiencies: ['Light armor', 'Medium armor', 'Shields'],
+    weaponProficiencies: ['Simple weapons', 'Hand crossbows', 'Longswords', 'Rapiers', 'Shortswords'],
+    skillChoices: ['Arcana', 'History', 'Investigation', 'Medicine', 'Sleight of Hand'],
+    spellsKnown: { 1: 4, 2: 6, 3: 8, 4: 10, 5: 12 },
+  },
+  {
+    id: 'blood_hunter',
+    name: 'Blood Hunter',
+    description: 'An order of scarred zealots who weaponize their own blood — hemocraft rites that punish monsters with the pain of their kind.',
+    hitDie: 10,
+    primaryAbilities: ['str', 'int'],
+    savingThrows: ['dex', 'int'],
+    armorProficiencies: ['Light armor', 'Medium armor'],
+    weaponProficiencies: ['Simple weapons', 'Martial weapons'],
+    skillChoices: ['Acrobatics', 'Arcana', 'Athletics', 'History', 'Insight', 'Investigation', 'Survival'],
+  },
 ];
 
 // ── Races ────────────────────────────────────────────
@@ -456,6 +479,7 @@ export function getCasterType(classId: string): CasterType {
     case 'druid':
     case 'bard':
     case 'sorcerer':
+    case 'artificer':
       return 'full';
     case 'paladin':
     case 'ranger':

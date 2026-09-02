@@ -28,6 +28,7 @@ import { manhattan, Vector2 } from '../engine/types';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
 import { chooseMonsterTarget, choosePartyFocus, shouldMonsterFlee, chooseHealTarget, pickLegendaryAction, advanceToward, isFlanking } from './TargetAI';
+import { getAbilityForClass, sneakAttackDice, type CombatAbility } from './Abilities';
 
 export interface CombatLog {
   round: number;
@@ -51,6 +52,7 @@ export type PartyCommand =
   | { type: 'attack'; targetMonsterId?: string }
   | { type: 'spell'; spellId: string; targetMonsterId?: string; targetAllyId?: string }
   | { type: 'item'; itemId: string; holderId: string; itemName?: string }
+  | { type: 'ability' }
   | { type: 'flee' };
 
 export class CombatEngine {
@@ -133,6 +135,8 @@ export class CombatEngine {
     this.reinforcedThisFight = false;
     this.interceptionUsedThisRound = false;
     this.vendettaNarrationUsed.clear();
+    this.rageRounds = {};
+    this.marks = {};
     // The full moon wakes the lycanthrope in every were-beast present.
     if (this.fullMoonLycanthropeBonus > 0) {
       for (const m of this.monsters) {
@@ -279,6 +283,22 @@ export class CombatEngine {
       }
       // A new round renews the tanks' chance to shield their casters.
       this.interceptionUsedThisRound = false;
+      // Rages burn out; marks fade when they lapse or their quarry falls.
+      for (const id of Object.keys(this.rageRounds)) {
+        this.rageRounds[id]--;
+        if (this.rageRounds[id] <= 0) {
+          delete this.rageRounds[id];
+          const rager = this.party.members.find(m => m.id === id);
+          if (rager) this.log.messages.push(`${rager.name}'s rage gutters out — breath heaving, fists still clenched.`);
+        }
+      }
+      for (const id of Object.keys(this.marks)) {
+        const mark = this.marks[id];
+        mark.rounds--;
+        if (mark.rounds <= 0 || !this.monsters.some(m => m.id === mark.monsterId && m.isAlive)) {
+          delete this.marks[id];
+        }
+      }
       if (this.partyBlessRounds > 0) {
         this.partyBlessRounds--;
         if (this.partyBlessRounds === 0) {
@@ -424,6 +444,15 @@ export class CombatEngine {
       .filter(s => hero.canCastSpell(s.level));
   }
 
+  /** The paused hero's class ability, if usable right now (drives the menu). */
+  getDecisionAbility(hero: GameCharacter): CombatAbility | null {
+    const ability = getAbilityForClass(hero.charClass.id, hero.level);
+    if (!ability || !ability.effect) return null;
+    // Peek at uses without lazy-initializing: an untouched record means full.
+    const uses = hero.abilityUses[ability.id];
+    return (uses === undefined || uses > 0) ? ability : null;
+  }
+
   /**
    * Execute a command chosen from the FF command menu, then resume the turn.
    * The AI handles targeting and rolls; the DM picks the intent.
@@ -436,6 +465,10 @@ export class CombatEngine {
   private interceptionUsedThisRound: boolean = false;
   /** Vendetta one-liners fire once per hero-per-kind per fight. */
   private vendettaNarrationUsed: Set<string> = new Set();
+  /** Raging heroes: character id → rounds of fury remaining. */
+  private rageRounds: Record<string, number> = {};
+  /** Marks & rites: character id → quarry, rounds, and bonus dice. */
+  private marks: Record<string, { monsterId: string; rounds: number; dice: { count: number; size: number } }> = {};
 
   submitCommand(cmd: PartyCommand): void {
     const hero = this.pendingDecision;
@@ -783,7 +816,10 @@ export class CombatEngine {
 
     // A DM command from the FF battle menu overrides the AI's own choice.
     if (forced) {
-      if (forced.type === 'spell') {
+      if (forced.type === 'ability') {
+        if (this.useClassAbility(character)) return;
+        this.log.messages.push(`${character.name} cannot muster that ability — falls back to their blade.`);
+      } else if (forced.type === 'spell') {
         const spell = SPELLS.find(s => s.id === forced.spellId);
         const monsterTarget = forced.targetMonsterId ? this.monsters.find(m => m.id === forced.targetMonsterId && m.isAlive) : undefined;
         const allyTarget = forced.targetAllyId ? this.party.members.find(m => m.id === forced.targetAllyId) : undefined;
@@ -795,7 +831,24 @@ export class CombatEngine {
       }
       // 'item' commands were executed game-side before the turn; fall through
       // to a weapon attack so the action isn't wasted.
-    } else if (affordableSpells.length > 0) {
+    } else {
+      // AI ability use: Second Wind when someone is badly hurt, Rage when the
+      // fight opens, Hunter's Mark on the round's focus target. Rogues pass —
+      // Sneak Attack rides on their normal attacks.
+      const ability = getAbilityForClass(character.charClass.id, character.level);
+      if (ability && character.canUseAbility()) {
+        const hpPct = character.hp / Math.max(1, character.maxHp);
+        const focus = this.roundFocusMonsterId
+          ? this.monsters.find(m => m.id === this.roundFocusMonsterId && m.isAlive)
+          : undefined;
+        const strikeAbility = ability.id === 'flurry_of_blows' || ability.id === 'arcane_jolt';
+        const shouldUse =
+          (ability.effect === 'heal' && (hpPct < 0.45 || this.party.alive.some(m => m.hp <= 0))) ||
+          (ability.effect === 'rage' && this.log.round <= 1) ||
+          (ability.effect === 'attack' && !!focus && (strikeAbility || !this.marks[character.id]));
+        if (shouldUse && this.useClassAbility(character)) return;
+      }
+      if (affordableSpells.length > 0) {
       // A cursed ally jumps the queue: the trained hand lifts the binding.
       const allyCursed = this.party.members.some(m => m.isAlive && m.findCursedEquipped());
       const priority = allyCursed
@@ -845,6 +898,7 @@ export class CombatEngine {
       if (cantrips.length > 0 && Math.random() < 0.4) {
         if (this.castSpell(character, cantrips[Math.floor(Math.random() * cantrips.length)])) return;
       }
+      }
     }
 
     // Default: weapon attack with condition modifiers and bless bonus.
@@ -881,6 +935,65 @@ export class CombatEngine {
       }
       this.weaponAttack(character, target);
     }
+  }
+
+  /**
+   * Resolve a class combat ability. Returns false when the hero has no uses
+   * left or nothing to target — the caller falls back to a weapon attack.
+   */
+  private useClassAbility(hero: GameCharacter): boolean {
+    const ability = getAbilityForClass(hero.charClass.id, hero.level);
+    if (!ability || !ability.effect || !hero.canUseAbility()) return false;
+
+    if (ability.effect === 'heal') {
+      const healDiceCfg = ability.healDice!(hero.level);
+      const healing = rollDice(healDiceCfg.count, healDiceCfg.size) + hero.level;
+      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
+      this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
+      this.log.messages.push(hero.heal(healing));
+      return true;
+    }
+
+    if (ability.effect === 'rage') {
+      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
+      this.rageRounds[hero.id] = ability.buff!.rounds;
+      this.log.messages.push(`😤 ${hero.name} enters a ${ability.name} — the fury burns for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
+      return true;
+    }
+
+    if (ability.effect === 'attack') {
+      // Strike abilities: Hunter's Mark / Blood Mite lay a lasting mark;
+      // Flurry of Blows strikes twice; Arcane Jolt strikes once with a spark.
+      const target = this.monsters.find(m => m.isAlive && m.id === this.roundFocusMonsterId)
+        ?? this.monsters.find(m => m.isAlive);
+      if (!target) return false;
+      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
+      if (ability.id === 'hunters_mark' || ability.id === 'blood_mite') {
+        const diceCfg = ability.bonusDamageDice!(hero.level);
+        const isRite = ability.id === 'blood_mite';
+        this.marks[hero.id] = {
+          monsterId: target.id,
+          rounds: isRite ? 5 : 3,
+          dice: diceCfg,
+        };
+        const label = isRite ? 'curses with a crimson rite' : 'marks';
+        this.log.messages.push(`🎯 ${hero.name} ${label} ${target.template.name} — every hit against it bites for +${diceCfg.count}d${diceCfg.size}!`);
+        return true;
+      }
+      if (ability.id === 'flurry_of_blows') {
+        // Flurry of Blows: one extra weapon attack on top of the default strike.
+        this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
+        this.weaponAttack(hero, target);
+        if (target.isAlive) this.weaponAttack(hero, target);
+        return true;
+      }
+      // Arcane Jolt and any other single-strike rider: one hit with bonus dice.
+      this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
+      this.weaponAttack(hero, target, ability.bonusDamageDice?.(hero.level));
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -1223,7 +1336,7 @@ export class CombatEngine {
   }
 
   /** Weapon attack applying advantage/disadvantage, bless, and auto-crits. */
-  private weaponAttack(attacker: GameCharacter, target: Monster): void {
+  private weaponAttack(attacker: GameCharacter, target: Monster, abilityBonus?: { count: number; size: number }): void {
     const mods = getAttackModifiers(attacker, target);
 
     // Paralyzed or sleeping defenders are automatically crit.
@@ -1278,6 +1391,16 @@ export class CombatEngine {
         opts.advantage = true;
       }
     }
+    // Rage: the fury adds weight to every blow while it burns.
+    if ((this.rageRounds[attacker.id] ?? 0) > 0) {
+      opts.damageBonus = (opts.damageBonus || 0) + 2;
+    }
+    // Hunter's Mark / Blood Mite: the marked quarry takes the mark's dice
+    // of extra damage from every hit.
+    const mark = this.marks[attacker.id];
+    if (mark && mark.monsterId === target.id) {
+      opts.damageBonus = (opts.damageBonus || 0) + rollDice(mark.dice.count, mark.dice.size);
+    }
     // Town enchantment: the blacksmith's forge adds elemental power.
     if (this.townBuffDamage > 0) {
       opts.damageBonus = (opts.damageBonus || 0) + this.townBuffDamage;
@@ -1304,6 +1427,18 @@ export class CombatEngine {
     }
 
     const result = attacker.attack(target, opts);
+    // Sneak Attack: an advantaged rogue strike finds the gaps for bonus dice.
+    if (attacker.charClass.id === 'rogue' && opts.advantage && !opts.disadvantage && result.hit) {
+      const sneak = rollDice(sneakAttackDice(attacker.level), 6);
+      result.damage += sneak;
+      this.log.messages.push(`🗡️ Sneak Attack! ${attacker.name} finds the gaps for ${sneak} extra damage.`);
+    }
+    // Arcane Jolt and friends: the ability's dice crackle over the strike.
+    if (abilityBonus && result.hit) {
+      const extra = rollDice(abilityBonus.count, abilityBonus.size);
+      result.damage += extra;
+      this.log.messages.push(`⚡ The infused strike cracks for ${extra} extra damage!`);
+    }
     // Old hate narrates itself the first time a vendetta lands.
     if (result.hit && vendetta > 0 && !this.vendettaNarrationUsed.has(attacker.id + ':' + target.template.id)) {
       this.vendettaNarrationUsed.add(attacker.id + ':' + target.template.id);

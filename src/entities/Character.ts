@@ -104,17 +104,17 @@ const SIMPLE_WEAPON_RE = /dagger|staff|quarterstaff|mace|sling|dart|club|javelin
 const FINESSE_WEAPON_RE = /dagger|rapier|shortsword|scimitar|whip|dart/i;
 
 /** Classes trained in all martial weapons. */
-const MARTIAL_CLASSES = new Set(['fighter', 'barbarian', 'paladin', 'ranger']);
+const MARTIAL_CLASSES = new Set(['fighter', 'barbarian', 'paladin', 'ranger', 'blood_hunter']);
 /** Classes that also handle finesse martial weapons (5e rogue/bard lists). */
-const FINESSE_CLASSES = new Set(['rogue', 'bard']);
+const FINESSE_CLASSES = new Set(['rogue', 'bard', 'artificer']);
 
 const HEAVY_ARMOR_RE = /chain mail|plate|splint|banded/i;
 const MEDIUM_ARMOR_RE = /scale|breastplate|half plate|hide|chain shirt/i;
 const SHIELD_RE = /shield|buckler/i;
 
 const HEAVY_ARMOR_CLASSES = new Set(['fighter', 'paladin']);
-const MEDIUM_ARMOR_CLASSES = new Set(['fighter', 'paladin', 'ranger', 'cleric', 'barbarian', 'druid']);
-const SHIELD_CLASSES = new Set(['fighter', 'paladin', 'cleric', 'ranger', 'barbarian']);
+const MEDIUM_ARMOR_CLASSES = new Set(['fighter', 'paladin', 'ranger', 'cleric', 'barbarian', 'druid', 'artificer', 'blood_hunter']);
+const SHIELD_CLASSES = new Set(['fighter', 'paladin', 'cleric', 'ranger', 'barbarian', 'artificer']);
 
 export interface Personality {
   aggression: number;    // 0-10: likelihood of attacking
@@ -188,7 +188,11 @@ export class GameCharacter {
   canUseAbility(): boolean {
     const ability = getAbilityForClass(this.charClass.id, this.level);
     if (!ability || !ability.effect) return false;
-    return (this.abilityUses[ability.id] ?? 0) > 0;
+    // Lazy init: a fresh hero starts with their full allotment.
+    if (this.abilityUses[ability.id] === undefined) {
+      this.abilityUses[ability.id] = ability.usesPerRest(this.level);
+    }
+    return this.abilityUses[ability.id] > 0;
   }
 
   // AI personality

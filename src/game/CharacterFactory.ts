@@ -53,6 +53,14 @@ export const STARTER_GEAR: Record<string, Omit<InventoryItem, 'id'>[]> = {
   monk: [
     { name: 'Quarterstaff', type: 'weapon', description: 'A simple staff. 1d6 bludgeoning.', value: 2, power: 6, identified: true },
   ],
+  artificer: [
+    { name: 'Light Crossbow', type: 'weapon', description: 'An ingeniously tuned mechanism. 1d8 piercing.', value: 25, power: 8, identified: true },
+    { name: 'Studded Leather', type: 'armor', description: 'Reinforced leather of the tinker\u2019s craft. AC 12 + DEX.', value: 45, power: 12, identified: true },
+  ],
+  blood_hunter: [
+    { name: 'Rapier', type: 'weapon', description: 'A slender blade kept close for the rites. 1d8 piercing.', value: 25, power: 8, identified: true },
+    { name: 'Leather Armor', type: 'armor', description: 'Light armor. AC 11 + DEX.', value: 10, power: 11, identified: true },
+  ],
   _default: [
     { name: 'Shortsword', type: 'weapon', description: 'A quick blade. 1d6 piercing.', value: 10, power: 6, identified: true },
   ],
@@ -141,6 +149,14 @@ function assignSpells(classId: string): string[] {
     case 'paladin':
       result.push('bless', 'cure_wounds', 'inflict_wounds', 'thunderwave');
       break;
+    case 'artificer':
+      // Tinker-mage: utility and blasting in equal measure.
+      result.push('fire_bolt', 'magic_missile', 'shield', 'cure_wounds', 'shatter', 'remove_curse');
+      break;
+    case 'blood_hunter':
+      // Hemocraft rites lean on curses; slots stay for self-sustain.
+      result.push('chromatic_orb', 'cure_wounds');
+      break;
     case 'ranger':
       result.push('cure_wounds', 'chromatic_orb', 'lightning_bolt');
       break;
@@ -227,7 +243,7 @@ export function createCharacter(
 }
 
 export function createParty(size: number = 4): GameCharacter[] {
-  const classes = ['fighter', 'cleric', 'wizard', 'rogue', 'paladin', 'ranger', 'druid', 'barbarian', 'bard', 'sorcerer', 'warlock', 'monk'];
+  const classes = ['fighter', 'cleric', 'wizard', 'rogue', 'paladin', 'ranger', 'druid', 'barbarian', 'bard', 'sorcerer', 'warlock', 'monk', 'artificer', 'blood_hunter'];
   const chosenClasses: string[] = [];
   const party: GameCharacter[] = [];
 

@@ -29,6 +29,7 @@ function roleOf(member: GameCharacter): MemberRole {
   switch (member.charClass.id) {
     case 'cleric':
     case 'druid':
+    case 'artificer':
       return 'healer';
     case 'wizard':
     case 'sorcerer':
@@ -39,6 +40,7 @@ function roleOf(member: GameCharacter): MemberRole {
     case 'fighter':
     case 'barbarian':
     case 'paladin':
+    case 'blood_hunter':
       return 'tank';
     case 'rogue':
     case 'ranger':
