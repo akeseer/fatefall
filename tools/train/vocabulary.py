@@ -251,6 +251,19 @@ EXTRA = {
         "take his goods by force", "help yourselves to his stock", "relieve him of his cart",
         "turn on the trader", "strip his cart",
     ],
+    "tasks": [
+        "small work going", "anything on the board", "the odd jobs list", "minor work available",
+        "whats posted on the small board", "casual work", "day labour going",
+    ],
+    "accept_task": [
+        "put us down for the task", "we will handle that notice", "take that small job",
+        "claim task {qidx}", "add task {qidx} to our list", "sign on for the odd job",
+    ],
+    "feature_chest": [
+        "get it open", "prise the lid up", "jimmy the lid", "wrench the chest open",
+        "see what the chest holds", "turn the chest out", "empty it out",
+        "let the rogue at the lock", "force it open", "check whats inside",
+    ],
     "unknown": [
         "that was hairy", "i wasnt expecting that", "these dice hate me", "the wizard is useless",
         "i hope they make it", "not looking good", "brutal", "unlucky", "typical", "of course",

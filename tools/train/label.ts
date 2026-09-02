@@ -91,6 +91,8 @@ add(over, 'raid camp', 'assault camp', 'attack camp', 'hit the camp', 'storm the
 add(town, 'report camp', 'report hideout', 'report bandits', 'report to constable');
 add(D(), 'list clues', 'clues', 'maps', 'bandit maps', 'camp clues');
 add(town, 'talk to Brenna', 'speak to the constable', 'visit Thalen', 'greet Dax', 'meet the innkeeper', 'chat with Varek');
+add(town, 'tasks', 'task board', 'bulletin board', 'bulletin', 'notice board', 'odd jobs', 'accept task 2', 'take on the notice');
+add(D({ featureKind: 'chest' }), 'open the chest', 'force the lid', 'pry the chest open', 'unlock the chest', 'loot the chest', 'open the coffer', 'open the strongbox', 'open the trunk', 'search');
 add(town, 'list npcs', 'who is here', "who's here", 'townspeople', 'people', 'citizens');
 // Room features, each under its own room.
 add(D({ featureKind: 'altar' }), 'pray', 'kneel', 'bless', 'offer', 'altar', 'shrine', 'pray at the altar', 'search');

@@ -184,6 +184,12 @@ export function parseFeatureIntent(cmd: string, featureKind: RoomFeatureKind | n
     case 'war_room':
       if (/\b(examine|study|map|plan|strategy|search|look)\b/.test(cmd)) return { intent: 'feature_war_room' };
       break;
+    case 'chest':
+      if (/\b(chest|coffer|strongbox|trunk|lid|box)\b/.test(cmd)
+        || /\b(open|pry|force|crack|unlock|pick|loot|rob|search|take|grab|empty)\b/.test(cmd)) {
+        return { intent: 'feature_chest' };
+      }
+      break;
   }
 
   // Generic search narrates the feature without spending it.
@@ -299,6 +305,13 @@ export function parseDMCommandRegex(rawText: string, ctx: DMContext): DMCommand 
   if (/\b(gear|equipment|loadout)\b/.test(cmd)) return { intent: 'gear' };
 
   // ── Overworld, town, quest & commerce ──
+  // Board work, checked before the quest branch so "tasks" is not read as a quest.
+  if (/\b(accept|take|take on|pick up|sign up for)\s+(the\s+)?(task|board task|bulletin|notice|odd job)\b/.test(cmd)) {
+    const idx = cmd.match(/(?:task|bulletin|notice|job)\s*(\d)/);
+    return idx ? { intent: 'accept_task', index: parseInt(idx[1], 10) } : { intent: 'accept_task' };
+  }
+  if (/\b(tasks|task board|bulletin board|bulletin|notice board|odd jobs)\b/.test(cmd)) return { intent: 'tasks' };
+
   if (/\b(quests|quest board|postings|contracts)\b/.test(cmd)) return { intent: 'quests' };
   if (/\b(accept|take|take on|pick up)\s+(the\s+)?(quest|contract|posting|job)\b/.test(cmd)) {
     const idx = cmd.match(/(?:quest|job|posting|contract)\s*(\d)/);
@@ -473,7 +486,8 @@ export function extractSlots(intent: DMIntent, rawText: string, ctx: DMContext):
       return arg ? { intent, arg } : null;
     }
     case 'journal': return { intent, raw: cmd };
-    case 'accept_quest': {
+    case 'accept_quest':
+    case 'accept_task': {
       const idx = cmd.match(/(?:quest|job|posting|contract|task|number|#)\s*(\d)\b/) ?? cmd.match(/\b(\d)\b/);
       if (idx) return { intent, index: parseInt(idx[1], 10) };
       const word = cmd.match(new RegExp(`\\b(${NUMBER_WORDS})\\b`));

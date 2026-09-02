@@ -420,7 +420,7 @@ export class MapRenderer {
       if (!map.explored[room.cy]?.[room.cx]) continue;
       const fx = room.cx * TILE_SIZE - camera.x;
       const fy = room.cy * TILE_SIZE - camera.y;
-      this.drawFeature(ctx, fx, fy, feat.kind, pal);
+      this.drawFeature(ctx, fx, fy, feat.kind, pal, feat.used);
     }
 
     // ── Detected traps: a pulsing hazard marker ──
@@ -1311,7 +1311,8 @@ export class MapRenderer {
     fx: number,
     fy: number,
     kind: RoomFeatureKind,
-    pal: DungeonPalette
+    pal: DungeonPalette,
+    used: boolean = false
   ) {
     const sx = Math.floor(fx) + 4;
     const sy = Math.floor(fy) + 4;
@@ -1438,6 +1439,32 @@ export class MapRenderer {
         ctx.fillRect(sx + 4, sy + 14, 4, 10);
         ctx.fillRect(sx + 20, sy + 14, 4, 10);
         ctx.fillRect(sx + 11, sy + 4, 6, 5);
+        break;
+      }
+      case 'chest': {
+        // A closed chest sits shut with a glinting lock; an opened one has its
+        // lid tipped back so the party can see at a glance what is left to loot.
+        ctx.fillStyle = pal.wallDark;
+        ctx.fillRect(sx + 5, sy + 13, 18, 12);
+        ctx.fillStyle = pal.wall;
+        ctx.fillRect(sx + 5, sy + 13, 18, 3);
+        if (used) {
+          // Lid thrown back against the wall, interior in shadow.
+          ctx.fillStyle = pal.wallDark;
+          ctx.fillRect(sx + 5, sy + 5, 18, 5);
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(sx + 7, sy + 15, 14, 8);
+        } else {
+          // Domed lid, iron bands, and a lock that catches the torchlight.
+          ctx.fillStyle = pal.wall;
+          ctx.fillRect(sx + 5, sy + 8, 18, 6);
+          ctx.fillStyle = pal.wallDark;
+          ctx.fillRect(sx + 9, sy + 8, 2, 17);
+          ctx.fillRect(sx + 17, sy + 8, 2, 17);
+          const glint = 0.55 + 0.45 * Math.sin(t * 2.2);
+          ctx.fillStyle = `rgba(255, 215, 0, ${glint.toFixed(3)})`;
+          ctx.fillRect(sx + 12, sy + 14, 4, 4);
+        }
         break;
       }
       default: {

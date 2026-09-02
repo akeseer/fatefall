@@ -318,6 +318,22 @@ T["accept_quest"] = [
     "sign us up for quest {qidx}", "take the second quest", "accept the second job", "accept quest number {qidx}",
     "accept the job", "take that quest", "we'll do quest {qidx}", "accept",
 ]
+T["tasks"] = [
+    "tasks", "task board", "bulletin board", "bulletin", "notice board", "odd jobs",
+    "check the bulletin board", "whats on the bulletin board", "read the notice board",
+    "any odd jobs about", "show the task board", "what small work is posted",
+    "look at the notices", "see the bulletin", "list the tasks", "what tasks do we have",
+    "our board work", "whats pinned up", "check the notices", "any small jobs",
+    "show me the odd jobs", "what have we taken on", "board work in hand",
+]
+T["accept_task"] = [
+    "accept task {qidx}", "take task {qidx}", "take on the task", "pick up the notice",
+    "accept the bulletin", "sign up for task {qidx}", "well take that task",
+    "take the odd job", "accept notice {qidx}", "take on task {qidx}", "accept that notice",
+    "put our name to task {qidx}", "we will take task {qidx}", "take the task",
+    "accept the notice", "take on the bulletin", "we accept the task", "take job {qidx} from the board",
+]
+
 T["turn_in_quest"] = [
     "turn in", "turn in the quest", "complete quest", "claim reward", "hand in", "hand in the quest", "report the quest complete",
     "collect our reward", "turn in the contract", "claim our reward", "finish the quest", "turn the quest in", "report success",
@@ -448,6 +464,15 @@ T["feature_ritual"] = [
     "cast in the ritual circle", "use the circle", "channel energy through the circle", "meditate", "perform a ritual", "summon power from the circle",
     "cast a spell in the circle", "use the ritual chamber", "conduct the ritual", "pray at the circle", "channel the chamber's power",
 ]
+T["feature_chest"] = [
+    "open the chest", "open it", "crack the chest", "force the lid", "pry the chest open",
+    "get the chest open", "unlock the chest", "pick the lock", "lift the lid", "look inside the chest",
+    "empty the chest", "loot the chest", "take whats in the chest", "open the coffer",
+    "open the strongbox", "open the trunk", "get that trunk open", "see whats in it",
+    "check the chest", "rifle the chest", "turn out the chest", "shift the lid",
+    "break the chest open", "have the rogue pick it", "open the box",
+]
+
 T["feature_war_room"] = [
     "study the war table", "study the maps", "examine the maps", "look at the war table", "plan our strategy", "search the war room",
     "examine the war table", "study the strategy maps", "read the battle plans", "look over the maps", "study the plans", "examine the war room",
@@ -495,4 +520,5 @@ FEATURE_FOR = {
     "feature_throne": "throne", "feature_trapped_search": "trapped_corridor", "feature_trapped_disarm": "trapped_corridor",
     "feature_treasure": "treasure_room", "feature_merchant_talk": "merchant_camp", "feature_merchant_rob": "merchant_camp",
     "feature_puzzle": "puzzle_room", "feature_ritual": "ritual_chamber", "feature_war_room": "war_room",
+    "feature_chest": "chest",
 }

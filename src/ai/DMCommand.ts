@@ -72,6 +72,8 @@ export type DMCommand =
   // ── town / quests / commerce ──
   | { intent: 'quests' }
   | { intent: 'accept_quest'; index?: number }
+  | { intent: 'tasks' }
+  | { intent: 'accept_task'; index?: number }
   | { intent: 'turn_in_quest' }
   | { intent: 'shop' }
   | { intent: 'buy'; item: string }
@@ -99,6 +101,7 @@ export type DMCommand =
   | { intent: 'feature_puzzle' }
   | { intent: 'feature_ritual' }
   | { intent: 'feature_war_room' }
+  | { intent: 'feature_chest' }
   /** Generic "search" of a room that has a feature: narrates it without spending it. */
   | { intent: 'feature_inspect' }
   /** "Search the room" in a featureless room. */
@@ -118,11 +121,13 @@ export const INTENTS: readonly DMIntent[] = [
   'search_traps', 'disarm_trap',
   'use_item', 'equip', 'unequip',
   'quests', 'accept_quest', 'turn_in_quest', 'shop', 'buy', 'sell', 'talk_to', 'list_npcs',
+  'tasks', 'accept_task',
   'raid_camp', 'report_camp', 'list_clues',
   'feature_altar', 'feature_vault', 'feature_prison', 'feature_chokepoint', 'feature_forge',
   'feature_library', 'feature_fountain', 'feature_sarcophagus', 'feature_throne',
   'feature_trapped_search', 'feature_trapped_disarm', 'feature_treasure',
   'feature_merchant_talk', 'feature_merchant_rob', 'feature_puzzle', 'feature_ritual', 'feature_war_room',
+  'feature_chest',
   'feature_inspect', 'search_room',
   'unknown',
 ];
@@ -154,6 +159,7 @@ export const FEATURE_INTENT_KIND: Partial<Record<DMIntent, RoomFeatureKind>> = {
   feature_puzzle: 'puzzle_room',
   feature_ritual: 'ritual_chamber',
   feature_war_room: 'war_room',
+  feature_chest: 'chest',
 };
 
 /**

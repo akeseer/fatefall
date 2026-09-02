@@ -14,7 +14,7 @@ export type RoomFeatureKind =
   | 'altar' | 'vault' | 'prison' | 'chokepoint' | 'forge'
   | 'library' | 'fountain' | 'sarcophagus' | 'throne'
   | 'trapped_corridor' | 'treasure_room' | 'merchant_camp'
-  | 'puzzle_room' | 'ritual_chamber' | 'war_room';
+  | 'puzzle_room' | 'ritual_chamber' | 'war_room' | 'chest';
 
 export interface RoomFeature {
   id: string;
@@ -29,6 +29,10 @@ export interface RoomFeature {
   used: boolean;
   /** Chokepoints can be barricaded, granting +1 AC to the next fights here. */
   barricaded?: boolean;
+  /** Chests only: a stuck lid the party must force before it opens. */
+  locked?: boolean;
+  /** Chests only: the lid is wired to a trap that has not gone off yet. */
+  trapped?: boolean;
 }
 
 interface FeatureVariant {
@@ -223,6 +227,33 @@ const VARIANTS: Record<RoomFeatureKind, FeatureVariant[]> = {
       inspect: 'The weapons are old but well-maintained. Someone has been sharpening them recently.',
     },
   ],
+  chest: [
+    {
+      name: 'an iron-bound chest',
+      entryLine: 'An iron-bound chest squats in the corner, its lid furred with dust nobody has disturbed in years.',
+      inspect: 'The bands are rusted but the wood beneath is sound. Whatever is inside has been waiting a long time.',
+    },
+    {
+      name: 'a small brass coffer',
+      entryLine: 'A small brass coffer sits on a toppled plinth, catching what little light there is.',
+      inspect: 'The brass is tarnished green. Something shifts inside when the floor is disturbed.',
+    },
+    {
+      name: 'a strongbox under a fallen beam',
+      entryLine: 'A strongbox lies half-crushed beneath a fallen beam, its corner split open.',
+      inspect: 'The split is just wide enough to see coin edges glinting inside. The beam will need shifting.',
+    },
+    {
+      name: 'a lacquered chest bound in silver wire',
+      entryLine: 'A lacquered chest bound in silver wire rests against the wall, entirely free of dust.',
+      inspect: 'Not a speck of dust on it, in a room thick with the stuff. Someone left this here recently, or it is not what it appears.',
+    },
+    {
+      name: 'a warped travelling trunk',
+      entryLine: 'A travelling trunk lies on its side, warped by damp, one hinge sprung.',
+      inspect: 'Someone dragged this a long way and then never came back for it.',
+    },
+  ],
 };
 
 /** Pick a random variant for a kind. */
@@ -232,13 +263,15 @@ function pickVariant(kind: RoomFeatureKind): FeatureVariant {
 }
 
 /** Which features are likely where: benign in the start room, martial at the boss. */
-const START_KINDS: RoomFeatureKind[] = ['fountain', 'altar', 'throne', 'library', 'merchant_camp', 'treasure_room'];
-const BOSS_KINDS: RoomFeatureKind[] = ['vault', 'throne', 'chokepoint', 'ritual_chamber', 'war_room'];
+const START_KINDS: RoomFeatureKind[] = ['fountain', 'altar', 'throne', 'library', 'merchant_camp', 'chest'];
+const BOSS_KINDS: RoomFeatureKind[] = ['vault', 'throne', 'chokepoint', 'ritual_chamber', 'war_room', 'chest'];
 const GENERAL_KINDS: RoomFeatureKind[] = [
   'altar', 'vault', 'prison', 'chokepoint', 'forge',
   'library', 'fountain', 'sarcophagus', 'throne',
   'trapped_corridor', 'treasure_room', 'merchant_camp',
   'puzzle_room', 'ritual_chamber', 'war_room',
+  // Chests are the common find, so they are weighted heavier than the rest.
+  'chest', 'chest', 'chest',
 ];
 
 let featureCounter = 0;
@@ -267,6 +300,11 @@ export function assignFeature(
     inspect: variant.inspect,
     used: false,
   };
+  if (kind === 'chest') {
+    // Deeper floors guard their chests better.
+    feature.locked = Math.random() < 0.35;
+    feature.trapped = Math.random() < Math.min(0.45, 0.12 + dungeonLevel * 0.05);
+  }
   room.feature = feature;
   return feature;
 }

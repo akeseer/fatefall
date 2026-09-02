@@ -6,6 +6,7 @@
  */
 
 import { OverworldTown, OverworldEntrance } from '../world/Overworld';
+import { getMonsterTemplate } from '../entities/Monster';
 
 export type BulletinTaskKind = 'slay' | 'collect' | 'escort' | 'deliver' | 'scout';
 
@@ -14,7 +15,11 @@ export interface BulletinTask {
   kind: BulletinTaskKind;
   title: string;
   detail: string;
-  /** Monster kind to slay (for 'slay' tasks). */
+  /**
+   * Monster template id to slay (for 'slay' tasks). This must be a real
+   * template id, because progress is read from the kill ledger, which is
+   * keyed by template id and not by display name.
+   */
   targetKind?: string;
   /** How many to slay. */
   targetCount: number;
@@ -24,9 +29,32 @@ export interface BulletinTask {
   rewardXp: number;
   /** Rep reward on completion. */
   repReward: number;
+  /** The party has taken the task on; only accepted tasks make progress. */
+  accepted: boolean;
   completed: boolean;
   /** Entrance this task is tied to (if any). */
   entranceId?: string;
+  /**
+   * Town the party must reach for an escort or delivery. Set when the task is
+   * accepted, since it depends on where the party is standing at the time.
+   */
+  targetTownId?: string;
+  /** Kills already on the ledger when a slay task was accepted. */
+  baselineKills?: number;
+  /** Rooms already explored when a scout task was accepted. */
+  baselineRooms?: number;
+}
+
+/**
+ * Pluralise a creature name for a notice. Monster names come from real
+ * templates now, so "Lizardfolk" must not become "Lizardfolks".
+ */
+export function pluralise(name: string): string {
+  if (/(folk|kin|fish|deer|sheep|swine|undead)$/i.test(name)) return name;
+  if (/(s|x|z|ch|sh)$/i.test(name)) return `${name}es`;
+  if (/[^aeiou]y$/i.test(name)) return `${name.slice(0, -1)}ies`;
+  if (/f$/i.test(name)) return `${name.slice(0, -1)}ves`;
+  return `${name}s`;
 }
 
 // ── Task Templates ─────────────────────────────────────────────────────────
@@ -44,8 +72,8 @@ interface SlayTemplate {
 const SLAY_TEMPLATES: SlayTemplate[] = [
   {
     kind: 'slay',
-    titleFn: (c, m) => `Clear the Roads: ${c} ${m}s`,
-    detailFn: (c, m) => `${c} ${m}s have been spotted near the roads. Slay them to keep travelers safe.`,
+    titleFn: (c, m) => `Clear the Roads: ${c} ${pluralise(m)}`,
+    detailFn: (c, m) => `${c} ${pluralise(m)} have been spotted near the roads. Slay them to keep travelers safe.`,
     targetCountRange: [2, 5],
     goldBase: 30,
     xpBase: 20,
@@ -53,8 +81,8 @@ const SLAY_TEMPLATES: SlayTemplate[] = [
   },
   {
     kind: 'slay',
-    titleFn: (c, m) => `Monster Menace: Hunt ${c} ${m}s`,
-    detailFn: (c, m) => `The ${m}s are terrorizing the countryside. Put an end to ${c} of them.`,
+    titleFn: (c, m) => `Monster Menace: Hunt ${c} ${pluralise(m)}`,
+    detailFn: (c, m) => `The ${pluralise(m)} are terrorizing the countryside. Put an end to ${c} of them.`,
     targetCountRange: [1, 4],
     goldBase: 40,
     xpBase: 25,
@@ -62,7 +90,7 @@ const SLAY_TEMPLATES: SlayTemplate[] = [
   },
   {
     kind: 'slay',
-    titleFn: (c, m) => `Bounty: ${c} ${m}s Dead or Alive`,
+    titleFn: (c, m) => `Bounty: ${c} ${pluralise(m)} Dead or Alive`,
     detailFn: (c, m) => `The constable has posted a bounty. Bring proof of ${c} ${m} kills.`,
     targetCountRange: [2, 6],
     goldBase: 50,
@@ -170,11 +198,16 @@ const SCOUT_TEMPLATES = [
 
 // ── Monster Names for Slay Tasks ───────────────────────────────────────────
 
-const MONSTER_NAMES = [
-  'Goblin', 'Wolf', 'Giant Rat', 'Skeleton', 'Zombie',
-  'Ghoul', 'Giant Spider', 'Orc', 'Bugbear', 'Hobgoblin',
-  'Owlbear', 'Basilisk', 'Harpy', 'Gnoll', 'Lizardfolk',
-  'Bandit', 'Thug', 'Shadow', 'Wight', 'Mimic',
+/**
+ * Slay targets, held as monster template ids. Progress comes from the kill
+ * ledger, which is keyed by template id, so a task must never name a creature
+ * by a display string that has no template behind it.
+ */
+const SLAY_TARGET_IDS = [
+  'goblin', 'kobold', 'giant_rat', 'skeleton', 'zombie',
+  'ghoul', 'giant_spider', 'orc', 'bugbear', 'hobgoblin',
+  'owlbear', 'harpy', 'gnoll', 'lizardfolk', 'bandit',
+  'shadow', 'wight', 'dire_wolf', 'giant_bat', 'gargoyle',
 ];
 
 // ── Generation ─────────────────────────────────────────────────────────────
@@ -209,14 +242,17 @@ export function generateBulletinTasks(
   const tasks: BulletinTask[] = [];
   const count = 3 + Math.floor(rng() * 2); // 3-4 tasks per board
 
-  for (let i = 0; i < count; i++) {
+  // Each slot gets a few attempts, because a repeat of a notice already on the
+  // board is discarded rather than posted twice.
+  for (let i = 0, attempt = 0; tasks.length < count && attempt < count * 6; attempt++) {
     const roll = rng();
     let task: BulletinTask | null = null;
 
     if (roll < 0.35) {
       // Slay task
       const tpl = pick(SLAY_TEMPLATES, rng);
-      const monster = pick(MONSTER_NAMES, rng);
+      const targetId = pick(SLAY_TARGET_IDS.filter(id => getMonsterTemplate(id)), rng) ?? 'goblin';
+      const monster = getMonsterTemplate(targetId)?.name ?? 'Goblin';
       const targetCount = randInt(rng, tpl.targetCountRange[0], tpl.targetCountRange[1]);
       const levelMul = 1 + partyLevel * 0.15;
       const entrance = entrances.length > 0 ? pick(entrances, rng) : undefined;
@@ -225,12 +261,13 @@ export function generateBulletinTasks(
         kind: 'slay',
         title: tpl.titleFn(targetCount, monster),
         detail: tpl.detailFn(targetCount, monster),
-        targetKind: monster.toLowerCase().replace(/\s+/g, '_'),
+        targetKind: targetId,
         targetCount,
         progress: 0,
         rewardGold: Math.round(tpl.goldBase * levelMul),
         rewardXp: Math.round(tpl.xpBase * levelMul),
         repReward: tpl.repBase,
+        accepted: false,
         completed: false,
         entranceId: entrance?.id,
       };
@@ -249,6 +286,7 @@ export function generateBulletinTasks(
         rewardGold: Math.round(tpl.goldBase * levelMul),
         rewardXp: Math.round(tpl.xpBase * levelMul),
         repReward: tpl.repBase,
+        accepted: false,
         completed: false,
       };
     } else if (roll < 0.75) {
@@ -265,6 +303,7 @@ export function generateBulletinTasks(
         rewardGold: Math.round(tpl.goldBase * levelMul),
         rewardXp: Math.round(tpl.xpBase * levelMul),
         repReward: tpl.repBase,
+        accepted: false,
         completed: false,
       };
     } else if (roll < 0.9) {
@@ -281,6 +320,7 @@ export function generateBulletinTasks(
         rewardGold: Math.round(tpl.goldBase * levelMul),
         rewardXp: Math.round(tpl.xpBase * levelMul),
         repReward: tpl.repBase,
+        accepted: false,
         completed: false,
       };
     } else {
@@ -298,12 +338,17 @@ export function generateBulletinTasks(
         rewardGold: Math.round(tpl.goldBase * levelMul),
         rewardXp: Math.round(tpl.xpBase * levelMul),
         repReward: tpl.repBase,
+        accepted: false,
         completed: false,
         entranceId: entrance?.id,
       };
     }
 
-    if (task) tasks.push(task);
+    // Boards used to post the same notice two or three times; keep them distinct.
+    if (task && !tasks.some(t => t.title === task!.title)) {
+      tasks.push(task);
+      i++;
+    }
   }
   return tasks;
 }
@@ -322,11 +367,32 @@ export function bulletinIcon(kind: BulletinTaskKind): string {
 /** Get progress text for a bulletin task. */
 export function bulletinProgress(task: BulletinTask): string {
   if (task.completed) return '✅ Complete!';
+  if (!task.accepted) return 'Not taken';
   switch (task.kind) {
     case 'slay': return `${task.progress}/${task.targetCount} slain`;
     case 'collect': return `${task.progress}/${task.targetCount} collected`;
-    case 'escort': return task.progress > 0 ? '🛡️ In transit' : 'Not started';
-    case 'deliver': return task.progress > 0 ? '📦 Delivered' : 'Not started';
+    case 'escort': return '🛡️ Escorting — deliver them to another town';
+    case 'deliver': return '📦 Carrying — take it to another town';
     case 'scout': return `${task.progress}/${task.targetCount} rooms explored`;
+  }
+}
+
+/** True once a task's objective is met and it can be claimed. */
+export function bulletinObjectiveMet(task: BulletinTask): boolean {
+  return task.accepted && task.progress >= task.targetCount;
+}
+
+/**
+ * What the party must actually do, for the task detail line. Escort and
+ * delivery both resolve on arriving at a different town than the one that
+ * posted them.
+ */
+export function bulletinObjective(task: BulletinTask): string {
+  switch (task.kind) {
+    case 'slay': return `Slay ${task.targetCount}.`;
+    case 'collect': return `Bring back ${task.targetCount} finds from your travels.`;
+    case 'escort':
+    case 'deliver': return 'Reach a different town to complete it.';
+    case 'scout': return `Explore ${task.targetCount} room${task.targetCount === 1 ? '' : 's'} underground.`;
   }
 }

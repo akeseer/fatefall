@@ -163,7 +163,9 @@ function analyzeParty(party: Party): PartyState {
     maxSpellSlots: maxSlots,
     averageLevel: all.length > 0 ? totalLevel / all.length : 1,
     totalGold,
-    hasRevivify: false, // TODO: check spells for Revivify
+    // There is no Revivify spell in the game; the only way to raise the dead
+    // on the spot is a scroll someone is carrying.
+    hasRevivify: all.some(m => m.inventory.some(i => i.id === 'scroll_revivify')),
     membersBelowHalf: hpPcts.filter(p => p < 0.5).length,
     membersCritical: hpPcts.filter(p => p < 0.25).length,
   };
@@ -681,16 +683,15 @@ function chooseExplorationDirection(
 export type AIAction =
   | { type: 'explore'; direction: Direction; message: string; pathing?: boolean }
   | { type: 'attack'; target: Monster; message: string }
-  | { type: 'loot'; message: string }
+  /** Head for a chest or other lootable the party can see. */
+  | { type: 'loot'; target: Vector2; direction: Direction; message: string }
   | { type: 'retreat'; direction: Direction; message: string }
   | { type: 'rest'; message: string }
   | { type: 'enter_door' | 'go_down_stairs'; message: string }
   | { type: 'heal'; message: string }
-  | { type: 'buff'; message: string }
   | { type: 'flee'; message: string }
   | { type: 'regroup'; message: string }
   | { type: 'scout'; direction: Direction; message: string }
-  | { type: 'search'; message: string }
   | { type: 'idle'; message: string };
 
 // ── AIDirector ───────────────────────────────────────
@@ -741,11 +742,17 @@ export class AIDirector {
       // rest revives the dead at 1 HP, so this can never loop.
       return {
         type: 'rest',
-        message: `${leader.name}: "${pick([
-          'We don\'t leave anyone behind. Rest — tend to the fallen.',
-          'Gather round — get them back on their feet before we go further.',
-          'The dead need tending. We rest here until they can walk again.',
-        ])}"`,
+        message: state.hasRevivify
+          ? `${leader.name}: "${pick([
+            'We carry a scroll of revivify — unroll it and bring them back.',
+            'Break out the revivify scroll. Nobody stays down while we still have it.',
+            'The scroll. Use the scroll — we are not burying anyone today.',
+          ])}"`
+          : `${leader.name}: "${pick([
+            'We don\'t leave anyone behind. Rest — tend to the fallen.',
+            'Gather round — get them back on their feet before we go further.',
+            'The dead need tending. We rest here until they can walk again.',
+          ])}"`,
       };
     }
     if (state.dyingCount > 0) {
@@ -811,10 +818,14 @@ export class AIDirector {
 
     // ── PHASE 6: Loot Seeking ──
     if (lootNearby.length > 0) {
-      const target = lootNearby[0];
-      const dir = this.getDirectionTo(leader.tile, target);
+      // Nearest first, so the party does not walk past one chest to reach another.
+      const target = [...lootNearby].sort(
+        (a, b) => manhattan(leader.tile, a) - manhattan(leader.tile, b),
+      )[0];
       return {
         type: 'loot',
+        target,
+        direction: this.getDirectionTo(leader.tile, target),
         message: `${leader.name} spots something glinting in the dark...`,
       };
     }

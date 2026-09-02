@@ -272,12 +272,19 @@ export function refreshBulletinBoard(
   const entry = tl.byTown[townId];
   if (!entry) return [];
   entry.visitCount++;
-  entry.bulletinTasks = generateBulletinTasks(
+  // Work the party has already taken on survives the new posting; only the
+  // untouched notices are replaced. Regenerating everything used to wipe a
+  // half-finished task the moment the party walked back into town.
+  const inFlight = entry.bulletinTasks.filter(t => t.accepted && !t.completed);
+  const claimable = entry.bulletinTasks.filter(t => t.completed);
+  const fresh = generateBulletinTasks(
     overworld.towns.find(t => t.id === townId)!,
     entry.visitCount,
     partyLevel,
     overworld.entrances,
   );
+  const taken = new Set([...inFlight, ...claimable].map(t => t.id));
+  entry.bulletinTasks = [...inFlight, ...claimable, ...fresh.filter(t => !taken.has(t.id))];
   return entry.bulletinTasks;
 }
 

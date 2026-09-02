@@ -135,6 +135,15 @@
 {"text":"channel something through that circle","ctx":{"featureKind":"ritual_chamber","inCombat":false,"mode":"dungeon"},"intent":"feature_ritual"}
 {"text":"pore over those battle maps","ctx":{"featureKind":"war_room","inCombat":false,"mode":"dungeon"},"intent":"feature_war_room"}
 {"text":"turn this room over and see what turns up","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"search_room"}
+{"text":"get that chest open","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"see what is inside the coffer","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"have the rogue pick that lock","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"prise the lid off it","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"anything small posted on the board","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"what odd jobs are going","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"read me the notice board","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"put us down for the second notice","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_task","slots":{"index":2}}
+{"text":"we will take that odd job","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_task"}
 {"text":"god this dungeon is creepy","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
 {"text":"i reckon that dragon was tougher than the last one","ctx":{"featureKind":null,"inCombat":false,"mode":"dungeon"},"intent":"unknown"}
 {"text":"that innkeeper seemed shifty to me","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"unknown"}

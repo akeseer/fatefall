@@ -60,6 +60,29 @@ describe('migrateSave', () => {
     expect(JSON.stringify(input)).toBe(snapshot);
   });
 
+  it('v8 -> v9 marks old bulletin tasks as not taken', () => {
+    const v8: any = { ...v1Save(), version: 8, traps: [] };
+    v8.party.members = v8.party.members.map((m: any) => ({ ...m, isDead: false, maxSpellSlots: {}, spellSlots: {} }));
+    v8.townLife = {
+      byTown: {
+        town_1: { bulletinTasks: [{ id: 'a', progress: 2, completed: false }, { id: 'b', progress: 0, completed: true }] },
+        town_2: { bulletinTasks: [] },
+      },
+    };
+    const out = migrateSave(v8)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    const tasks = (out.townLife as any).byTown.town_1.bulletinTasks;
+    // Old boards had no notion of accepting, so nothing counts until retaken.
+    expect(tasks.every((t: any) => t.accepted === false)).toBe(true);
+    expect(tasks[0].progress).toBe(2);
+  });
+
+  it('v8 -> v9 survives a save with no town life at all', () => {
+    const v8: any = { ...v1Save(), version: 8, traps: [] };
+    v8.party.members = v8.party.members.map((m: any) => ({ ...m, isDead: false, maxSpellSlots: {}, spellSlots: {} }));
+    expect(migrateSave(v8)!.version).toBe(SAVE_VERSION);
+  });
+
   it('keeps existing clock values on a v6 save', () => {
     const v6 = { ...v1Save(), version: 6, traps: [], clockPhase: 0.9, clockElapsed: 123 };
     v6.party.members = v6.party.members.map((m: any) => ({ ...m, isDead: false, maxSpellSlots: {}, spellSlots: {} }));

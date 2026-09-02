@@ -11,7 +11,7 @@ import { MAGIC_ITEMS } from '../ai/DnDKnowledge';
 import { getMonsterTemplate } from '../entities/Monster';
 import { RumorBias } from '../world/TownLife';
 
-export type QuestKind = 'reach_floor' | 'slay_boss' | 'slay_kind';
+export type QuestKind = 'reach_floor' | 'slay_boss' | 'slay_kind' | 'clear_floor' | 'collect_item';
 
 export interface Quest {
   id: string;
@@ -28,8 +28,10 @@ export interface Quest {
   targetFloor: number;
   /** Monster template id to slay (slay_kind). */
   targetKind?: string;
-  /** How many to slay (slay_kind). */
+  /** How many to slay (slay_kind), clear (clear_floor), or fetch (collect_item). */
   targetCount: number;
+  /** Treasures hauled out when the quest was accepted (collect_item). */
+  baselineTreasures?: number;
   rewardGold: number;
   rewardXp: number;
   /** Optional magic item id granted on turn-in. */
@@ -43,6 +45,10 @@ export interface QuestState {
   dungeonLevel: number;
   killLedger: Record<string, number>;
   bossSlainThisFloor: boolean;
+  /** Monsters still standing on the current floor (clear_floor). */
+  monstersAliveOnFloor?: number;
+  /** Running count of treasures the party has hauled out (collect_item). */
+  treasuresFound?: number;
 }
 
 const QUESTS: { kind: QuestKind; title: (e: OverworldEntrance) => string; detail: (e: OverworldEntrance, kind?: string, count?: number) => string }[] = [
@@ -55,6 +61,16 @@ const QUESTS: { kind: QuestKind; title: (e: OverworldEntrance) => string; detail
     kind: 'slay_boss',
     title: e => `The Guardian of ${e.name}`,
     detail: (e, _k, _c) => `Something ancient holds court at the bottom of ${e.name}. Slay it and bring back a trophy.`,
+  },
+  {
+    kind: 'clear_floor',
+    title: e => `Sweep the Halls of ${e.name}`,
+    detail: (e, _k, _c) => `Nothing may still be breathing when you leave. Clear a floor of ${e.name} end to end.`,
+  },
+  {
+    kind: 'collect_item',
+    title: e => `Spoils from ${e.name}`,
+    detail: (e, _k, count) => `A collector is paying for whatever ${e.name} still holds. Bring back ${count} pieces of treasure.`,
   },
   {
     kind: 'slay_kind',
@@ -99,14 +115,14 @@ function pickHuntKind(entrance: OverworldEntrance, bias: RumorBias = 'none'): { 
 /** How the town's live rumor reshapes the board (kind bias, gold, magic odds). */
 export function biasToKinds(bias: RumorBias): QuestKind[] {
   switch (bias) {
-    case 'hunt': return ['slay_kind', 'slay_kind', 'slay_boss', 'reach_floor'];
+    case 'hunt': return ['slay_kind', 'slay_kind', 'clear_floor', 'slay_boss', 'reach_floor'];
     case 'depth': return ['reach_floor', 'reach_floor', 'slay_boss', 'slay_kind'];
     case 'boss': return ['slay_boss', 'slay_boss', 'reach_floor', 'slay_kind'];
     case 'undead': return ['slay_kind', 'slay_kind', 'slay_boss', 'reach_floor'];
     case 'fey': return ['slay_kind', 'slay_kind', 'reach_floor', 'slay_boss'];
     case 'dragon': return ['slay_boss', 'slay_boss', 'slay_kind', 'reach_floor'];
-    case 'rich': return ['reach_floor', 'slay_boss', 'slay_kind', 'slay_kind'];
-    default: return ['reach_floor', 'slay_boss', 'slay_kind'];
+    case 'rich': return ['collect_item', 'collect_item', 'reach_floor', 'slay_boss', 'slay_kind'];
+    default: return ['reach_floor', 'slay_boss', 'slay_kind', 'clear_floor', 'collect_item'];
   }
 }
 
@@ -131,6 +147,7 @@ export function generateQuests(
     const kind = templateKinds[Math.floor(Math.random() * templateKinds.length)];
     const template = QUESTS.find(t => t.kind === kind) ?? QUESTS[0];
     const hunt = template.kind === 'slay_kind' ? pickHuntKind(entrance, bias) : undefined;
+    const fetchCount = 2 + Math.floor(Math.random() * 3);
 
     const goldMul = (bias === 'rich' ? 1.6 : 1) * (guildBonus ? 1.5 : 1);
     const baseGold = (60 + entrance.depth * 70 + Math.floor(Math.random() * 60)) * goldMul;
@@ -144,6 +161,8 @@ export function generateQuests(
         if (kind === 'slay_kind' && g.specialty === 'combat') return true;
         if (kind === 'slay_boss' && (g.specialty === 'combat' || g.specialty === 'faith')) return true;
         if (kind === 'reach_floor' && (g.specialty === 'lore' || g.specialty === 'nature')) return true;
+        if (kind === 'clear_floor' && g.specialty === 'combat') return true;
+        if (kind === 'collect_item' && (g.specialty === 'trade' || g.specialty === 'stealth')) return true;
         return false;
       });
       const pool = preferred.length > 0 ? preferred : questGivers;
@@ -154,13 +173,13 @@ export function generateQuests(
       id: `quest_${town.id}_${i + 1}`,
       kind: template.kind,
       title: template.title(entrance),
-      detail: template.detail(entrance, hunt?.id, hunt?.count),
+      detail: template.detail(entrance, hunt?.id, template.kind === 'collect_item' ? fetchCount : hunt?.count),
       giverTownId: town.id,
       giverNpcId,
       entranceId: entrance.id,
       targetFloor: entrance.depth,
       targetKind: hunt?.id,
-      targetCount: hunt?.count ?? 1,
+      targetCount: template.kind === 'collect_item' ? fetchCount : hunt?.count ?? 1,
       rewardGold: Math.round(baseGold * (1 + partyLevel * 0.1)),
       rewardXp: Math.round(baseXp * (1 + partyLevel * 0.1)),
       rewardItemId: magicDrop ? MAGIC_ITEMS[Math.floor(Math.random() * MAGIC_ITEMS.length)].id : undefined,
@@ -189,6 +208,13 @@ export function checkQuestProgress(quest: Quest, state: QuestState): boolean {
       done = kills >= quest.targetCount;
       break;
     }
+    case 'clear_floor':
+      // Only counts underground, where a floor exists to be emptied.
+      done = state.monstersAliveOnFloor === 0;
+      break;
+    case 'collect_item':
+      done = (state.treasuresFound ?? 0) - (quest.baselineTreasures ?? 0) >= quest.targetCount;
+      break;
   }
   if (done) quest.completed = true;
   return done;
@@ -205,6 +231,15 @@ export function questProgressText(quest: Quest, state: QuestState): string {
       const kills = (quest.targetKind && state.killLedger[quest.targetKind]) || 0;
       const t = quest.targetKind ? getMonsterTemplate(quest.targetKind) : undefined;
       return `${t?.name ?? 'Foes'} slain: ${Math.min(kills, quest.targetCount)} / ${quest.targetCount}`;
+    }
+    case 'clear_floor': {
+      const left = state.monstersAliveOnFloor;
+      if (left === undefined) return 'Clear a floor end to end — head underground';
+      return left === 0 ? 'Floor cleared' : `${left} still standing on this floor`;
+    }
+    case 'collect_item': {
+      const got = Math.max(0, (state.treasuresFound ?? 0) - (quest.baselineTreasures ?? 0));
+      return `Treasure recovered: ${Math.min(got, quest.targetCount)} / ${quest.targetCount}`;
     }
   }
 }

@@ -122,6 +122,17 @@ describe('parseDMCommandRegex — town, quests, travel, camps, npcs', () => {
     expect(parse('claim reward')).toEqual({ intent: 'turn_in_quest' });
   });
 
+  it('board tasks are distinct from quests', () => {
+    expect(parse('tasks')).toEqual({ intent: 'tasks' });
+    expect(parse('check the bulletin board')).toEqual({ intent: 'tasks' });
+    expect(parse('any odd jobs')).toEqual({ intent: 'tasks' });
+    expect(parse('accept task 2')).toEqual({ intent: 'accept_task', index: 2 });
+    expect(parse('take on the notice')).toEqual({ intent: 'accept_task' });
+    // The quest board is still its own thing.
+    expect(parse('quests')).toEqual({ intent: 'quests' });
+    expect(parse('accept quest 1')).toEqual({ intent: 'accept_quest', index: 1 });
+  });
+
   it('town and commerce', () => {
     expect(parse('depart')).toEqual({ intent: 'depart_town' });
     expect(parse('go to town')).toEqual({ intent: 'go_to_town' });
@@ -183,6 +194,9 @@ describe('room features', () => {
     // "examine" is claimed by the look branch before features get a turn.
     expect(parse('examine the corridor', { featureKind: 'trapped_corridor' })).toEqual({ intent: 'look' });
     expect(parse('defuse it', { featureKind: 'trapped_corridor' })).toEqual({ intent: 'feature_trapped_disarm' });
+    expect(parse('open the chest', { featureKind: 'chest' })).toEqual({ intent: 'feature_chest' });
+    expect(parse('force the lid', { featureKind: 'chest' })).toEqual({ intent: 'feature_chest' });
+    expect(parse('open the chest', { featureKind: 'altar' })).toEqual({ intent: 'unknown' });
     expect(parse('rob him blind', { featureKind: 'merchant_camp' })).toEqual({ intent: 'feature_merchant_rob' });
     // "merchant" is a talk word, so "rob the merchant" is a greeting. Quirk kept.
     expect(parse('rob the merchant', { featureKind: 'merchant_camp' })).toEqual({ intent: 'feature_merchant_talk' });

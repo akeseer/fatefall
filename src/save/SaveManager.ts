@@ -26,7 +26,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 export interface SavedCharacter {
   id: string;
@@ -179,6 +179,8 @@ export interface SaveData {
   clockPhase?: number;
   /** Day/night clock continuous elapsed ms (v8+). */
   clockElapsed?: number;
+  /** Treasures hauled out this run, for fetch quests (v9+). */
+  treasuresFound?: number;
 }
 
 function slotKey(slot: number): string {
@@ -278,6 +280,8 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 6) current = migrateV6toV7(current);
   if (!current) return null;
   if (current.version === 7) current = migrateV7toV8(current);
+  if (!current) return null;
+  if (current.version === 8) current = migrateV8toV9(current);
   return current;
 }
 
@@ -288,6 +292,24 @@ function migrateV6toV7(data: SaveData): SaveData | null {
   if (typeof s.clockPhase !== 'number') s.clockPhase = 0.3; // late morning
   if (typeof s.clockElapsed !== 'number') s.clockElapsed = 0.3 * STAMP;
   return s as SaveData;
+}
+
+/**
+ * v8 → v9: bulletin tasks must be taken on before they track progress. Older
+ * saves have boards full of tasks with no `accepted` flag; they read as not
+ * taken, which is the correct starting state.
+ */
+function migrateV8toV9(data: SaveData): SaveData | null {
+  const s: SaveData = { ...data, version: 9 };
+  const townLife = s.townLife as any;
+  if (townLife?.byTown) {
+    for (const entry of Object.values(townLife.byTown) as any[]) {
+      for (const task of entry?.bulletinTasks ?? []) {
+        if (typeof task.accepted !== 'boolean') task.accepted = false;
+      }
+    }
+  }
+  return s;
 }
 
 /** v7 → v8: equipment system. Older saves simply start with empty gear. */

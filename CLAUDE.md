@@ -48,7 +48,13 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   `tests/save-migrate.test.ts`.
 - **Adding a `TileType` or `RoomFeatureKind`**: several exhaustive `Record`s must be
   updated or `tsc` fails — `TILE_COLORS` in `TileMap.ts`, `VARIANTS` in
-  `RoomFeatures.ts`, `Game.FEATURE_HINT`, and `drawFeature` in `MapRenderer.ts`.
+  `RoomFeatures.ts`, and `Game.FEATURE_HINT`. `drawFeature` in `MapRenderer.ts` has a
+  default arm, so a new kind renders as a generic marker until you give it a case.
+  A feature that the DM can act on also needs an intent in `DMCommand.ts`, a branch in
+  `parseFeatureIntent`, a case in `Game.performFeatureIntent`, and a retrain.
+- **Bulletin tasks** only make progress once accepted. Slay progress is read from the
+  kill ledger against a baseline taken on accept, so targets must be real template ids.
+  `refreshBulletinBoard` keeps accepted and finished work and replaces only the rest.
 - **Kill ledger keys are monster template ids** (`m.template.id`), not display names.
   Anything that counts kills must use template ids.
 - `DiceEvents` and `LuckDie` are module-level singletons; tests call

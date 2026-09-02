@@ -29,11 +29,11 @@ DATA = HERE / "data"
 
 FEATURE_KINDS = [
     "altar", "vault", "prison", "chokepoint", "forge", "library", "fountain", "sarcophagus", "throne",
-    "trapped_corridor", "treasure_room", "merchant_camp", "puzzle_room", "ritual_chamber", "war_room",
+    "trapped_corridor", "treasure_room", "merchant_camp", "puzzle_room", "ritual_chamber", "war_room", "chest",
 ]
 MODES = ["overworld", "town", "dungeon"]
 
-TOWN_INTENTS = {"shop", "buy", "sell", "talk_to", "list_npcs", "quests", "accept_quest", "turn_in_quest", "depart_town", "report_camp"}
+TOWN_INTENTS = {"shop", "buy", "sell", "talk_to", "list_npcs", "quests", "accept_quest", "turn_in_quest", "depart_town", "report_camp", "tasks", "accept_task"}
 DUNGEON_INTENTS = {"descend", "leave_dungeon", "search_traps", "disarm_trap", "search_room", "feature_inspect"} | set(FEATURE_FOR)
 OVERWORLD_INTENTS = {"travel_to", "enter_dungeon", "go_to_town", "raid_camp"}
 

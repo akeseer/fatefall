@@ -178,6 +178,17 @@ add('feature_puzzle', D({ featureKind: 'puzzle_room' }), 'line the symbols up pr
 add('feature_ritual', D({ featureKind: 'ritual_chamber' }), 'channel something through that circle');
 add('feature_war_room', D({ featureKind: 'war_room' }), 'pore over those battle maps');
 add('search_room', D(), 'turn this room over and see what turns up');
+add('feature_chest', D({ featureKind: 'chest' }), 'get that chest open');
+add('feature_chest', D({ featureKind: 'chest' }), 'see what is inside the coffer');
+add('feature_chest', D({ featureKind: 'chest' }), 'have the rogue pick that lock');
+add('feature_chest', D({ featureKind: 'chest' }), 'prise the lid off it');
+
+// ── board work ──────────────────────────────────────────────────────────────
+add('tasks', town, 'anything small posted on the board');
+add('tasks', town, 'what odd jobs are going');
+add('tasks', town, 'read me the notice board');
+add('accept_task', town, 'put us down for the second notice', { index: 2 });
+add('accept_task', town, 'we will take that odd job');
 
 // ── chatter that must not become an order ───────────────────────────────────
 add('unknown', D(), 'god this dungeon is creepy');

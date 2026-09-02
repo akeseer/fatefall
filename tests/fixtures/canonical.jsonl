@@ -233,6 +233,23 @@
 {"text":"greet Dax","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
 {"text":"meet the innkeeper","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
 {"text":"chat with Varek","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"talk_to"}
+{"text":"tasks","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"task board","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"bulletin board","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"bulletin","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"notice board","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"odd jobs","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"tasks"}
+{"text":"accept task 2","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_task"}
+{"text":"take on the notice","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"accept_task"}
+{"text":"open the chest","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"force the lid","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"pry the chest open","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"unlock the chest","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"loot the chest","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"open the coffer","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"open the strongbox","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"open the trunk","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
+{"text":"search","ctx":{"featureKind":"chest","inCombat":false,"mode":"dungeon"},"intent":"feature_chest"}
 {"text":"list npcs","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
 {"text":"who is here","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
 {"text":"who's here","ctx":{"featureKind":null,"inCombat":false,"mode":"town"},"intent":"list_npcs"}
