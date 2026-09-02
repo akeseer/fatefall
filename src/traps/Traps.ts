@@ -192,7 +192,7 @@ export function placeTraps(
  * Passive Perception: 10 + WIS modifier (scouts — rogues/rangers — add
  * their proficiency bonus). Returns the party's best passive score.
  */
-export function bestPassivePerception(members: GameCharacter[]): { member: GameCharacter; score: number } {
+export function bestPassivePerception(members: GameCharacter[]): { member: GameCharacter; score: number } | null {
   let best: { member: GameCharacter; score: number } | null = null;
   for (const m of members) {
     if (!m.isAlive) continue;
@@ -200,7 +200,10 @@ export function bestPassivePerception(members: GameCharacter[]): { member: GameC
     if (['rogue', 'ranger'].includes(m.charClass.id)) score += m.profBonus;
     if (!best || score > best.score) best = { member: m, score };
   }
-  return best ?? { member: members[0], score: 10 };
+  // Null when nobody can look: the old fallback handed back members[0] even if
+  // that member was a corpse, or undefined for an empty party, which callers
+  // then read straight through.
+  return best;
 }
 
 /** A member rolls a Wisdom (Perception) check to actively search. */
@@ -322,6 +325,8 @@ export function sweepDetection(
   radius: number,
 ): string[] {
   const best = bestPassivePerception(members);
+  // A party with nobody conscious spots nothing.
+  if (!best) return [];
   const messages: string[] = [];
   for (const trap of traps) {
     if (trap.detected || trap.disarmed) continue;

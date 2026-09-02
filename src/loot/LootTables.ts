@@ -550,8 +550,10 @@ export function rollCombatLoot(sources: LootSource[], dungeonLevel: number): Loo
   // named on their corpse, so skip anything narrated above.
   for (const item of items) {
     if (item.type !== 'treasure' || magicItems.some(mi => mi.id === item.id)) continue;
-    const alreadyNamed = individualItems.some(ii => ii.id === item.id && ii.name === item.name);
-    if (!alreadyNamed) narration.push(`Also found: ${item.name} (${item.value} gp).`);
+    // Identity, not id and name: a hoard can drop the same kind of gem a
+    // corpse already dropped, and comparing by value silently swallowed the
+    // second one — the party got two items and was told about one.
+    if (!individualItems.includes(item)) narration.push(`Also found: ${item.name} (${item.value} gp).`);
   }
   for (const mi of magicItems) {
     narration.push(`${mi.name} (${mi.rarity}) — ${mi.description.substring(0, 90)}${mi.description.length > 90 ? '...' : ''}`);

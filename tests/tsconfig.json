@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.json",
-  "compilerOptions": { "types": ["vitest"] },
+  "compilerOptions": { "types": ["vitest", "node"] },
   "include": ["./**/*.ts", "../src"]
 }
