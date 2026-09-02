@@ -222,6 +222,42 @@ export function getAttackModifiers(
   return { advantage, disadvantage, autoCrit };
 }
 
+// ── Elemental damage vs creature types ─────────────────
+
+/**
+ * The classic D&D elemental interactions, keyed by damage element →
+ * monster type → multiplier. Anything unlisted is ×1. Radiant sears the
+ * unholy, fire turns dry plant-flesh to torchwood, thunder resonates
+ * through constructs, and the dead simply do not care about venom.
+ */
+const ELEMENT_VS_TYPE: Record<string, Partial<Record<string, number>>> = {
+  radiant: { undead: 1.5, fiend: 1.5, celestial: 0.5 },
+  necrotic: { undead: 0.5, fiend: 0.5, celestial: 1.5 },
+  fire: { plant: 1.5, elemental: 0.5 },
+  cold: { ooze: 1.5, construct: 0.5 },
+  thunder: { construct: 1.5, ooze: 0.5 },
+  lightning: { ooze: 0.5, plant: 1.25 },
+  poison: { undead: 0.5, construct: 0.5, fiend: 0.5 },
+  psychic: { construct: 0.5, ooze: 1.5 },
+};
+
+export interface ElementalResult {
+  mult: number;
+  /** Short flavor line for the log, or null when unremarkable. */
+  note: string | null;
+}
+
+/** Look up an elemental interaction. Pure and table-driven. */
+export function elementalMultiplier(element: string | undefined, monsterType: string): ElementalResult {
+  if (!element) return { mult: 1, note: null };
+  const mult = ELEMENT_VS_TYPE[element]?.[monsterType] ?? 1;
+  if (mult === 1) return { mult: 1, note: null };
+  const note = mult > 1
+    ? `${monsterType} suffers — ${element} damage surges!`
+    : `${monsterType} shrugs off ${element} — damage diminished.`;
+  return { mult, note };
+}
+
 // ── Monster special attacks ───────────────────────────
 
 export interface MonsterSpecial {

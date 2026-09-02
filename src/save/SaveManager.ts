@@ -26,7 +26,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 export interface SavedCharacter {
   id: string;
@@ -183,6 +183,12 @@ export interface SaveData {
   clockElapsed?: number;
   /** Treasures hauled out this run, for fetch quests (v9+). */
   treasuresFound?: number;
+  /** The floor's delve mood and its live effects (v10+). */
+  delveMood?: { icon: string; label: string; effects: string[] } | null;
+  /** Which town the party is standing in (v10+); guessed from quests before that. */
+  currentTownId?: string | null;
+  /** Whether this floor's boss is already dead, for slay-boss quests (v10+). */
+  bossSlainThisFloor?: boolean;
 }
 
 function slotKey(slot: number): string {
@@ -286,6 +292,8 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 7) current = migrateV7toV8(current);
   if (!current) return null;
   if (current.version === 8) current = migrateV8toV9(current);
+  if (!current) return null;
+  if (current.version === 9) current = migrateV9toV10(current);
   return current;
 }
 
@@ -296,6 +304,16 @@ function migrateV6toV7(data: SaveData): SaveData | null {
   if (typeof s.clockPhase !== 'number') s.clockPhase = 0.3; // late morning
   if (typeof s.clockElapsed !== 'number') s.clockElapsed = 0.3 * STAMP;
   return s as SaveData;
+}
+
+/**
+ * v9 → v10: the delve mood, the town the party stands in, and whether this
+ * floor's boss is dead are now persisted. Older saves simply restore without
+ * them, exactly as they behaved before: no mood, the town re-guessed from the
+ * quest giver, and the floor's boss assumed still alive.
+ */
+function migrateV9toV10(data: SaveData): SaveData | null {
+  return { ...data, version: 10 };
 }
 
 /**

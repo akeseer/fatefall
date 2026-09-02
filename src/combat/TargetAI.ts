@@ -240,6 +240,103 @@ export function chooseHealTarget(party: Party): TriageChoice {
   return { target: null, urgency: 'none' };
 }
 
+// ── Flanking: opposite sides of a foe is a real tactical edge ──────────
+
+/**
+ * True when `attacker` and `ally` stand on opposite or adjacent sides of
+ * `target` (Manhattan-chebyshev hybrid used by the grid): the classic 5e
+ * optional flanking rule, reduced to grid geometry.
+ */
+export function isFlanking(
+  attacker: { x: number; y: number },
+  target: { x: number; y: number },
+  ally: { x: number; y: number },
+): boolean {
+  const adx = Math.sign(attacker.x - target.x);
+  const ady = Math.sign(attacker.y - target.y);
+  const bdx = Math.sign(ally.x - target.x);
+  const bdy = Math.sign(ally.y - target.y);
+  // Same tile as the target is not flanking; opposite vectors (or a corner
+  // pair like (+1,0)/(-1,+1) that still splits the foe's attention) count.
+  if (adx === 0 && ady === 0) return false;
+  if (bdx === 0 && bdy === 0) return false;
+  return (adx * bdx <= 0) && (ady * bdy <= 0) && !(adx === bdx && ady === bdy);
+}
+
+// ── Boss legendary-action selection: a boss fights with a plan ─────────
+
+export interface LegendaryOption {
+  name: string;
+  damage?: string;
+  damageBonus?: number;
+  condition?: string;
+  cost?: number;
+}
+
+/** Expected damage of an option, 0 for pure-control options. */
+function expectedDamage(opt: LegendaryOption): number {
+  if (!opt.damage) return 0;
+  const match = opt.damage.match(/(\d+)d(\d+)/);
+  if (!match) return 0;
+  return parseInt(match[1], 10) * parseInt(match[2], 10) + (opt.damageBonus ?? 0);
+}
+
+/**
+ * Pick a legendary action with intent instead of at random:
+ *   1. someone is dying → pure damage (finish what the pack started),
+ *   2. a healer is standing and the boss is healthy → control options to
+ *      shut the sustain down,
+ *   3. the boss is bloodied → escalate with its biggest damage,
+ *   4. otherwise → whatever it feels like; it's still a boss.
+ */
+export function pickLegendaryAction<T extends LegendaryOption>(
+  options: T[],
+  context: { someoneDying: boolean; healerStanding: boolean; bossHpPct: number },
+): T {
+  if (options.length === 1) return options[0];
+  if (context.someoneDying) {
+    const damageOnly = options.filter(o => o.damage && !o.condition);
+    if (damageOnly.length > 0) {
+      return [...damageOnly].sort((a, b) => expectedDamage(b) - expectedDamage(a))[0];
+    }
+  }
+  if (context.healerStanding && context.bossHpPct > 0.5) {
+    const control = options.filter(o => o.condition);
+    if (control.length > 0 && Math.random() < 0.7) return control[0];
+  }
+  if (context.bossHpPct < 0.4) {
+    return [...options].sort((a, b) => expectedDamage(b) - expectedDamage(a))[0];
+  }
+  return options[Math.floor(Math.random() * options.length)];
+}
+
+// ── Combat repositioning: closing the distance ────────────────────────
+
+/**
+ * Advance a combatant toward its target one corridor step at a time.
+ * Returns the new tile (original untouched) and how many steps were taken.
+ * Prefers the longer axis first — the classic board-game approach walk.
+ */
+export function advanceToward(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  maxSteps: number,
+): { tile: { x: number; y: number }; steps: number } {
+  let { x, y } = from;
+  let steps = 0;
+  const dist = () => Math.abs(to.x - x) + Math.abs(to.y - y);
+  while (steps < maxSteps && dist() > 1) {
+    const dx = to.x - x;
+    const dy = to.y - y;
+    if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) x += Math.sign(dx);
+    else if (dy !== 0) y += Math.sign(dy);
+    else if (dx !== 0) x += Math.sign(dx);
+    else break;
+    steps++;
+  }
+  return { tile: { x, y }, steps };
+}
+
 // ── Monster morale: when to break and run ─────────────────────────────
 
 /** Kinds that fight to the death: they feel no fear, or dying is the point. */

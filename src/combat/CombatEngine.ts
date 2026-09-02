@@ -15,6 +15,7 @@ import {
   MONSTER_SPECIALS,
   SaveResult,
   getAttackModifiers,
+  elementalMultiplier,
   hasCondition,
   incapacityMessage,
   removeConditionsFromSource,
@@ -23,10 +24,10 @@ import {
   savingThrow,
   tickConditions,
 } from '../rules/Rules';
-import { manhattan } from '../engine/types';
+import { manhattan, Vector2 } from '../engine/types';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
-import { chooseMonsterTarget, choosePartyFocus, shouldMonsterFlee, chooseHealTarget } from './TargetAI';
+import { chooseMonsterTarget, choosePartyFocus, shouldMonsterFlee, chooseHealTarget, pickLegendaryAction, advanceToward, isFlanking } from './TargetAI';
 
 export interface CombatLog {
   round: number;
@@ -488,6 +489,79 @@ export class CombatEngine {
    */
   public onItemCommand?: (itemId: string, holderId: string, actor: GameCharacter) => void;
   /**
+   * Game-side hook: is this tile passable? Wired to the dungeon map so
+   * monsters reposition around walls instead of through them.
+   */
+  public isTileWalkable?: (x: number, y: number) => boolean;
+
+  /**
+   * Opportunity attack: strike a combatant as it moves out of your melee
+   * reach. Monsters provoke these from heroes when they advance or flee;
+   * heroes provoke them from monsters the same way.
+   * Returns the narration (possibly empty) instead of only logging, so
+   * callers that already hold the log lock can interleave it correctly.
+   */
+  private opportunityAttack(mover: GameCharacter | Monster, moverNewTile: Vector2): string[] {
+    const lines: string[] = [];
+    const isMonsterMover = !(mover instanceof GameCharacter);
+    const watchers = isMonsterMover ? this.party.alive : this.party.alive;
+    const strike = (attacker: GameCharacter, victim: Monster) => {
+      const mods = getAttackModifiers(attacker, victim);
+      const result = attacker.attack(victim, { ...mods, disadvantage: true });
+      const narration = generateCombatTurnNarration({
+        attackerName: attacker.name,
+        attackerClass: attacker.charClass.id,
+        defenderName: victim.template.name,
+        defenderType: 'monster',
+        hit: result.hit,
+        damage: result.damage,
+        critical: result.message.includes('CRIT'),
+        killingBlow: result.hit && !victim.isAlive,
+      });
+      lines.push(`⚔️ ${narration} (opportunity attack)`);
+      if (result.hit) {
+        lines.push(victim.takeDamage(result.damage));
+        if (!victim.isAlive) this.noteKinVengeance(attacker, victim);
+      }
+    };
+    const monsterStrike = (attacker: Monster, victim: GameCharacter) => {
+      const mods = getAttackModifiers(attacker, victim);
+      const effectiveAc = victim.ac + this.defenseBonus + this.townBuffAC + this.tavernBuffAC + Math.max(0, -this.weatherAttackMod);
+      const result = attacker.attack(effectiveAc, mods);
+      lines.push(`⚔️ ${attacker.template.name} lashes out at ${victim.name} as they slip away! (opportunity attack)`);
+      if (result.hit) {
+        const crit = result.message.includes('CRIT') || victim.isDying;
+        lines.push(victim.takeDamage(result.damage, { crit }));
+        this.applyMonsterSpecial(attacker, victim);
+        this.handleConcentrationBreak(victim);
+        if (!victim.isAlive) this.noteHeroDowned(victim, attacker);
+      }
+    };
+    if (isMonsterMover) {
+      const mv = mover as Monster;
+      // Heroes the mover leaves (was adjacent, is no longer) get a parting blow.
+      for (const hero of watchers) {
+        const was = manhattan(mv.tile, hero.tile) <= 1;
+        const now = manhattan(moverNewTile, hero.tile) <= 1;
+        if (was && !now && hero.hp > 0) {
+          strike(hero, mv);
+        }
+      }
+    } else {
+      const mv = mover as GameCharacter;
+      for (const m of this.monsters) {
+        if (!m.isAlive || m.fled) continue;
+        const was = manhattan(m.tile, mv.tile) <= 1;
+        const now = manhattan(m.tile, moverNewTile) <= 1;
+        if (was && !now && m.isAlive) {
+          monsterStrike(m, mv);
+        }
+      }
+    }
+    return lines;
+  }
+
+  /**
    * Game-side hook: the party heard a call for help. The engine only raises
    * the alarm once per fight; the game decides whether backup actually
    * arrives (spawn budget, theme rosters, fairness caps) and feeds it back
@@ -534,7 +608,13 @@ export class CombatEngine {
       if (!kit || kit.legendary.length === 0) continue;
       const available = kit.legendary.filter(d => boss.legendaryActions >= (d.cost ?? 1));
       if (available.length === 0) continue;
-      const def = available[Math.floor(Math.random() * available.length)];
+      // A boss fights with a plan: finish the dying, silence the healer,
+      // escalate when bloodied — not a dice roll among its options.
+      const def = pickLegendaryAction(available, {
+        someoneDying: this.party.members.some(m => m.isAlive && m.hp <= 0),
+        healerStanding: this.party.alive.some(m => /cleric|druid|bard|paladin/.test(m.charClass.id)),
+        bossHpPct: boss.hp / Math.max(1, boss.maxHp),
+      });
       this.useLegendaryAction(boss, def);
       return; // one legendary action per foreign turn
     }
@@ -546,7 +626,13 @@ export class CombatEngine {
     boss.legendaryActions -= cost;
     const alive = this.party.alive;
     if (alive.length === 0) return;
-    const target = alive[Math.floor(Math.random() * alive.length)];
+    // The legendary strike is aimed, not rolled: grudge-aware tactical
+    // targeting — tormentors, healers, finishable heroes first.
+    const chosen = chooseMonsterTarget(this.party, boss, { maxReach: 12 });
+    const target = chosen.target;
+    if (chosen.reason !== 'the closest reachable threat') {
+      this.log.messages.push(`\u26A1 ${boss.template.name} fixes its ire on ${target.name} \u2014 ${chosen.reason}.`);
+    }
 
     this.log.messages.push(`\u26A1 ${boss.template.name} lashes out \u2014 ${def.name}! ${def.description}.`);
 
@@ -592,7 +678,21 @@ export class CombatEngine {
     if (!boss) return;
     const kit = BOSS_KITS[boss.template.id];
     const lair = kit.lair!;
-    const def = lair[Math.floor(Math.random() * lair.length)];
+    // The lair serves its master's plan too: damage waves when the party is
+    // wounded, control effects while they stand strong.
+    const lairDef = pickLegendaryAction(lair, {
+      someoneDying: false,
+      healerStanding: this.party.alive.some(m => /cleric|druid|bard|paladin/.test(m.charClass.id)),
+      bossHpPct: boss.hp / Math.max(1, boss.maxHp),
+    });
+    let def: LegendaryActionDef = lairDef;
+    const woundedHeavy = this.party.alive.length > 0 && this.party.alive.every(m => m.hp < m.maxHp * 0.6);
+    if (woundedHeavy && lair.some(d => d.damage)) {
+      const damageLair = lair.filter(d => d.damage).sort((a, b) => parseDice(b.damage!).count * parseDice(b.damage!).size - parseDice(a.damage!).count * parseDice(a.damage!).size);
+      if (damageLair.length > 0) {
+        def = damageLair[0];
+      }
+    }
 
     this.log.messages.push(`\uD83C\uDFF0 The lair of the ${boss.template.name} stirs \u2014 ${def.description}!`);
 
@@ -1028,6 +1128,17 @@ export class CombatEngine {
       if (this.weatherSpellMod !== 0 && spell.level > 0) {
         damage += this.weatherSpellMod;
       }
+      // Elemental interactions: radiant sears the unholy, fire turns dry
+      // plant-flesh to torchwood, the dead ignore venom. Read the element
+      // straight off the spell's damage string ("1d10 fire").
+      const element = spell.damage.split(' ')[1];
+      const elem = elementalMultiplier(element, victim.template.type);
+      if (elem.mult !== 1) {
+        damage = Math.max(1, Math.round(damage * elem.mult));
+        if (elem.note) {
+          this.log.messages.push(`✨ ${elem.note}`);
+        }
+      }
 
       if (spell.save) {
         const result = monsterAbilitySave(victim, spell.save, caster.spellSaveDC);
@@ -1233,6 +1344,9 @@ export class CombatEngine {
         ? `${monster.template.name} breaks and flees into the dark — ${packmates + 1} ${packmates === 1 ? 'foe has' : 'foes have'} now fled!`
         : `${monster.template.name} breaks and flees into the dark, leaving its allies behind!`;
       this.log.messages.push(`💨 ${line}`);
+      // Running through a hero's melee reach invites a parting blow.
+      const sprint = advanceToward(monster.tile, { x: monster.tile.x + 3, y: monster.tile.y }, 3);
+      this.log.messages.push(...this.opportunityAttack(monster, sprint.tile));
       return;
     }
 
@@ -1241,6 +1355,28 @@ export class CombatEngine {
     const { target, reason } = chooseMonsterTarget(this.party, monster, { maxReach: 6 });
     if (reason !== 'closest reachable threat') {
       this.log.messages.push(`\uD83C\uDFF0 ${monster.template.name} fixates on ${target.name} \u2014 ${reason}.`);
+    }
+    // Closing the distance: an out-of-reach monster advances up to its speed
+    // before swinging — slow creatures get to feel slow, not absent.
+    const dist = manhattan(monster.tile, target.tile);
+    if (dist > 1) {
+      const speed = Math.max(1, Math.round(monster.template.speed / 5));
+      const move = advanceToward(monster.tile, target.tile, speed);
+      const blocked = this.isTileWalkable ? !this.isTileWalkable(move.tile.x, move.tile.y) : false;
+      if (move.steps > 0 && !blocked) {
+        // Advancing out of one hero's reach to reach another can cost a hit.
+        const oldTile = { ...monster.tile };
+        monster.tile = move.tile;
+        const leaving = this.party.alive.filter(h =>
+          manhattan(oldTile, h.tile) <= 1 && manhattan(monster.tile, h.tile) > 1 && h !== target,
+        );
+        if (leaving.length > 0) {
+          this.log.messages.push(...this.opportunityAttack(monster, monster.tile));
+        }
+        if (move.steps >= 2) {
+          this.log.messages.push(`🏃 ${monster.template.name} closes in on ${target.name}.`);
+        }
+      }
     }
     const mods = getAttackModifiers(monster, target);
     // Pack Tactics (5e): swarming beasts and humanoids gain advantage when a
@@ -1252,6 +1388,18 @@ export class CombatEngine {
         manhattan(m.tile, target.tile) <= 2,
       ).length;
       if (packSize >= 2) {
+        mods.advantage = true;
+      }
+    }
+    // Flanking cuts both ways: monsters surrounded by their own kin on
+    // opposite sides of a hero strike with advantage too.
+    if (!mods.advantage && !mods.disadvantage) {
+      const flanker = this.monsters.find(m =>
+        m.isAlive && !m.fled && m !== monster &&
+        manhattan(m.tile, target.tile) <= 1 &&
+        isFlanking(monster.tile, target.tile, m.tile),
+      );
+      if (flanker) {
         mods.advantage = true;
       }
     }

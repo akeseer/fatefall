@@ -83,6 +83,29 @@ describe('migrateSave', () => {
     expect(migrateSave(v8)!.version).toBe(SAVE_VERSION);
   });
 
+  it('v9 -> v10 leaves older saves without a mood or a known town', () => {
+    const v9: any = { ...v1Save(), version: 9, traps: [] };
+    v9.party.members = v9.party.members.map((m: any) => ({ ...m, isDead: false, maxSpellSlots: {}, spellSlots: {} }));
+    const out = migrateSave(v9)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    // These are optional, so an old save restores exactly as it used to.
+    expect(out.delveMood).toBeUndefined();
+    expect(out.currentTownId).toBeUndefined();
+    expect(out.bossSlainThisFloor).toBeUndefined();
+  });
+
+  it('v10 carries the mood, the town and the slain boss through untouched', () => {
+    const mood = { icon: '🌕', label: 'Moon-roused', effects: ['+1 attack'] };
+    const current: any = {
+      ...v1Save(), version: SAVE_VERSION, traps: [],
+      delveMood: mood, currentTownId: 'town_2', bossSlainThisFloor: true,
+    };
+    const out = migrateSave(current)!;
+    expect(out.delveMood).toEqual(mood);
+    expect(out.currentTownId).toBe('town_2');
+    expect(out.bossSlainThisFloor).toBe(true);
+  });
+
   it('keeps existing clock values on a v6 save', () => {
     const v6 = { ...v1Save(), version: 6, traps: [], clockPhase: 0.9, clockElapsed: 123 };
     v6.party.members = v6.party.members.map((m: any) => ({ ...m, isDead: false, maxSpellSlots: {}, spellSlots: {} }));

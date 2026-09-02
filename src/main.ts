@@ -158,6 +158,8 @@ class Game {
   public mapRenderer: MapRenderer;
   public combatEngine: CombatEngine;
   public aiDirector: AIDirector;
+  /** Adaptive difficulty: consecutive dominant wins (positive) or battered fights (negative). */
+  private difficultyStreak: number = 0;
   public hud: HUD;
 
   public monsters: Monster[] = [];
@@ -779,6 +781,39 @@ class Game {
     this.map.reveal(this.party.leader.tile.x, this.party.leader.tile.y, 7);
   }
 
+  /**
+   * Adaptive difficulty: converts recent fight results into a spawn-pressure
+   * multiplier. Dominant wins stack pressure (harder monsters, up to +30%
+   * HP); close calls and wipes ease off (weaker spawns, down to −35%).
+   */
+  private difficultyPressure(): number {
+    if (this.difficultyStreak > 0) return Math.min(1.3, 1 + this.difficultyStreak * 0.06);
+    if (this.difficultyStreak < 0) return Math.max(0.65, 1 + this.difficultyStreak * 0.12);
+    return 1;
+  }
+
+  /**
+   * Feed a fight result to the difficulty director. Dominant wins push the
+   * pressure up; close calls and party wipes bring it down. Big swings are
+   * narrated so the world honestly admits it is reacting.
+   */
+  private recordCombatOutcome(partyDeaths: number, avgHpPct: number): void {
+    const before = this.difficultyPressure();
+    if (partyDeaths > 0 || avgHpPct < 0.2) {
+      this.difficultyStreak = Math.max(-3, this.difficultyStreak - 1);
+    } else if (avgHpPct > 0.85) {
+      this.difficultyStreak = Math.min(5, this.difficultyStreak + 1);
+    } else {
+      this.difficultyStreak = 0;
+    }
+    const after = this.difficultyPressure();
+    if (after - before >= 0.12) {
+      this.hud.addCombatMessage("📈 Word of the party's prowess spreads — deadlier things begin to stalk the deep places.", '#a96');
+    } else if (before - after >= 0.12) {
+      this.hud.addCombatMessage('📉 The depths ease their grip — even the dark can tell when a party has bled enough.', '#8a8');
+    }
+  }
+
   spawnMonster(template: MonsterTemplate, pos: Vector2): Monster {
     const id = `monster_${++this.monsterIdCounter}`;
     // The party must never fight what it cannot see: if a template is
@@ -788,6 +823,15 @@ class Game {
       template = visible ?? template;
     }
     const monster = new Monster(id, template, pos);
+    // Adaptive difficulty: the director's pressure quietly shapes the
+    // dungeon. Rising stakes: monsters fight fit (scaled-up HP). A battered
+    // party gets mercy: weakened spawns so a run can breathe again.
+    const pressure = this.difficultyPressure();
+    if (pressure !== 1) {
+      const scaled = Math.max(1, Math.round(monster.maxHp * pressure));
+      monster.maxHp = scaled;
+      monster.hp = scaled;
+    }
     // Give it some patrol points in its room
     monster.patrolPoints = [
       { ...pos },
@@ -1437,6 +1481,8 @@ class Game {
       this.hud.addCombatMessage(`Darkness hampers the party — attacks struggle in the gloom (-${-nightPenalty} attack rolls).`, '#aab');
     }
     this.combatEngine.startCombat(monsters);
+    // Monsters dash around walls, not through them.
+    this.combatEngine.isTileWalkable = (x, y) => this.map.isWalkable(x, y);
     // A monster's mid-fight cry for help can pull unalerted kin from the rest
     // of the floor into the battle — same kind, capped squad, not every time.
     this.combatEngine.onReinforcementsRequested = () => {
@@ -1679,6 +1725,12 @@ class Game {
           const escaped = slainMonsters.filter(m => m.fled);
           this.history.kills += slainMonsters.length - escaped.length;
           this.history.victories++;
+          // Adaptive difficulty: a flawless rout raises future pressure.
+          const standing = this.party.alive;
+          const avgHpPct = standing.length > 0
+            ? standing.reduce((s, m) => s + m.hp / m.maxHp, 0) / standing.length
+            : 0;
+          this.recordCombatOutcome(0, avgHpPct);
           this.monsters = this.monsters.filter(m => m.isAlive && !m.fled);
           if (escaped.length > 0) {
             const names = [...new Set(escaped.map(m => m.template.name))];
@@ -1835,6 +1887,13 @@ class Game {
         } else {
           // Party overwhelmed — a harrowing retreat, not a free resurrection.
           this.history.defeats++;
+          // Adaptive difficulty: defeat and near-defeat both ease the pressure.
+          this.recordCombatOutcome(
+            this.party.members.filter(m => m.isDead).length,
+            this.party.alive.length > 0
+              ? this.party.alive.reduce((s, m) => s + m.hp / m.maxHp, 0) / this.party.alive.length
+              : 0,
+          );
           this.hud.addCombatMessage('The party has been defeated...', '#c44');
           // Defeat sting rides the same audio engine as the victory fanfare.
           this.hud.battleView.showDefeat();
@@ -2606,6 +2665,12 @@ class Game {
       clockPhase: this.clock.phase,
       clockElapsed: this.clock.elapsed,
       treasuresFound: this.treasuresFound,
+      // The delve mood carries real combat effects, the town is where the
+      // party is actually standing, and the floor's boss does not come back
+      // to life on reload. All three used to be dropped and re-guessed.
+      delveMood: this.delveMood,
+      currentTownId: this.currentTown?.id ?? null,
+      bossSlainThisFloor: this.bossSlainThisFloor,
       monsterIdCounter: this.monsterIdCounter,
       dmStance: this.dmStance,
       dmDirection: this.dmDirection ?? null,
@@ -2723,6 +2788,11 @@ class Game {
       this.clock = createClock();
     }
     this.treasuresFound = save.treasuresFound ?? 0;
+    // Older saves carry neither, and behave as they always did: no mood, and
+    // the floor's boss treated as still standing.
+    this.delveMood = save.delveMood ?? null;
+    this.bossSlainThisFloor = save.bossSlainThisFloor ?? false;
+    this.hud.setDelveMoodChip(this.delveMood);
     this.lastClockStage = this.clock.timeOfDay;
     if (save.overworld) {
       const owMap = new TileMap(save.overworld.width, save.overworld.height);
@@ -2749,8 +2819,11 @@ class Game {
       this.quests = (save.quests ?? []).map(q => ({ ...q }));
       this.activeQuestId = save.activeQuestId ?? null;
       this.mode = (save.mode as GameMode) ?? GameMode.Overworld;
+      // Saves from v10 on record where the party actually is. Older ones do
+      // not, so fall back to the old guess: the first quest giver's town.
+      const saved = save.currentTownId ? getTownById(this.overworld, save.currentTownId) : undefined;
       const giver = this.quests[0] ? getTownById(this.overworld, this.quests[0].giverTownId) : undefined;
-      this.currentTown = giver ?? getTownById(this.overworld, this.overworld.spawnTownId) ?? null;
+      this.currentTown = saved ?? giver ?? getTownById(this.overworld, this.overworld.spawnTownId) ?? null;
     } else {
       this.mode = GameMode.Dungeon;
 
@@ -5731,6 +5804,10 @@ class Game {
     else if (has(/spell|scroll|magic|arcane|learned/)) include = mood(['spell','scroll','magic','arcane','learned']);
 
     const all = this.expeditionJournal.filter(include);
+    // Whether a theme actually narrowed the listing. This used to be written as
+    // `include !== (() => true)`, comparing a function against a freshly made
+    // arrow, which is never equal — so every listing claimed to be filtered.
+    const filtered = all.length !== this.expeditionJournal.length;
     if (all.length === 0) {
       this.hud.addCombatMessage('The journal has nothing matching that inquiry.', '#886');
       return;
@@ -5739,7 +5816,6 @@ class Game {
     const maxPage = Math.max(1, Math.ceil(all.length / perPage));
     page = Math.min(page, maxPage);
     const entries = [...all].reverse().slice((page - 1) * perPage, page * perPage);
-    const filtered = include !== (() => true);
     const rangeStart = (page - 1) * perPage + 1;
     const rangeEnd = (page - 1) * perPage + entries.length;
     this.hud.addCombatMessage(`📖 ${all.length} deed${all.length === 1 ? '' : 's'}${filtered ? ' matched' : ''} — showing ${rangeStart}–${rangeEnd} (page ${page}/${maxPage}).`, '#ffd700');
