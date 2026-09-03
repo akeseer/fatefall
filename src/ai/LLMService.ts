@@ -51,38 +51,20 @@ import {
   getRandomElement,
 } from './DnDKnowledge';
 
-export interface LLMConfig {
-  provider: 'template' | 'webllm';
-  model?: string;
-  temperature?: number;
-}
-
+/**
+ * The narrator: one place to ask for a line of prose about anything in the game.
+ *
+ * Every method here is a template generator, and deliberately so. The one
+ * model the game actually trains and ships understands the DM's orders
+ * (src/ai/IntentModel.ts); prose is not something it is asked to do, because a
+ * bad sentence from a small model reads worse than a good template.
+ *
+ * This class once carried a provider switch for a WebLLM backend that was
+ * never written: an `initialize()` whose only real act was to set a flag,
+ * called twice without awaiting, and a `webllm` option that fell straight back
+ * to templates. It has been removed rather than left as an invitation.
+ */
 export class LLMService {
-  private config: LLMConfig;
-  private modelLoaded: boolean = false;
-
-  constructor(config: LLMConfig = { provider: 'template' }) {
-    this.config = config;
-  }
-
-  get provider(): string {
-    return this.config.provider;
-  }
-
-  get isLoaded(): boolean {
-    return this.modelLoaded;
-  }
-
-  async initialize(): Promise<void> {
-    if (this.config.provider === 'webllm') {
-      // Future: load WebLLM model
-      // For now, fall back to template engine
-      console.log('[LLM] WebLLM not yet available — using template engine');
-      this.config.provider = 'template';
-    }
-    this.modelLoaded = true;
-  }
-
   // ── Room Descriptions ──────────────────────────
   describeRoom(dungeonLevel: number): string {
     return generateRoomDescription(dungeonLevel);
@@ -266,19 +248,10 @@ export class LLMService {
   describeFeat(): string { return generateFeatLore(); }
 }
 
-// Singleton
+/** One narrator for the run; it holds no state worth having two of. */
 let instance: LLMService | null = null;
 
 export function getLLM(): LLMService {
-  if (!instance) {
-    instance = new LLMService();
-    instance.initialize();
-  }
-  return instance;
-}
-
-export function createLLM(config: LLMConfig): LLMService {
-  instance = new LLMService(config);
-  instance.initialize();
+  if (!instance) instance = new LLMService();
   return instance;
 }

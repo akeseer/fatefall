@@ -63,8 +63,6 @@ export class HUD {
     void orig;
   }
   public onStartChoice?: (choice: 'continue' | 'new', slot: number) => void;
-  /** Called after an erase so the game can refresh the saves list. */
-  public onEraseComplete?: () => void;
 
   /** True while the big 3D die is tumbling — the game freezes until it lands. */
   isDiceRolling(): boolean {
@@ -577,7 +575,6 @@ export class HUD {
         saves.push(...updated);
         this.confirmErase = false;
         this.renderStartContent(screen, saves);
-        this.onEraseComplete?.();
       } else if (action === 'cancel') {
         this.confirmNewSlot = false;
         this.confirmErase = false;
