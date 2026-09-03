@@ -1048,8 +1048,6 @@ class Game {
       }
     }
 
-    this.camera.update();
-
     // Update monster flash timers
     for (const m of this.monsters) {
       if (m.flashTimer > 0) m.flashTimer -= dt / 1000;
@@ -1714,6 +1712,7 @@ class Game {
 
       const log = this.combatEngine.step();
       this.hud.addCombatLogBatch(log);
+      this.kickCameraFor(log.messages);
       this.hud.setParty(this.party);
       this.refreshBossBar();
       // Keep the FF-style battle window in sync with each combat tick.
@@ -2000,6 +1999,25 @@ class Game {
    * map renderer draws the same tiles at noon and at midnight; the game knows
    * the difference, so it says so here rather than teaching the renderer.
    */
+  /**
+   * Shake the view when a round lands hard.
+   *
+   * The combat log is the only account of what happened that reaches this far
+   * — CombatLog carries messages and nothing structured — so the beat is read
+   * out of the text, which is what CombatEngine itself does to spot a crit.
+   * The reason to do it here rather than plumb an event through is that the
+   * shake is a matter of presentation: if the log is right about the round,
+   * the picture is right about it too.
+   */
+  private kickCameraFor(messages: string[]): void {
+    let amplitude = 0;
+    for (const m of messages) {
+      if (m.includes('CRIT')) amplitude = Math.max(amplitude, 7);
+      else if (m.includes('goes down') || m.includes('falls')) amplitude = Math.max(amplitude, 5);
+    }
+    if (amplitude > 0) this.camera.shake(amplitude, 260);
+  }
+
   private sceneMood(): SceneMood {
     // Every mode draws the world through the same camera, so the party's light
     // sits at the same place in the frame whether it is a torch in a tomb or the
@@ -2019,6 +2037,12 @@ class Game {
   }
 
   private render() {
+    // Where the view is is a property of the picture, not of the simulation,
+    // so it eases here at the display's rate. On the fixed 33 ms sim step it
+    // moved at 30 Hz while the sprites it was following interpolated at full
+    // frame rate, and the party visibly slid against the ground.
+    this.camera.update(this.lastDt);
+
     // The frame is described into a recorder rather than drawn straight to a
     // context, so the same frame can be replayed by any backend. The map
     // renderer and the sprite functions are unchanged; they simply receive a
@@ -2160,6 +2184,7 @@ class Game {
   private stepCombatOnce(): boolean {
     const log = this.combatEngine.step();
     this.hud.addCombatLogBatch(log);
+    this.kickCameraFor(log.messages);
     this.hud.setParty(this.party);
     this.refreshBossBar();
     this.hud.battleView.update({
