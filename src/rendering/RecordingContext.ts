@@ -181,13 +181,16 @@ export class RecordingContext {
    *
    * The transform is still ignored, matching the original call: the game only
    * ever translates for two flourishes, neither of which draws a sprite.
+   * `globalAlpha` is honoured, though — a real putImageData would ignore it,
+   * but these are composited now rather than written, and a sprite that can
+   * fade is what lets a dead thing die instead of vanishing.
    *
    * The sprite cache hands back the same ImageData object every time, so an
    * identity is minted once per sprite and a backend uploads each texture
    * only on the frame it first appears.
    */
   putImageData(data: ImageData, x: number, y: number): void {
-    this.commands.push({ op: 'image', image: bakeImage(data), x, y, alpha: 1 });
+    this.commands.push({ op: 'image', image: bakeImage(data), x, y, alpha: this.globalAlpha });
   }
 }
 

@@ -2042,7 +2042,12 @@ class Game {
 
       for (const m of this.monsters) {
         const name = m.template.name;
-        if (line.includes(name + ' is slain')) { pop(m.tile, 'slain', 'slain'); placed = true; break; }
+        if (line.includes(name + ' is slain')) {
+          pop(m.tile, 'slain', 'slain');
+          this.mapRenderer.popDeath(m.tile.x * TILE_SIZE, m.tile.y * TILE_SIZE, m);
+          placed = true;
+          break;
+        }
         const dealt = m.isAlive ? amountAfter(line, name + ' takes ') : null;
         if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); burst(m.tile, line); placed = true; break; }
       }

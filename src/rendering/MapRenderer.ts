@@ -340,6 +340,17 @@ const EFFECT_STYLE: Record<EffectKind, { core: string; edge: string; ms: number;
   heal: { core: '#e8ffe8', edge: '#4bd479', ms: 660, reach: 16, spokes: 5 },
 };
 
+/** How long a body takes to go. Long enough to see, short enough not to litter a fight. */
+const CORPSE_MS = 620;
+
+/** A creature that has just died, still on the floor while it fades. */
+interface Corpse {
+  x: number;
+  y: number;
+  sprite: ImageData;
+  born: number;
+}
+
 /** One burst. World pixels, like the floaters; the camera is applied late. */
 interface Effect {
   x: number;
@@ -404,6 +415,8 @@ export class MapRenderer {
    */
   private floaters: Floater[] = [];
   private effects: Effect[] = [];
+  private corpses: Corpse[] = [];
+  private static readonly CORPSE_CAP = 12;
   private static readonly EFFECT_CAP = 16;
   private effectSeed = 0;
   private static readonly FLOATER_MS = 1050;
@@ -619,6 +632,8 @@ export class MapRenderer {
       ctx.font = '9px monospace';
       ctx.fillText(monster.template.name, Math.floor(sx - 2), Math.floor(sy - 6));
     }
+
+    this.drawCorpses(ctx, camera);
 
     // Breadcrumb trail of the party's recent steps, then the party on top.
     this.drawBreadcrumbTrail(ctx, camera, trail);
@@ -1140,10 +1155,63 @@ export class MapRenderer {
     }
   }
 
+  /**
+   * Lay a body down. `wx`/`wy` are the top-left of its tile in world pixels.
+   *
+   * A monster used to be there and then simply not be there: it was drawn
+   * while `isAlive` and gone on the frame that stopped being true, which in a
+   * busy fight reads as things blinking out rather than dying. The sprite is
+   * held here and faded instead. The cache hands back the same ImageData for a
+   * template, so this holds a reference and copies nothing.
+   */
+  popDeath(wx: number, wy: number, monster: Monster): void {
+    this.corpses.push({
+      x: wx,
+      y: wy,
+      sprite: this.sprites.getMonsterSprite(monster),
+      born: this.renderTime,
+    });
+    if (this.corpses.length > MapRenderer.CORPSE_CAP) {
+      this.corpses.splice(0, this.corpses.length - MapRenderer.CORPSE_CAP);
+    }
+  }
+
+  /**
+   * Draw and expire the bodies.
+   *
+   * They sink as they go, which is most of what makes it read as collapsing
+   * rather than as a sprite being turned down, and they leave a dark mark on
+   * the floor that outlives the body by a moment.
+   */
+  private drawCorpses(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    if (this.corpses.length === 0) return;
+    let live = 0;
+    for (const c of this.corpses) {
+      const age = this.renderTime - c.born;
+      if (age >= CORPSE_MS) continue;
+      this.corpses[live++] = c;
+      const t = age / CORPSE_MS;
+      const sx = Math.floor(c.x - camera.x + 2);
+      const sy = Math.floor(c.y - camera.y + 2);
+      if (sx < -TILE_SIZE || sy < -TILE_SIZE || sx > GAME_WIDTH || sy > GAME_HEIGHT) continue;
+
+      ctx.fillStyle = `rgba(20,10,10,${(0.45 * (1 - t)).toFixed(3)})`;
+      ctx.fillRect(sx, sy + TILE_SIZE - 7, TILE_SIZE - 4, 4);
+
+      // Holding for a moment, then going quickly.
+      const alpha = t < 0.3 ? 1 : 1 - (t - 0.3) / 0.7;
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.putImageData(c.sprite, sx, sy + Math.round(t * 5));
+      ctx.globalAlpha = 1;
+    }
+    this.corpses.length = live;
+  }
+
   /** Forget every number in flight — combat over, floor changed, run reloaded. */
   clearNumbers(): void {
     this.floaters.length = 0;
     this.effects.length = 0;
+    this.corpses.length = 0;
   }
 
   /**
@@ -2019,6 +2087,8 @@ export class MapRenderer {
       ctx.font = '8px monospace';
       ctx.fillText(monster.template.name, Math.floor(sx - 2), Math.floor(sy - 6));
     }
+
+    this.drawCorpses(ctx, camera);
 
     // Breadcrumb trail of the party's recent steps, then the party on top.
     this.drawBreadcrumbTrail(ctx, camera, trail);
