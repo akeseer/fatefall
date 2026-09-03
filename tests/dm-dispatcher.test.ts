@@ -519,6 +519,8 @@ describe('bandit camps', () => {
     tier: 2 as const, description: 'A scrawled map.', resolved: false, ...over,
   });
 
+  beforeEach(() => { host.inDungeon = false; host.inOverworld = true; });
+
   it('a raid spawns a warband scaled to the tier and spends the clue', () => {
     const c = clue();
     host.banditCamps.clues = [c];
@@ -535,20 +537,57 @@ describe('bandit camps', () => {
     expect(host.said('no camp clues to act on')).toBe(true);
   });
 
+  /** A camp sits on the surface, which is what the refusal has always said. */
+  it('refuses a raid from underground, not merely from town', () => {
+    host.inOverworld = false; host.inDungeon = true;
+    host.banditCamps.clues = [clue()];
+    dm.dispatch({ intent: 'raid_camp' }, 'raid the camp');
+    expect(host.spawnEncounter).not.toHaveBeenCalled();
+    expect(host.said('head to the overworld')).toBe(true);
+  });
+
   it('reporting splits the bounty among the living', () => {
-    host.inDungeon = false; host.inTown = true;
+    host.inOverworld = false; host.inDungeon = false; host.inTown = true;
     host.banditCamps.clues = [clue({ reportReward: 90 })];
     dm.dispatch({ intent: 'report_camp' }, 'report the camp');
     expect(host.party.members.map(m => m.gold)).toEqual([45, 45]);
+  });
+
+  /**
+   * A clue is worth too much to be spent on a reward nobody collects, and the
+   * constable's line used to print over four corpses.
+   */
+  it('keeps the clue when there is no one left to carry it in', () => {
+    host.inOverworld = false; host.inTown = true;
+    const c = clue();
+    host.banditCamps.clues = [c];
+    // A character at 0 HP is dying, not dead — isAlive is `!isDead`, so a
+    // party has to actually be gone before the constable has no one to talk to.
+    host.party.members.forEach(m => { m.hp = 0; m.isDead = true; });
+    dm.dispatch({ intent: 'report_camp' }, 'report the camp');
+    expect(c.resolved).toBe(false);
+    expect(host.said('no one left standing')).toBe(true);
+    expect(host.said('as promised')).toBe(false);
   });
 
   it('clues are listed with what can be done about them', () => {
     host.banditCamps.clues = [clue(), clue({ id: 'c2', resolved: true })];
     dm.dispatch({ intent: 'list_clues' }, 'list clues');
     expect(host.said('A scrawled map. (Tier 2)')).toBe(true);
-    expect(host.said('Report for 90 gp')).toBe(true);
+    expect(host.said('90 gp')).toBe(true);
     // The resolved one is not offered again.
     expect(host.transcript.match(/A scrawled map/g)).toHaveLength(1);
+  });
+
+  /**
+   * The list used to be numbered, which read as a menu — but neither order
+   * takes an index, so every number was a choice the DM did not have.
+   */
+  it('marks the one clue the orders will actually act on', () => {
+    host.banditCamps.clues = [clue(), clue({ id: 'c2', description: 'A tavern boast.' })];
+    dm.dispatch({ intent: 'list_clues' }, 'list clues');
+    expect(host.said('▶ A scrawled map.')).toBe(true);
+    expect(host.transcript).not.toMatch(/1\. A scrawled map/);
   });
 });
 

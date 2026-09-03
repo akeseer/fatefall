@@ -410,7 +410,11 @@ export class SaveSerializer {
       char.level = s.level;
       char.xp = s.xp;
       char.hp = s.hp;
-      char.ac = s.ac;
+      // AC is not restored: it is derived from DEX, equipment and a heavy
+      // curse, and `recomputeAC()` below rebuilds it from the equipment this
+      // loop is about to set. Assigning the saved value here was overwritten
+      // three lines later by an identical one. It stays in the save file as a
+      // record of what the character had, not as something read back.
       char.speed = s.speed;
       char.bonusAttackBonus = s.bonusAttackBonus ?? 0;
       char.equipment = {

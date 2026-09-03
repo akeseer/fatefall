@@ -782,7 +782,7 @@ export class DMCommandDispatcher {
       // ── Bandit camps ──
       case 'raid_camp': {
         if (inCombat) { this.game.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-        if (this.game.inTown) { this.game.hud.addCombatMessage('There are no camps in town — head to the overworld.', '#886'); return; }
+        if (!this.game.inOverworld) { this.game.hud.addCombatMessage('There are no camps to raid from here — head to the overworld.', '#886'); return; }
         const pendingClue = this.game.banditCamps.clues.find(c => !c.resolved);
         if (!pendingClue) {
           this.game.hud.addCombatMessage('You have no camp clues to act on. Defeat bandits on the road to find their hideouts.', '#888');
@@ -810,14 +810,17 @@ export class DMCommandDispatcher {
           this.game.hud.addCombatMessage('You have no camp clues to report.', '#888');
           return;
         }
+        // Nobody left standing collects nothing — and the clue is worth too
+        // much to be spent on a reward that is never paid. It keeps.
+        const living = this.game.party.members.filter(m => m.isAlive);
+        if (living.length === 0) {
+          this.game.hud.addCombatMessage('There is no one left standing to carry the map inside.', '#886');
+          return;
+        }
         this.game.hud.addCombatMessage(`🗺️ The constable studies the map and nods grimly.`, '#ca8');
         this.game.hud.addCombatMessage(`"Good work. The guard will handle the rest. Here's your reward — ${pendingClue.reportReward} gold, as promised."`, '#888');
-        // Award gold to the party
-        const living = this.game.party.members.filter(m => m.isAlive);
-        if (living.length > 0) {
-          const each = Math.floor(pendingClue.reportReward / living.length);
-          living.forEach(m => m.gold += each);
-        }
+        const each = Math.floor(pendingClue.reportReward / living.length);
+        living.forEach(m => m.gold += each);
         pendingClue.resolved = true;
         return;
       }
@@ -827,11 +830,16 @@ export class DMCommandDispatcher {
           this.game.hud.addCombatMessage('No bandit camp clues in hand. Defeat bandits on the road to find their hideouts.', '#888');
           return;
         }
+        // These were numbered, which read as a menu — but neither "raid camp"
+        // nor "report camp" takes an index; both always take the oldest
+        // unresolved clue. The list marks that one instead of implying a
+        // choice the DM does not have.
         this.game.hud.addCombatMessage('🗺️ Bandit Camp Clues:', '#ca8');
         pending.forEach((c, i) => {
-          this.game.hud.addCombatMessage(`  ${i + 1}. ${c.description} (Tier ${c.tier})`, '#a89');
-          this.game.hud.addCombatMessage(`     Report for ${c.reportReward} gp or "raid camp" to assault it.`, '#888');
+          const mark = i === 0 ? '▶' : ' ';
+          this.game.hud.addCombatMessage(`  ${mark} ${c.description} (Tier ${c.tier}) — ${c.reportReward} gp`, i === 0 ? '#ca8' : '#a89');
         });
+        this.game.hud.addCombatMessage('  ▶ is the one "raid camp" or "report camp" will act on.', '#888');
         return;
       }
 
