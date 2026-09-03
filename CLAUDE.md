@@ -42,6 +42,13 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   `hashSeed`), `RoomFeatures` (one optional feature per room), weather/day-night/calendar.
 - **`src/save/SaveManager.ts`** — three localStorage slots. `SAVE_VERSION` guards the
   schema; `migrateSave` is a linear chain of `migrateVNtoVN+1` steps.
+- **`src/rendering/`** — the frame is *recorded*, not drawn. `RecordingContext` is a
+  canvas-shaped shim that `MapRenderer` and `Sprites` are handed instead of a real
+  context; it appends `DrawCommand`s. A `RenderBackend` replays the `Frame`.
+  `CanvasBackend` is the reference; `PixiBackend` (the default) adds `pixi/Lighting`
+  (multiply-blended torch and night) and `pixi/Atmosphere` (colour grade, vignette,
+  bloom), both driven by the `SceneMood` the game attaches to each frame.
+  Adding a draw call means adding a `DrawCommand` kind and handling it in every backend.
 - **`src/ui/HUD.ts`** — builds the DOM overlay from a template string. The log is
   append-only HTML strings (`addCombatMessage`).
 

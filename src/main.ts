@@ -1976,10 +1976,14 @@ class Game {
    * the difference, so it says so here rather than teaching the renderer.
    */
   private sceneMood(): SceneMood {
+    // Every mode draws the world through the same camera, so the party's light
+    // sits at the same place in the frame whether it is a torch in a tomb or the
+    // bit of moonlight that keeps them visible on the road at night.
     const leader = this.party.leader;
-    const focus = this.mode === GameMode.Dungeon
-      ? { x: leader.tile.x * TILE_SIZE - this.camera.x + TILE_SIZE / 2, y: leader.tile.y * TILE_SIZE - this.camera.y + TILE_SIZE / 2 }
-      : null;
+    const focus = {
+      x: leader.tile.x * TILE_SIZE - this.camera.x + TILE_SIZE / 2,
+      y: leader.tile.y * TILE_SIZE - this.camera.y + TILE_SIZE / 2,
+    };
     return {
       daylight: this.clock.light,
       underground: this.mode === GameMode.Dungeon,
@@ -6153,9 +6157,13 @@ function startGame() {
 }
 
 /**
- * Which renderer to use. Canvas 2D is the default because it is the only one
- * that costs no runtime dependency; the others are opt-in, remembered per
- * browser, and settable from the console for a quick comparison.
+ * Which renderer to use.
+ *
+ * Pixi is the default because it is the only one that lights the scene: the
+ * map renderer paints the same tiles at noon and at midnight, and everything
+ * that makes a dungeon feel like a dungeon is composited on top of it there.
+ * Canvas 2D remains the fallback, taken automatically whenever WebGL is
+ * missing or Pixi fails to start, and choosable outright for a comparison.
  */
 function pickBackend(): RenderBackendId {
   try {
@@ -6164,7 +6172,7 @@ function pickBackend(): RenderBackendId {
   } catch {
     /* private mode: fall through to the default */
   }
-  return 'canvas';
+  return 'pixi';
 }
 
 /** Parse '2d4+2' style healing dice out of an item description. */

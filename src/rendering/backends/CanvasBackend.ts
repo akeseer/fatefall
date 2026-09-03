@@ -14,8 +14,8 @@ export class CanvasBackend implements RenderBackend {
   private ctx: CanvasRenderingContext2D | null = null;
   private width = 0;
   private height = 0;
-  /** ImageData is what putImageData wants, rebuilt once per texture id. */
-  private images = new Map<string, ImageData>();
+  /** Sprites as small canvases, so they can be composited rather than written. */
+  private images = new Map<string, HTMLCanvasElement>();
 
   async init(canvas: HTMLCanvasElement, width: number, height: number): Promise<void> {
     canvas.width = width;
@@ -50,9 +50,12 @@ export class CanvasBackend implements RenderBackend {
           ctx.strokeRect(c.x, c.y, c.w, c.h);
           break;
         case 'image':
-          // putImageData ignores alpha by definition, which is why the
-          // recorder pins it to 1 for this command.
-          ctx.putImageData(this.imageData(c.image), c.x, c.y);
+          // Blitted, not written. putImageData replaces pixels including
+          // their alpha, so every sprite used to punch a transparent hole in
+          // the map around itself and the page showed through as a dark box.
+          // drawImage composites, which is what a sprite over terrain wants.
+          ctx.globalAlpha = c.alpha;
+          ctx.drawImage(this.texture(c.image), c.x, c.y);
           break;
         case 'text':
           ctx.globalAlpha = c.alpha;
@@ -93,13 +96,21 @@ export class CanvasBackend implements RenderBackend {
     ctx.globalAlpha = 1;
   }
 
-  private imageData(image: BakedImage): ImageData {
-    let data = this.images.get(image.id);
-    if (!data) {
-      data = new ImageData(new Uint8ClampedArray(image.rgba), image.width, image.height);
-      this.images.set(image.id, data);
+  /**
+   * Sprites live on their own small canvas so they can be composited rather
+   * than written. Built once per texture id and reused for the run.
+   */
+  private texture(image: BakedImage): HTMLCanvasElement {
+    let cached = this.images.get(image.id);
+    if (!cached) {
+      cached = document.createElement('canvas');
+      cached.width = image.width;
+      cached.height = image.height;
+      const c = cached.getContext('2d')!;
+      c.putImageData(new ImageData(new Uint8ClampedArray(image.rgba), image.width, image.height), 0, 0);
+      this.images.set(image.id, cached);
     }
-    return data;
+    return cached;
   }
 
   destroy(): void {

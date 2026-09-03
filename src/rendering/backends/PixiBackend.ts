@@ -42,6 +42,8 @@ import {
   Color,
 } from 'pixi.js';
 import type { BakedImage, DrawCommand, Frame, RenderBackend } from '../DrawCommand';
+import { Atmosphere } from './pixi/Atmosphere';
+import { Lighting } from './pixi/Lighting';
 
 /** A colour parsed once out of its CSS string. */
 interface Rgba {
@@ -87,7 +89,13 @@ export class PixiBackend implements RenderBackend {
   readonly name = 'PixiJS';
 
   private app: Application | null = null;
-  private stage: Container | null = null;
+  /**
+   * Everything the frame draws, plus the lighting on top of it. It exists as a
+   * container of its own so the grade can be a filter on it: the colour pass
+   * therefore sees the lit scene, which is what lets a torch bloom and a night
+   * fall away at the edges instead of grading a flat, evenly drawn map.
+   */
+  private world: Container | null = null;
 
   /** Reused across frames and handed out in display order by `openGraphics`. */
   private graphicsPool: Graphics[] = [];
@@ -101,6 +109,13 @@ export class PixiBackend implements RenderBackend {
   private fonts = new Map<string, ParsedFont>();
 
   private frameId = 0;
+
+  /** The darkening-and-torch pass, composited over the finished world. */
+  private lighting: Lighting | null = null;
+  /** Colour grade, vignette and bloom, as filters over the lit world. */
+  private atmosphere: Atmosphere | null = null;
+  /** Timestamp of the last submit, so lighting is eased in real time. */
+  private lastSubmitMs = 0;
 
   // The colour and alpha of the run of rectangles waiting for its `fill()`.
   private runFill: string | null = null;
@@ -123,19 +138,27 @@ export class PixiBackend implements RenderBackend {
     });
 
     this.app = app;
-    this.stage = app.stage;
+
+    const world = new Container();
+    app.stage.addChild(world);
+    this.world = world;
+
+    this.lighting = new Lighting(width, height);
+    this.atmosphere = new Atmosphere(app.renderer, width, height);
+    this.atmosphere.attach(world);
+    this.lastSubmitMs = performance.now();
   }
 
   submit(frame: Frame): void {
     const app = this.app;
-    const stage = this.stage;
-    if (!app || !stage) return;
+    const world = this.world;
+    if (!app || !world) return;
 
     this.frameId++;
     // Rebuilding the display list from scratch is what guarantees the canvas
     // shows this frame and nothing of the last one; the objects themselves are
     // pooled, so nothing is allocated by the teardown.
-    stage.removeChildren();
+    world.removeChildren();
     this.graphicsUsed = 0;
     this.active = null;
     this.runFill = null;
@@ -164,6 +187,23 @@ export class PixiBackend implements RenderBackend {
     }
 
     this.flushRun();
+
+    // The lighting layer multiplies down everything drawn above, so it goes on
+    // last, and it has to be re-added because the display list was torn down at
+    // the top of this frame.
+    const now = performance.now();
+    const dt = now - this.lastSubmitMs;
+    this.lastSubmitMs = now;
+
+    const lighting = this.lighting;
+    if (lighting) {
+      lighting.update(frame.mood, dt);
+      world.addChild(lighting.layer);
+    }
+    // Graded after the lighting rather than before it, so the vignette and the
+    // bloom are working on a scene that has already been lit.
+    this.atmosphere?.update(frame.mood, dt);
+
     app.render();
   }
 
@@ -186,11 +226,20 @@ export class PixiBackend implements RenderBackend {
     this.colors.clear();
     this.fonts.clear();
 
+    // Destroyed before the application, which would otherwise walk the stage and
+    // free the layer's children out from under it.
+    // Both let go of the world container before the application walks the
+    // stage and frees it out from under them.
+    this.atmosphere?.destroy();
+    this.atmosphere = null;
+    this.lighting?.destroy();
+    this.lighting = null;
+
     // The canvas belongs to the game and another backend may be about to take
     // it over, so the view is left in the DOM.
     this.app?.destroy({ removeView: false }, { children: true, texture: true, textureSource: true });
     this.app = null;
-    this.stage = null;
+    this.world = null;
     this.active = null;
   }
 
@@ -207,7 +256,7 @@ export class PixiBackend implements RenderBackend {
     }
     this.graphicsUsed++;
     graphics.clear();
-    this.stage?.addChild(graphics);
+    this.world?.addChild(graphics);
     this.active = graphics;
     return graphics;
   }
@@ -253,7 +302,7 @@ export class PixiBackend implements RenderBackend {
         // the glyph box, so the ascent is subtracted to make the two agree.
         text.position.set(c.x, c.y - font.ascent);
         text.alpha = c.alpha;
-        this.stage?.addChild(text);
+        this.world?.addChild(text);
         // Text is its own display object, so the next shape needs a new
         // `Graphics` above it to keep later commands painting over earlier ones.
         this.active = null;

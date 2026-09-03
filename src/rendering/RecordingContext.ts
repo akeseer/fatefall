@@ -173,12 +173,16 @@ export class RecordingContext {
   // ── Images ──
 
   /**
-   * Sprites reach the screen through putImageData, which on a real canvas
-   * ignores both the transform and globalAlpha. The recording matches that so
-   * a replayed frame is identical to a directly drawn one.
+   * Sprites reach the screen through putImageData. That call replaces pixels
+   * outright, alpha included, so every sprite used to punch a transparent
+   * hole in the map around itself. Recording it as a draw lets the backends
+   * composite instead, which is what a sprite over terrain has always wanted.
+   *
+   * The transform is still ignored, matching the original call: the game only
+   * ever translates for two flourishes, neither of which draws a sprite.
    *
    * The sprite cache hands back the same ImageData object every time, so an
-   * identity is minted once per sprite and the backend uploads each texture
+   * identity is minted once per sprite and a backend uploads each texture
    * only on the frame it first appears.
    */
   putImageData(data: ImageData, x: number, y: number): void {
