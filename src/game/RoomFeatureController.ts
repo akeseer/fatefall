@@ -40,6 +40,8 @@ export interface RoomFeatureHost {
   bestDisarmer(): GameCharacter;
   spawnEncounter(templates: MonsterTemplate[]): void;
   distributeLoot(loot: LootResult, emptyLine: string): void;
+  /** Count found treasure towards collect tasks and collect_item quests. */
+  recordTreasureFound(count: number): void;
 }
 
 /** Capitalise a sentence built from a feature name, which starts lowercase. */
@@ -74,19 +76,38 @@ export class RoomFeatureController {
    * Open a chest. A stuck lid takes a Strength check to force, and a wired one
    * springs on whoever opens it unless the party spotted it first with
    * "search for traps". What is inside is rolled from the same tables as
-   * combat spoils, scaled to the depth.
+   * combat spoils, scaled to the depth — unless the chest is a mimic, in
+   * which case what is inside is teeth.
    */
   private featureChest(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     // Feature names carry their own article ("a small brass coffer").
     const it = f.name.replace(/^(a|an|the)\s+/i, 'the ');
-    if (f.used) { say(`${capitalise(it)} stands open and empty.`, '#888'); return true; }
+    if (f.used) {
+      // `mimic` outlives the fight, so a room the party comes back to still
+      // remembers what was actually sitting in the corner.
+      say(f.mimic
+        ? `Splinters and a drying smear of glue are all that is left of ${it}.`
+        : `${capitalise(it)} stands open and empty.`, '#888');
+      return true;
+    }
+
+    // A mimic is answered before the lock, because the lock is part of the
+    // lie: whatever hinges and hasps it is wearing, the thing opens itself
+    // the moment a hand comes near.
+    if (f.mimic) return this.springMimic(f, it, say);
+
+    // Whoever's hand ends up on the lid: the strongest present if it has to be
+    // shouldered, the leader otherwise. Worth naming before the lock is
+    // cleared, because the needle below has to find the same person.
+    const forcer = f.locked
+      ? this.game.party.alive.reduce(
+        (best, m) => (m.strMod > best.strMod ? m : best),
+        this.game.party.leader,
+      )
+      : this.game.party.leader;
 
     if (f.locked) {
       // The strongest hand present shoulders it open; failure costs the turn.
-      const forcer = this.game.party.alive.reduce(
-        (best, m) => (m.strMod > best.strMod ? m : best),
-        this.game.party.leader,
-      );
       const roll = 1 + Math.floor(Math.random() * 20);
       const total = roll + forcer.strMod;
       pushDiceRoll({
@@ -106,7 +127,10 @@ export class RoomFeatureController {
 
     if (f.trapped) {
       f.trapped = false;
-      const victim = this.game.bestDisarmer();
+      // The needle springs on the hand that opened it. It used to find the
+      // party's best disarmer instead — the one member who, had they been the
+      // one at the lid, would have been least likely to set it off.
+      const victim = forcer;
       const dmg = 2 + Math.floor(Math.random() * (4 + this.game.dungeonLevel * 2));
       victim.takeDamage(dmg);
       say(`The lid was wired — a needle bites ${victim.name} for ${dmg} damage!`, '#c44');
@@ -126,6 +150,48 @@ export class RoomFeatureController {
     // Drop the kill-flavoured lines; nothing here died.
     loot.narration = loot.narration.filter(line => !/corpse|body|remains|yields/i.test(line));
     this.game.distributeLoot(loot, 'It holds nothing but mouldering rags.');
+    this.game.hud.setParty(this.game.party);
+    return true;
+  }
+
+  /**
+   * Some chests are not chests. A mimic springs the instant anyone reaches
+   * for it — whether the DM ordered the chest opened or the party's own greed
+   * walked them onto it, both roads arrive here through `featureChest`.
+   *
+   * The scout gets one look first. Spotting it costs the mimic its ambush
+   * bite but not the fight: a thing that has been seen has no reason left to
+   * hold still. Either way the chest is spent, so the party — and the AI's
+   * chest-seeking — never comes back to shoulder a monster's lid again.
+   */
+  private springMimic(f: RoomFeature, it: string, say: (l: string, c?: string) => void): boolean {
+    f.used = true;
+    const mimic = getMonsterTemplate('mimic') ?? getRandomMonster(2);
+    const scout = this.game.bestScout();
+    const dc = 11 + Math.floor(this.game.dungeonLevel / 2);
+    const roll = 1 + Math.floor(Math.random() * 20);
+    const total = roll + scout.wisMod;
+    pushDiceRoll({
+      kind: 'check', diceType: 'd20',
+      label: `${scout.name} eyes ${it}`,
+      expression: `d20${scout.wisMod >= 0 ? '+' : ''}${scout.wisMod}`,
+      rolls: [roll], total,
+      outcome: roll === 20 ? 'crit' : roll === 1 ? 'fumble' : total >= dc ? 'success' : 'failure',
+    });
+
+    if (total >= dc) {
+      say(`${scout.name} stops a pace short of ${it} and puts an arm out. The lid is breathing (Perception ${total}).`, '#8cf');
+      say(`So it stops pretending — the seam splits into a mouth, and a ${mimic.name} heaves itself off the floor on a foot of grey tongue.`, '#c44');
+    } else {
+      const victim = this.game.party.leader;
+      const dmg = rollDice(1, 8) + 3;
+      victim.takeDamage(dmg);
+      say(`${capitalise(it)} opens before ${victim.name} quite touches it — and it opens the wrong way, hinging outward, all seam and teeth.`, '#c44');
+      say(`A ${mimic.name}! It clamps down on ${victim.name}'s arm for ${dmg} damage and does not let go.`, '#c44');
+      if (!victim.isConscious) say(`${victim.name} goes limp in its grip.`, '#c44');
+    }
+
+    this.game.spawnEncounter([mimic]);
     this.game.hud.setParty(this.game.party);
     return true;
   }
@@ -187,6 +253,9 @@ export class RoomFeatureController {
             id: 'treasure_' + Date.now(), name: item, type: 'potion',
             value: 30, description: 'Found in a treasure room.',
           });
+          // Loot that skips distributeLoot has to be counted here, or the
+          // richest rooms in the game advance no collect task at all.
+          this.game.recordTreasureFound(1);
           say('Among the coins you find a ' + item + '!', '#8cf');
         }
         return true;
@@ -309,6 +378,7 @@ export class RoomFeatureController {
           description: `A gem worth ${value} gp.`,
           value,
         });
+        this.game.recordTreasureFound(1);
         extra = ` Among the coins: ${gem} worth ${value} gp.`;
       }
       say(`\ud83d\udcb0 ${searcher.name} cracks the vault! ${gp} gp recovered.${extra}`, '#ffd700');

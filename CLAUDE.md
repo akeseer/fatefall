@@ -61,7 +61,7 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   `tests/save-migrate.test.ts`.
 - **Adding a `TileType` or `RoomFeatureKind`**: several exhaustive `Record`s must be
   updated or `tsc` fails — `TILE_COLORS` in `TileMap.ts`, `VARIANTS` in
-  `RoomFeatures.ts`, and `Game.FEATURE_HINT`. `drawFeature` in `MapRenderer.ts` has a
+  `RoomFeatures.ts`, and `RoomFeatureController.HINT`. `drawFeature` in `MapRenderer.ts` has a
   default arm, so a new kind renders as a generic marker until you give it a case.
   A feature that the DM can act on also needs an intent in `DMCommand.ts`, a branch in
   `parseFeatureIntent`, a case in `Game.performFeatureIntent`, and a retrain.

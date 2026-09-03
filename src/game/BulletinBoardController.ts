@@ -113,10 +113,39 @@ export class BulletinBoardController {
   bulletinArrivalProgress(townId: string): void {
     for (const task of this.activeBulletinTasks()) {
       if (task.kind !== 'escort' && task.kind !== 'deliver') continue;
-      if (task.targetTownId && task.targetTownId === townId) continue;
+      // A task with no town recorded against it has no "somewhere else" to
+      // reach, so it waits. The falsy guard this replaces let such a task
+      // match nothing and resolve at the first town the party walked into,
+      // including the one that posted it.
+      if (!task.targetTownId || task.targetTownId === townId) continue;
       task.progress = task.targetCount;
       this.announceBulletinReady(task);
     }
+  }
+
+  /**
+   * The board of one town, in the order the DM is shown it.
+   *
+   * Numbering it is the whole point: the listing and "accept task 2" used to
+   * build the list separately, one over every notice and the other over only
+   * the unfinished ones, so a single claimable task on the board put every
+   * number out by one.
+   */
+  boardForTown(townId: string): BulletinTask[] {
+    return this.game.townLife?.byTown[townId]?.bulletinTasks ?? [];
+  }
+
+  /**
+   * Finished work the party is carrying from somewhere else.
+   *
+   * An escort completes by definition in a town that is not the one that
+   * posted it, and the town panel only ever listed the local board — so the
+   * party was told to report in and then found nothing to claim until they
+   * walked all the way back.
+   */
+  awayTasksReadyToClaim(townId: string): BulletinTask[] {
+    const local = this.boardForTown(townId);
+    return this.activeBulletinTasks().filter(t => !local.includes(t) && bulletinObjectiveMet(t));
   }
 
   completeBulletinTask(task: BulletinTask): void {

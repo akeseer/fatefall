@@ -33,6 +33,13 @@ export interface RoomFeature {
   locked?: boolean;
   /** Chests only: the lid is wired to a trap that has not gone off yet. */
   trapped?: boolean;
+  /**
+   * Chests only: it is not a chest at all. A mimic wears no lock and no trap
+   * — it wants to be opened — so this is never set alongside those two. It
+   * stays set after the thing springs, which is how an emptied room knows to
+   * describe splinters and glue instead of an open lid.
+   */
+  mimic?: boolean;
 }
 
 interface FeatureVariant {
@@ -304,6 +311,14 @@ export function assignFeature(
     // Deeper floors guard their chests better.
     feature.locked = Math.random() < 0.35;
     feature.trapped = Math.random() < Math.min(0.45, 0.12 + dungeonLevel * 0.05);
+    // ...and deeper floors are likelier to be lying about the chest entirely.
+    // A mimic is bait, so it wears neither lock nor trap: the lid it shows
+    // the party always opens on the first try, which is the whole trick.
+    feature.mimic = Math.random() < Math.min(0.22, 0.06 + dungeonLevel * 0.03);
+    if (feature.mimic) {
+      feature.locked = false;
+      feature.trapped = false;
+    }
   }
   room.feature = feature;
   return feature;

@@ -367,9 +367,21 @@ class Game {
     this.hud.townPanel.onBuyRepItem = this.guard((item) => this.buyRepItem(item));
     this.hud.townPanel.bulletinProvider = () => {
       if (!this.currentTown || !this.townLife) return [];
-      return this.townLife.byTown[this.currentTown.id]?.bulletinTasks ?? [];
+      // The local board, plus any finished work carried in from elsewhere —
+      // an escort is completed by arriving somewhere else, so without this
+      // the party is told to report in and finds nothing to claim.
+      return [
+        ...this.bulletin.boardForTown(this.currentTown.id),
+        ...this.bulletin.awayTasksReadyToClaim(this.currentTown.id),
+      ];
     };
     this.hud.townPanel.onBulletinComplete = this.guard((task) => this.completeBulletinTask(task));
+    this.hud.townPanel.onVisitNPC = this.guard((id) => {
+      const npc = this.currentTown && this.townLife
+        ? this.townLife.byTown[this.currentTown.id]?.questGivers?.find(g => g.id === id)
+        : undefined;
+      if (npc) this.greetQuestGiver(npc);
+    });
 
     // Every new run begins in the open world, outside a town.
     this.generateOverworld();
@@ -794,6 +806,7 @@ class Game {
       this.hud.addCombatMessage(getLLM().tellRumor(this.dungeonName), '#a97');
     }
     this.visitedRooms = this.rooms.length > 0 ? new Set([0]) : new Set();
+    this.blockedChests.clear();
     this.history.roomsVisited = this.visitedRooms.size;
     this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
     this.hud.addCombatMessage(this.describeParty(), '#ccc');
@@ -1242,6 +1255,11 @@ class Game {
         }
         break;
       }
+      case 'revive': {
+        this.hud.addCombatMessage(action.message, '#8cf');
+        this.spendRevivifyScroll();
+        break;
+      }
       case 'enter_door': {
         this.hud.addCombatMessage(action.message, '#ca8');
         // Open the door: move onto it and turn it to floor
@@ -1331,7 +1349,15 @@ class Game {
             this.performFeatureIntent('feature_chest');
           }
         } else if (!this.moveParty(action.direction)) {
-          if (room?.feature) room.feature.used = true; // unreachable — stop pathing to it
+          // `action.direction` is a straight bearing with no pathfinding, so a
+          // chest around a corner blocks on the first step. Giving up is right
+          // eventually, but marking the feature `used` was not: that reads as
+          // opened everywhere else — the map draws it ajar, a DM order calls it
+          // empty, and the loot is gone. Count the refusals instead, and only
+          // stop offering this one to the AI.
+          const key = `${action.target.x},${action.target.y}`;
+          const tries = (this.blockedChests.get(key) ?? 0) + 1;
+          this.blockedChests.set(key, tries);
         } else if (this.frameCount % 30 === 0) {
           this.hud.addCombatMessage(action.message, '#a86');
         }
@@ -2058,12 +2084,47 @@ class Game {
   /** Pieces of treasure the party has hauled out this run (collect_item quests). */
   public treasuresFound: number = 0;
 
+  /**
+   * How many times the party may fail to step toward a chest before the AI
+   * stops being offered it. More than one because a blocked step is usually a
+   * companion or a monster standing in the way, which clears on its own.
+   */
+  private static readonly CHEST_GIVE_UP_TRIES = 3;
+
+  /** Chests the party could not reach this floor, by room centre. */
+  private blockedChests = new Map<string, number>();
+
+  /**
+   * Spend one revivify scroll on a fallen ally, where the party stands.
+   *
+   * The scroll's worth is the rest it saves: tending the dead costs dungeon
+   * time and dungeon time draws wandering monsters. If the scroll cannot be
+   * found after all, the ally is tended back the slow way rather than left
+   * down, because the AI asks again every tick and a no-op here would spin.
+   */
+  private spendRevivifyScroll(): void {
+    const fallen = this.party.members.find(m => m.isDead);
+    if (!fallen) return;
+    const holder = this.party.members.find(m => m.inventory.some(i => i.id === 'scroll_revivify'));
+    const scroll = holder?.useItem('scroll_revivify');
+    fallen.revive(1);
+    if (holder && scroll) {
+      this.hud.addCombatMessage(
+        `${holder.name} unrolls ${scroll.name} — a golden thread pulls ${fallen.name} back from death at 1 HP.`,
+        '#fd8',
+      );
+      return;
+    }
+    this.hud.addCombatMessage(`${fallen.name} is tended to and brought back at 1 HP.`, '#f88');
+  }
+
   private unopenedChestsNearby(radius: number): Vector2[] {
     if (this.mode !== GameMode.Dungeon) return [];
     const from = this.party.leader.tile;
     return this.rooms
       .filter(r => r.feature?.kind === 'chest' && !r.feature.used)
       .map(r => vec2(r.cx, r.cy))
+      .filter(t => (this.blockedChests.get(`${t.x},${t.y}`) ?? 0) < Game.CHEST_GIVE_UP_TRIES)
       .filter(t => manhattan(from, t) <= radius);
   }
 
@@ -2654,8 +2715,21 @@ class Game {
     // After the haul lands, everyone re-kits: any looted gear that beats
     // what a member currently wears is swapped on and narrated.
     this.autoEquipUpgrades();
-    this.treasuresFound += loot.items.length;
-    this.bulletinCollectProgress(loot.items.length);
+    this.recordTreasureFound(loot.items.length);
+  }
+
+  /**
+   * Count found treasure once, wherever it came from.
+   *
+   * Combat spoils and chests come through distributeLoot, but the treasure
+   * room and the vault hand items straight to the leader — so the two richest
+   * finds in the game used to advance no collect task and no collect_item
+   * quest, while the flavour text pointed the party at exactly them.
+   */
+  recordTreasureFound(count: number): void {
+    if (count <= 0) return;
+    this.treasuresFound += count;
+    this.bulletinCollectProgress(count);
   }
 
   /**
@@ -4782,7 +4856,16 @@ class Game {
   }
 
   /** Spend gold across the party, richest first. True if fully paid. */
+  /**
+   * Take coin from the party, richest pocket first.
+   *
+   * Checked before a single coin moves. This used to take what it could find
+   * and only then discover the party was short, returning false with the
+   * purse already empty and nothing bought — the caller sees a refused
+   * purchase, the player sees their gold gone.
+   */
   spendGold(n: number): boolean {
+    if (this.partyGold() < n) return false;
     let remaining = n;
     const sorted = [...this.party.members].sort((a, b) => b.gold - a.gold);
     for (const m of sorted) {
@@ -4791,7 +4874,7 @@ class Game {
       m.gold -= take;
       remaining -= take;
     }
-    return remaining <= 0;
+    return true;
   }
 
   /** The shop: stock, prices, and goods changing hands. */
@@ -5293,6 +5376,20 @@ class Game {
             this.hud.addCombatMessage(`${searcher.name} spots a ${getTrapKind(t.kindId)!.name} at (${t.tile.x}, ${t.tile.y}).`, '#a86');
           }
         }
+        // A wired chest is a hazard in this room too, and the chest handler has
+        // always promised it could be spotted "with search for traps" — but
+        // nothing cleared the flag, so the needle was unavoidable and searching
+        // bought nothing. The same look that finds floor traps finds this.
+        const chest = this.currentRoom()?.feature;
+        if (chest?.kind === 'chest' && chest.trapped && !chest.used) {
+          if (total >= 12 + Math.floor(this.dungeonLevel / 2)) {
+            chest.trapped = false;
+            found++;
+            this.hud.addCombatMessage(`${searcher.name} traces a hair-fine wire under the lid of ${chest.name} and stills it.`, '#a86');
+          } else {
+            this.hud.addCombatMessage(`${searcher.name} eyes ${chest.name} and cannot say either way.`, '#888');
+          }
+        }
         if (found === 0) {
           this.hud.addCombatMessage(`${searcher.name} scans the stone (Perception ${total}) but finds no traps nearby.`, '#888');
         } else {
@@ -5509,10 +5606,16 @@ class Game {
           this.hud.addCombatMessage('Board work is taken on in town.', '#886');
           return;
         }
-        const board = (this.townLife.byTown[this.currentTown.id]?.bulletinTasks ?? []).filter(t => !t.completed);
+        // The same list "tasks" numbers, so the DM can read a number off the
+        // board and have it mean the same notice.
+        const board = this.bulletin.boardForTown(this.currentTown.id);
         const pick = board[Math.max(0, (cmd.index ?? 1) - 1)];
         if (!pick) {
           this.hud.addCombatMessage('Nothing on the board matches that — try "tasks".', '#886');
+          return;
+        }
+        if (pick.completed) {
+          this.hud.addCombatMessage(`"${pick.title}" is already settled up.`, '#886');
           return;
         }
         this.acceptBulletinTask(pick);
@@ -5693,17 +5796,7 @@ class Game {
         if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around right now.', '#888'); return; }
         const npc = tl.questGivers.find(g => g.name.toLowerCase().includes(query));
         if (!npc) { this.hud.addCombatMessage(`No one named "${query}" is around right now.`, '#888'); return; }
-        this.hud.addCombatMessage(`${npc.portrait} ${npc.name} — ${npc.title}:`, '#ca8');
-        // Show quest-specific dialogue if this NPC has posted quests
-        const npcQuests = this.quests.filter(q => q.giverNpcId === npc.id && !q.turnedIn);
-        if (npcQuests.length > 0) {
-          const quest = npcQuests[0];
-          this.hud.addCombatMessage(`   "${getQuestDialogue(npc, quest.kind)}"`, '#a89');
-          this.hud.addCombatMessage(`   [${quest.title} — ${quest.completed ? '✔ Ready to report' : 'In progress'}]`, '#8cf');
-        } else {
-          this.hud.addCombatMessage(`   "${getDialogue(npc)}"`, '#a89');
-        }
-        this.hud.addCombatMessage(`   [Reputation: ${getReputationTier(npc)}]`, '#888');
+        this.greetQuestGiver(npc);
         return;
       }
       case 'list_npcs': {
@@ -5726,6 +5819,26 @@ class Game {
         return;
       }
     }
+  }
+
+  /**
+   * Speak to a quest giver: their line, whatever they have posted, and how
+   * they rate the party. Shared by the "talk to" order and by clicking their
+   * row in the town panel, which looked clickable and did nothing because
+   * `onVisitNPC` was declared, dispatched, and never assigned.
+   */
+  private greetQuestGiver(npc: QuestGiver): void {
+    this.hud.addCombatMessage(`${npc.portrait} ${npc.name} — ${npc.title}:`, '#ca8');
+    // Show quest-specific dialogue if this NPC has posted quests
+    const npcQuests = this.quests.filter(q => q.giverNpcId === npc.id && !q.turnedIn);
+    if (npcQuests.length > 0) {
+      const quest = npcQuests[0];
+      this.hud.addCombatMessage(`   "${getQuestDialogue(npc, quest.kind)}"`, '#a89');
+      this.hud.addCombatMessage(`   [${quest.title} — ${quest.completed ? '✔ Ready to report' : 'In progress'}]`, '#8cf');
+    } else {
+      this.hud.addCombatMessage(`   "${getDialogue(npc)}"`, '#a89');
+    }
+    this.hud.addCombatMessage(`   [Reputation: ${getReputationTier(npc)}]`, '#888');
   }
 
   /** The loaded weights, kept so "model on" can re-arm without re-fetching. */

@@ -703,6 +703,8 @@ export type AIAction =
   | { type: 'loot'; target: Vector2; direction: Direction; message: string }
   | { type: 'retreat'; direction: Direction; message: string }
   | { type: 'rest'; message: string }
+  /** Spend a revivify scroll on a fallen ally instead of stopping to rest. */
+  | { type: 'revive'; message: string }
   | { type: 'enter_door' | 'go_down_stairs'; message: string }
   | { type: 'heal'; message: string }
   | { type: 'flee'; message: string }
@@ -754,21 +756,31 @@ export class AIDirector {
     // ── PHASE 2: Fallen Allies ──
     if (state.deadCount > 0) {
       // No monster is in view (Phase 1 handled combat), so the party stops to
-      // tend the fallen instead of pressing deeper with a crippled team. The
-      // rest revives the dead at 1 HP, so this can never loop.
-      return {
-        type: 'rest',
-        message: state.hasRevivify
-          ? `${leader.name}: "${pick([
+      // tend the fallen instead of pressing deeper with a crippled team.
+      //
+      // A revivify scroll is spent here rather than merely mentioned. What it
+      // buys is the rest: a party that stops to tend its dead spends dungeon
+      // time, and dungeon time is wandering monsters. Each scroll lifts one
+      // ally where they lie. When the last is gone the next tick falls through
+      // to the rest below, which revives at 1 HP, so however many have fallen
+      // this can never loop.
+      if (state.hasRevivify) {
+        return {
+          type: 'revive',
+          message: `${leader.name}: "${pick([
             'We carry a scroll of revivify — unroll it and bring them back.',
             'Break out the revivify scroll. Nobody stays down while we still have it.',
             'The scroll. Use the scroll — we are not burying anyone today.',
-          ])}"`
-          : `${leader.name}: "${pick([
+          ])}"`,
+        };
+      }
+      return {
+        type: 'rest',
+        message: `${leader.name}: "${pick([
             'We don\'t leave anyone behind. Rest — tend to the fallen.',
             'Gather round — get them back on their feet before we go further.',
             'The dead need tending. We rest here until they can walk again.',
-          ])}"`,
+        ])}"`,
       };
     }
     if (state.dyingCount > 0) {
