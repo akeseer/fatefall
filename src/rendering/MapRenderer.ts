@@ -142,6 +142,32 @@ function mottledTile(
   ctx.fillRect(f(sx) + px, f(sy) + py, w, ht);
 }
 
+/**
+ * What a town's roofs are made of, by the kind of town it is.
+ *
+ * A farming village is thatch, a port is slate, a mine is the same dark stone
+ * it digs. The banner over the hall takes the same colour, so a town reads as
+ * one place from a distance and its kind is legible before the name is.
+ * Unknown archetypes get red tile, which is what every town was before.
+ */
+interface TownRoofs { roof: string; roofDark: string; banner: string; }
+const TOWN_ROOFS: Record<string, TownRoofs> = {
+  farming_village: { roof: '#b09040', roofDark: '#8a6c2c', banner: '#5aa04a' },
+  port_town: { roof: '#4a6a88', roofDark: '#34506a', banner: '#4a8ad0' },
+  mining_settlement: { roof: '#5a5058', roofDark: '#403840', banner: '#c06a30' },
+  wizard_college: { roof: '#6a5a90', roofDark: '#4c4070', banner: '#b080f0' },
+  desert_oasis: { roof: '#c8a068', roofDark: '#a0804c', banner: '#e8c040' },
+  forest_hold: { roof: '#4a7a48', roofDark: '#345834', banner: '#70c050' },
+  frontier_outpost: { roof: '#7a5a34', roofDark: '#58401e', banner: '#d04030' },
+};
+const DEFAULT_ROOFS: TownRoofs = { roof: '#a84830', roofDark: '#7a3020', banner: '#e8c040' };
+function roofsFor(archetypeId: string | undefined): TownRoofs {
+  return (archetypeId && TOWN_ROOFS[archetypeId]) || DEFAULT_ROOFS;
+}
+
+/** A tile key for the per-frame town lookup; the map is far narrower than this. */
+function tileKey(x: number, y: number): number { return y * 4096 + x; }
+
 /** True where a road may run straight through into the next tile. */
 function joinsRoad(map: TileMap, x: number, y: number): boolean {
   const t = map.tiles[y]?.[x];
@@ -1704,6 +1730,16 @@ export class MapRenderer {
     const ctx = this.ctx;
     ctx.imageSmoothingEnabled = false;
 
+    // Which town a tile belongs to, so a Town tile can take its roofs from
+    // the kind of town it is. Nine entries per town; rebuilt each frame because
+    // it is cheaper than keeping it in step with a world that regenerates.
+    const townByTile = new Map<number, OverworldTown>();
+    for (const t of towns) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        townByTile.set(tileKey(t.tile.x + dx, t.tile.y + dy), t);
+      }
+    }
+
     const startX = Math.max(0, Math.floor(camera.x / TILE_SIZE) - 1);
     const startY = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 1);
     const endX = Math.min(map.width, startX + Math.ceil(GAME_WIDTH / TILE_SIZE) + 3);
@@ -1946,66 +1982,184 @@ export class MapRenderer {
             break;
           }
           case TileType.Town: {
-            ctx.fillStyle = '#3a5a2e';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            // Buildings arranged by hash so the 3×3 core reads as a village
-            const b = (x * 5 + y * 3) % 6;
-            if (b === 0 || b === 1) {
-              // Big hall with peaked roof
-              ctx.fillStyle = '#8a7a5a';
-              ctx.fillRect(f(sx) + 4, f(sy) + 10, 24, 16);
-              ctx.fillStyle = '#a84830';
-              ctx.fillRect(f(sx) + 2, f(sy) + 4, 28, 8);
-              ctx.fillStyle = '#5a3a22';
-              ctx.fillRect(f(sx) + 12, f(sy) + 20, 6, 6);
-              ctx.fillStyle = 'rgba(255,220,140,0.8)';
-              ctx.fillRect(f(sx) + 8, f(sy) + 8, 4, 3);
-            } else if (b === 2 || b === 3) {
-              // Small cottage
-              ctx.fillStyle = '#7a6a4a';
-              ctx.fillRect(f(sx) + 6, f(sy) + 14, 20, 12);
-              ctx.fillStyle = '#6a4a2a';
-              ctx.fillRect(f(sx) + 4, f(sy) + 8, 24, 8);
-              ctx.fillStyle = '#4a2e18';
-              ctx.fillRect(f(sx) + 13, f(sy) + 20, 5, 6);
-            } else if (b === 4) {
-              // Market stall
-              ctx.fillStyle = '#9a8a5a';
-              ctx.fillRect(f(sx) + 4, f(sy) + 12, 24, 6);
-              ctx.fillStyle = '#5a4a3a';
-              ctx.fillRect(f(sx) + 6, f(sy) + 18, 20, 8);
-              ctx.fillStyle = '#b04830';
-              ctx.fillRect(f(sx) + 6, f(sy) + 6, 20, 6);
+            // A settlement, not a scatter of buildings. Each tile knows where it
+            // sits in the three-by-three from its neighbours, the same way the
+            // terrain knows its seams: the centre is the hall, the edges carry
+            // the wall with a gatehouse wherever a road comes in, the corners
+            // carry a tower. Roofs take their colour from the kind of town.
+            //
+            // Everything here is drawn large. The first draft put a fourteen
+            // pixel cottage on a thirty-two pixel tile and a ten pixel gate in a
+            // grey wall, and at map scale both vanished — nine tan blocks in a
+            // grid, and roads that stopped dead at the wall.
+            const X = f(sx), Y = f(sy);
+            const roofs = roofsFor(townByTile.get(tileKey(x, y))?.archetypeId);
+            const ridge = lighten(roofs.roof, 0.28);
+            const inTown = (dx: number, dy: number) => tileAt(map, x + dx, y + dy) === TileType.Town;
+            const nT = inTown(0, -1), sT = inTown(0, 1), wT = inTown(-1, 0), eT = inTown(1, 0);
+            const edges = (nT ? 0 : 1) + (sT ? 0 : 1) + (wT ? 0 : 1) + (eT ? 0 : 1);
+            const h = cellHash(x, y, 67);
+
+            // Cobbled square: a warm ground with lighter sets scattered over it.
+            ctx.fillStyle = '#6a5c4c';
+            ctx.fillRect(X, Y, TILE_SIZE, TILE_SIZE);
+            ctx.fillStyle = '#7a6c5a';
+            for (let i = 0; i < 6; i++) {
+              const q = cellHash(x, y, 71 + i);
+              ctx.fillRect(X + (q % 14) * 2, Y + ((q >> 2) % 14) * 2, 2, 2);
+            }
+            ctx.fillStyle = '#5c4e40';
+            ctx.fillRect(X + (h % 5) * 4, Y + ((h >> 3) % 6) * 4, 6, 3);
+
+            const wallLight = '#a49cac', wall = '#7a7280', wallDark = '#4e4854';
+            const road = '#8a7a5a', roadDark = '#6e6046';
+            // The wall, six deep, crenellated along its outer edge.
+            if (!nT) {
+              ctx.fillStyle = wall; ctx.fillRect(X, Y, TILE_SIZE, 6);
+              ctx.fillStyle = wallLight; for (let i = 0; i < TILE_SIZE; i += 6) ctx.fillRect(X + i, Y, 3, 2);
+              ctx.fillStyle = wallDark; ctx.fillRect(X, Y + 6, TILE_SIZE, 1);
+            }
+            if (!sT) {
+              ctx.fillStyle = wall; ctx.fillRect(X, Y + TILE_SIZE - 6, TILE_SIZE, 6);
+              ctx.fillStyle = wallLight; for (let i = 0; i < TILE_SIZE; i += 6) ctx.fillRect(X + i, Y + TILE_SIZE - 6, 3, 2);
+              ctx.fillStyle = wallDark; ctx.fillRect(X, Y + TILE_SIZE - 7, TILE_SIZE, 1);
+            }
+            if (!wT) {
+              ctx.fillStyle = wall; ctx.fillRect(X, Y, 6, TILE_SIZE);
+              ctx.fillStyle = wallLight; for (let i = 0; i < TILE_SIZE; i += 6) ctx.fillRect(X, Y + i, 2, 3);
+              ctx.fillStyle = wallDark; ctx.fillRect(X + 6, Y, 1, TILE_SIZE);
+            }
+            if (!eT) {
+              ctx.fillStyle = wall; ctx.fillRect(X + TILE_SIZE - 6, Y, 6, TILE_SIZE);
+              ctx.fillStyle = wallLight; for (let i = 0; i < TILE_SIZE; i += 6) ctx.fillRect(X + TILE_SIZE - 2, Y + i, 2, 3);
+              ctx.fillStyle = wallDark; ctx.fillRect(X + TILE_SIZE - 7, Y, 1, TILE_SIZE);
+            }
+
+            // A gatehouse where a road meets the wall. The road itself runs
+            // through the band and on to the square, so the way in reads from
+            // across the map; two posts rise above the wall either side of a
+            // dark arch.
+            const gateN = !nT && joinsRoad(map, x, y - 1);
+            const gateS = !sT && joinsRoad(map, x, y + 1);
+            const gateW = !wT && joinsRoad(map, x - 1, y);
+            const gateE = !eT && joinsRoad(map, x + 1, y);
+            const gated = gateN || gateS || gateW || gateE;
+            if (gateN || gateS) {
+              const gy = gateN ? Y : Y + TILE_SIZE - 8;
+              ctx.fillStyle = road; ctx.fillRect(X + 12, gateN ? Y : Y + 8, 8, TILE_SIZE - 8);
+              ctx.fillStyle = roadDark; ctx.fillRect(X + 12, gateN ? Y : Y + 8, 1, TILE_SIZE - 8); ctx.fillRect(X + 19, gateN ? Y : Y + 8, 1, TILE_SIZE - 8);
+              ctx.fillStyle = wallDark; ctx.fillRect(X + 7, gy - (gateN ? 0 : 2), 5, 10); ctx.fillRect(X + 20, gy - (gateN ? 0 : 2), 5, 10);
+              ctx.fillStyle = wall; ctx.fillRect(X + 8, gy - (gateN ? 0 : 2) + 1, 3, 8); ctx.fillRect(X + 21, gy - (gateN ? 0 : 2) + 1, 3, 8);
+              ctx.fillStyle = wallLight; ctx.fillRect(X + 8, gy - (gateN ? 0 : 2) + 1, 3, 1); ctx.fillRect(X + 21, gy - (gateN ? 0 : 2) + 1, 3, 1);
+              ctx.fillStyle = '#2a2018'; ctx.fillRect(X + 13, gateN ? Y + 1 : Y + TILE_SIZE - 8, 6, 7);
+            }
+            if (gateW || gateE) {
+              const gx = gateW ? X : X + TILE_SIZE - 8;
+              ctx.fillStyle = road; ctx.fillRect(gateW ? X : X + 8, Y + 12, TILE_SIZE - 8, 8);
+              ctx.fillStyle = roadDark; ctx.fillRect(gateW ? X : X + 8, Y + 12, TILE_SIZE - 8, 1); ctx.fillRect(gateW ? X : X + 8, Y + 19, TILE_SIZE - 8, 1);
+              ctx.fillStyle = wallDark; ctx.fillRect(gx - (gateW ? 0 : 2), Y + 7, 10, 5); ctx.fillRect(gx - (gateW ? 0 : 2), Y + 20, 10, 5);
+              ctx.fillStyle = wall; ctx.fillRect(gx - (gateW ? 0 : 2) + 1, Y + 8, 8, 3); ctx.fillRect(gx - (gateW ? 0 : 2) + 1, Y + 21, 8, 3);
+              ctx.fillStyle = wallLight; ctx.fillRect(gx - (gateW ? 0 : 2) + 1, Y + 8, 8, 1); ctx.fillRect(gx - (gateW ? 0 : 2) + 1, Y + 21, 8, 1);
+              ctx.fillStyle = '#2a2018'; ctx.fillRect(gateW ? X + 1 : X + TILE_SIZE - 8, Y + 13, 7, 6);
+            }
+
+            // Corner towers where two walls meet.
+            if (edges >= 2) {
+              const cx = wT ? X + TILE_SIZE - 10 : X;
+              const cy = nT ? Y + TILE_SIZE - 10 : Y;
+              ctx.fillStyle = wallDark; ctx.fillRect(cx, cy, 10, 10);
+              ctx.fillStyle = wall; ctx.fillRect(cx + 1, cy + 1, 8, 8);
+              ctx.fillStyle = wallLight; ctx.fillRect(cx + 1, cy + 1, 8, 2);
+              ctx.fillStyle = roofs.roofDark; ctx.fillRect(cx + 1, cy - 3, 8, 4);
+              ctx.fillStyle = roofs.roof; ctx.fillRect(cx + 3, cy - 5, 4, 3);
+            }
+
+            // Three puffs climbing and thinning, phased by the seed so a town's
+            // chimneys do not all breathe together.
+            const chimneyPuffs = (px: number, py: number, seed: number) => {
+              for (let i = 0; i < 3; i++) {
+                const ph = ((this.time * 0.7 + seed * 0.37 + i * 0.33) % 1);
+                const py2 = py - 3 - Math.floor(ph * 11);
+                const px2 = px + Math.round(Math.sin(ph * 6.28 + seed) * 1.5);
+                const size = 2 + (i === 2 ? 1 : 0);
+                ctx.fillStyle = 'rgba(220,214,200,' + (0.55 * (1 - ph)).toFixed(3) + ')';
+                ctx.fillRect(px2, py2, size, size);
+              }
+            };
+
+            if (edges === 0) {
+              // The hall: it fills its tile and rises above it. Wide body, a
+              // roof in three courses ending in a lighter ridge, a bell tower
+              // above the roofline with the banner flying beside it.
+              ctx.fillStyle = '#8a7a5a'; ctx.fillRect(X + 2, Y + 15, 28, 13);
+              ctx.fillStyle = '#6a5a40'; ctx.fillRect(X + 2, Y + 27, 28, 1);
+              ctx.fillStyle = roofs.roofDark; ctx.fillRect(X, Y + 11, 32, 5);
+              ctx.fillStyle = roofs.roof; ctx.fillRect(X + 3, Y + 7, 26, 4); ctx.fillRect(X + 7, Y + 4, 18, 3);
+              ctx.fillStyle = ridge; ctx.fillRect(X + 9, Y + 4, 14, 1);
+              ctx.fillStyle = '#5a3a22'; ctx.fillRect(X + 13, Y + 21, 6, 7);
+              ctx.fillStyle = '#3a2412'; ctx.fillRect(X + 13, Y + 21, 6, 1);
+              ctx.fillStyle = 'rgba(255,220,140,0.9)'; ctx.fillRect(X + 5, Y + 18, 4, 3); ctx.fillRect(X + 23, Y + 18, 4, 3);
+              ctx.fillStyle = wallDark; ctx.fillRect(X + 12, Y - 5, 6, 10);
+              ctx.fillStyle = wall; ctx.fillRect(X + 13, Y - 4, 4, 8);
+              ctx.fillStyle = roofs.roofDark; ctx.fillRect(X + 11, Y - 7, 8, 3);
+              const wave = Math.round(Math.sin(this.time * 3 + x) * 0.6);
+              ctx.fillStyle = roofs.banner; ctx.fillRect(X + 18, Y - 4 + wave, 8, 4);
+              ctx.fillStyle = wallDark; ctx.fillRect(X + 18, Y - 6, 1, 8);
+              chimneyPuffs(X + 27, Y + 9, h);
+            } else if (gated) {
+              // A gate tile is the road and the gatehouse; a cottage in front
+              // of the gate would block the way it exists to open.
             } else {
-              // Well or shrine in the square
-              ctx.fillStyle = '#8a8a94';
-              ctx.fillRect(f(sx) + 10, f(sy) + 10, 12, 10);
-              ctx.fillStyle = '#444';
-              ctx.fillRect(f(sx) + 13, f(sy) + 14, 6, 6);
-              ctx.fillStyle = '#7a5a34';
-              ctx.fillRect(f(sx) + 8, f(sy) + 6, 16, 4);
+              // A house. Two kinds by the hash — a wide low cottage and a tall
+              // narrow one — so a row of them is not a row of the same thing.
+              // Pushed away from whichever wall the tile carries.
+              const tall = h % 2 === 1;
+              const bw = tall ? 15 : 23, bh = tall ? 13 : 10;
+              const bx = X + (wT ? 1 : 7) + (tall ? (h >> 2) % 6 : (h >> 2) % 2);
+              const by = Y + (nT ? 2 : 8) + (tall ? 1 : 5);
+              ctx.fillStyle = h % 4 < 2 ? '#8a7a5a' : '#7c6c50'; ctx.fillRect(bx, by + 5, bw, bh);
+              ctx.fillStyle = '#5a4a34'; ctx.fillRect(bx, by + 5 + bh - 1, bw, 1);
+              ctx.fillStyle = roofs.roofDark; ctx.fillRect(bx - 1, by + 2, bw + 2, 4);
+              ctx.fillStyle = roofs.roof; ctx.fillRect(bx + 1, by - 1, bw - 2, 3);
+              ctx.fillStyle = ridge; ctx.fillRect(bx + 3, by - 1, bw - 6, 1);
+              const door = bx + (bw >> 1) - 2;
+              ctx.fillStyle = '#4a2e18'; ctx.fillRect(door, by + bh - 1, 4, 6);
+              ctx.fillStyle = 'rgba(255,220,140,0.85)';
+              if (tall) { ctx.fillRect(bx + 3, by + 8, 3, 3); }
+              else { ctx.fillRect(bx + 3, by + 8, 3, 2); ctx.fillRect(bx + bw - 6, by + 8, 3, 2); }
+              if (h % 3 !== 0) chimneyPuffs(bx + bw - 4, by + 1, h);
             }
             break;
           }
           case TileType.DungeonEntrance: {
-            ctx.fillStyle = '#3a3a30';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            // Stone ring
-            ctx.fillStyle = '#7a7a84';
-            ctx.fillRect(f(sx) + 2, f(sy) + 2, 28, 4);
-            ctx.fillRect(f(sx) + 2, f(sy) + 26, 28, 4);
-            ctx.fillRect(f(sx) + 2, f(sy) + 2, 4, 28);
-            ctx.fillRect(f(sx) + 26, f(sy) + 2, 4, 28);
-            // The dark maw
-            ctx.fillStyle = '#0a0a10';
-            ctx.fillRect(f(sx) + 8, f(sy) + 12, 16, 12);
-            // Eerie glow
+            // A cave mouth in a rocky mound rather than a square ring on the
+            // ground: a hill, lit from the north-west like the mountains, with
+            // a dark arch at its foot, steps going in, and something glowing
+            // a little way down.
+            const X = f(sx), Y = f(sy);
+            ctx.fillStyle = '#3a4a2e';
+            ctx.fillRect(X, Y, TILE_SIZE, TILE_SIZE);
+            // The mound, as stacked courses narrowing upward.
+            ctx.fillStyle = '#4e4a52'; ctx.fillRect(X + 1, Y + 14, 30, 14);
+            ctx.fillStyle = '#5e5a64'; ctx.fillRect(X + 4, Y + 8, 24, 7);
+            ctx.fillStyle = '#6e6a76'; ctx.fillRect(X + 9, Y + 4, 14, 5);
+            ctx.fillStyle = '#7e7a88'; ctx.fillRect(X + 12, Y + 2, 8, 3);
+            // Lit faces on the north-west, shadow to the south-east.
+            ctx.fillStyle = '#8a8694'; ctx.fillRect(X + 9, Y + 4, 4, 2); ctx.fillRect(X + 4, Y + 8, 5, 2); ctx.fillRect(X + 1, Y + 14, 6, 2);
+            ctx.fillStyle = '#34303a'; ctx.fillRect(X + 24, Y + 12, 4, 3); ctx.fillRect(X + 27, Y + 20, 4, 8);
+            // Scattered boulders at the foot.
+            ctx.fillStyle = '#5e5a64'; ctx.fillRect(X + 1, Y + 26, 5, 4); ctx.fillRect(X + 26, Y + 27, 5, 3);
+            // The arch and the dark under it.
+            ctx.fillStyle = '#2a262e'; ctx.fillRect(X + 9, Y + 15, 14, 13);
+            ctx.fillStyle = '#0a0a10'; ctx.fillRect(X + 11, Y + 17, 10, 11); ctx.fillRect(X + 12, Y + 15, 8, 2);
+            // Steps going down, catching what light there is.
+            ctx.fillStyle = '#3e3a44'; ctx.fillRect(X + 12, Y + 24, 8, 2); ctx.fillRect(X + 13, Y + 21, 6, 1);
+            // The glow from below, breathing.
             const glow = Math.sin(this.time * 2.4 + x) * 0.3 + 0.5;
-            ctx.fillStyle = `rgba(120,80,220,${0.15 + glow * 0.2})`;
-            ctx.fillRect(f(sx) + 6, f(sy) + 10, 20, 16);
-            // Steps down
-            ctx.fillStyle = '#5a5a64';
-            ctx.fillRect(f(sx) + 10, f(sy) + 20, 12, 3);
+            ctx.fillStyle = 'rgba(120,80,220,' + (0.18 + glow * 0.22).toFixed(3) + ')';
+            ctx.fillRect(X + 12, Y + 19, 8, 8);
+            ctx.fillStyle = 'rgba(200,160,255,' + (0.10 + glow * 0.15).toFixed(3) + ')';
+            ctx.fillRect(X + 14, Y + 22, 4, 3);
             break;
           }
           default: {
