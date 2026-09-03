@@ -181,9 +181,20 @@ const GRADE_DUSK: Grade = {
 };
 
 /** Night. Dim and blue, with saturation pulled down because the eye loses colour in the dark before it loses shape. */
+/**
+ * Night, and below it the dark underground.
+ *
+ * Both carry colour and almost no brightness, because brightness is the
+ * lighting pass's job and it has already done it. When these grades darkened
+ * as well, the two multiplied: midnight landed at 27% and underground at 12%,
+ * and — worse — the torch was capped at 54% even at its centre, when the whole
+ * point of lighting by multiply is that a light returns the world to its own
+ * full brightness so the map's pixels come back rather than a warm blob being
+ * laid over them.
+ */
 const GRADE_NIGHT: Grade = {
   tint: [0.60, 0.70, 1.00],
-  brightness: 0.60,
+  brightness: 0.88,
   saturation: 0.70,
   contrast: 1.05,
   lift: [0.018, 0.024, 0.050],
@@ -192,7 +203,7 @@ const GRADE_NIGHT: Grade = {
 /** Underground. Colder and darker still, and higher contrast, because the only light down there is carried and it falls off hard. */
 const GRADE_UNDERGROUND: Grade = {
   tint: [0.70, 0.79, 0.96],
-  brightness: 0.54,
+  brightness: 0.86,
   saturation: 0.66,
   contrast: 1.12,
   lift: [0.014, 0.018, 0.030],
