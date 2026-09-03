@@ -53,6 +53,7 @@
 
 import { BufferImageSource, Container, Sprite, Texture } from 'pixi.js';
 import type { SceneMood } from '../../DrawCommand';
+import { themeLight } from '../../ThemeLight';
 
 // ── Tunables ──
 
@@ -201,6 +202,10 @@ export class Lighting {
   private calm = 1;
   private focusX = 0;
   private focusY = 0;
+  /** The colour of the carried light, eased per channel so a new floor does not flash. */
+  private lr = 1;
+  private lg = 1;
+  private lb = 1;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -292,6 +297,7 @@ export class Lighting {
       this.lift = liftTarget;
       this.torch = underground ? 1 : 0;
       this.calm = mood.inCombat ? COMBAT_FLICKER_CALM : 1;
+      [this.lr, this.lg, this.lb] = themeLight(mood.themeId);
       this.focusX = focusX;
       this.focusY = focusY;
     } else {
@@ -300,6 +306,10 @@ export class Lighting {
       this.lift = approach(this.lift, liftTarget, dt, RADIUS_TAU_MS);
       this.torch = approach(this.torch, underground ? 1 : 0, dt, MODE_TAU_MS);
       this.calm = approach(this.calm, mood.inCombat ? COMBAT_FLICKER_CALM : 1, dt, MODE_TAU_MS);
+      const want = themeLight(mood.themeId);
+      this.lr = approach(this.lr, want[0], dt, MODE_TAU_MS);
+      this.lg = approach(this.lg, want[1], dt, MODE_TAU_MS);
+      this.lb = approach(this.lb, want[2], dt, MODE_TAU_MS);
 
       const dx = focusX - this.focusX;
       const dy = focusY - this.focusY;
@@ -327,15 +337,16 @@ export class Lighting {
     this.layer.visible = this.darkness > DARKNESS_EPSILON;
     if (!this.layer.visible) return;
 
-    // The light drifts from moonlight to flame as the party goes underground,
+    // The light drifts from moonlight to the flame of the place as the party
+    // goes underground — ember in a dragon graveyard, teal in a sunken temple —
     // and the whole thing is scaled by how bright the light is allowed to be.
     // The baked texture is black at its rim, and black survives any tint, so
     // the seam with the flat shadows holds whatever colour is chosen here.
     const brightness = clamp01(lift);
     this.light.tint = packTint(
-      brightness * mix(MOONLIGHT_COLOR[0], 1, this.torch),
-      brightness * mix(MOONLIGHT_COLOR[1], 1, this.torch),
-      brightness * mix(MOONLIGHT_COLOR[2], 1, this.torch),
+      brightness * mix(MOONLIGHT_COLOR[0], this.lr, this.torch),
+      brightness * mix(MOONLIGHT_COLOR[1], this.lg, this.torch),
+      brightness * mix(MOONLIGHT_COLOR[2], this.lb, this.torch),
     );
 
     const alpha = clamp01(this.darkness);

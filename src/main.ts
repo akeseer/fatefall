@@ -2125,6 +2125,7 @@ class Game {
     return {
       daylight: this.clock.light,
       underground: this.mode === GameMode.Dungeon,
+      themeId: this.mode === GameMode.Dungeon ? (this.dungeonTheme?.id ?? null) : null,
       weather: this.weather?.type ?? null,
       focus,
       inCombat: this.phase === GamePhase.Combat,

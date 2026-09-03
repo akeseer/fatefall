@@ -58,6 +58,8 @@ export interface SceneMood {
    * the backends agree exactly and a stutter changes nothing the player sees.
    */
   transition?: { kind: TransitionKind; progress: number } | null;
+  /** The dungeon's theme id when underground, so the light can take the colour of the place. */
+  themeId?: string | null;
 }
 
 /** A cut to black that fades up, or blinds that close over the map for a fight. */

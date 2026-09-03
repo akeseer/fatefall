@@ -9,6 +9,7 @@
 
 import type { BakedImage, Frame, RenderBackend, SceneMood } from '../DrawCommand';
 import { transitionShape } from '../DrawCommand';
+import { themeLight } from '../ThemeLight';
 
 /** How far the world is crushed underground, where the party's torch is the only light. */
 const UNDERGROUND_DARKNESS = 0.78;
@@ -158,15 +159,21 @@ export class CanvasBackend implements RenderBackend {
     const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, radius);
     const lit = Math.round(255 * (1 - darkness * (mood.underground ? 0 : 0.45)));
     const dark = Math.round(255 * (1 - darkness));
-    grad.addColorStop(0, `rgb(255,${lit},${Math.round(lit * 0.92)})`);
+    // Underground the core takes the colour of the place, as the Pixi torch does.
+    const [tr, tg, tb] = mood.underground ? themeLight(mood.themeId) : [1, 1, 0.92];
+    grad.addColorStop(0, `rgb(${Math.round(255 * tr)},${Math.round(lit * tg)},${Math.round(lit * tb)})`);
     grad.addColorStop(1, `rgb(${dark},${dark},${Math.round(dark * 1.12)})`);
 
+    // One fill of the whole frame with the gradient. A canvas gradient
+    // carries its last stop out past its radius, so this darkens the corners
+    // to `dark` and opens the light in the middle in a single multiply. The
+    // first version filled the frame with `dark` and then drew the gradient
+    // over a square around the party — which multiplied that square twice,
+    // and left a hard-edged box darker than the room around it.
     const previous = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = `rgb(${dark},${dark},${Math.round(dark * 1.12)})`;
-    ctx.fillRect(0, 0, this.width, this.height);
     ctx.fillStyle = grad;
-    ctx.fillRect(fx - radius, fy - radius, radius * 2, radius * 2);
+    ctx.fillRect(0, 0, this.width, this.height);
     ctx.globalCompositeOperation = previous;
   }
 

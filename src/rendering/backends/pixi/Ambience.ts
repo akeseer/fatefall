@@ -30,6 +30,7 @@
 
 import { BufferImageSource, Container, Sprite, Texture } from 'pixi.js';
 import type { SceneMood } from '../../DrawCommand';
+import { themeLightHex } from '../../ThemeLight';
 
 // ── Tunables ──
 
@@ -274,7 +275,9 @@ export class Ambience {
     if (mood.underground) {
       return {
         count: COUNT_UNDERGROUND, litOnly: true, drift: DRIFT_UNDERGROUND, fall: FALL_UNDERGROUND,
-        color: COLOR_UNDERGROUND, alpha: ALPHA_UNDERGROUND, pulses: false,
+        // Dust is lit by the carried light, so it leans toward the colour of
+        // the place. The channels are eased in update(), so a new floor fades.
+        color: leanHex(COLOR_UNDERGROUND, themeLightHex(mood.themeId), 0.6), alpha: ALPHA_UNDERGROUND, pulses: false,
       };
     }
     if (mood.daylight < NIGHT_BELOW) {
@@ -338,6 +341,13 @@ export class Ambience {
     });
     return new Texture({ source });
   }
+}
+
+/** A packed colour part of the way from `a` to `b`. */
+function leanHex(a: number, b: number, t: number): number {
+  const ch = (v: number, sh: number) => (v >> sh) & 0xff;
+  const mix = (sh: number) => Math.round(ch(a, sh) + (ch(b, sh) - ch(a, sh)) * t);
+  return (mix(16) << 16) | (mix(8) << 8) | mix(0);
 }
 
 /** A cheap integer scramble, so a mote's constants are fixed by its index. */
