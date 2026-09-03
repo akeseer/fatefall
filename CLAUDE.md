@@ -48,9 +48,26 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   canvas-shaped shim that `MapRenderer` and `Sprites` are handed instead of a real
   context; it appends `DrawCommand`s. A `RenderBackend` replays the `Frame`.
   `CanvasBackend` is the reference; `PixiBackend` (the default) adds `pixi/Lighting`
-  (multiply-blended torch and night) and `pixi/Atmosphere` (colour grade, vignette,
-  bloom), both driven by the `SceneMood` the game attaches to each frame.
+  (multiply-blended torch and night), `pixi/Atmosphere` (colour grade, vignette,
+  bloom), `pixi/Weather` (particle rain, snow, fog, sandstorm), `pixi/Ambience`
+  (dust, pollen, fireflies) and `pixi/Transition` (fade, blinds, crit flash), all
+  driven by the `SceneMood` the game attaches to each frame. The renderer draws the
+  world at noon under a clear sky; the backend owns every mood effect, and a mood
+  effect painted in `MapRenderer` as well is a double application (that bug has
+  happened twice). `SceneMood.themeId` is the dungeon theme; `rendering/ThemeLight.ts`
+  is the one table that turns it into the colour of the carried light, read by the
+  Pixi torch, the dust, the grade and the Canvas fallback. `SceneMood.transition`
+  and `flash` are stamped by `Game` with a progress the backends only map to a
+  picture, through `transitionShape` in `DrawCommand.ts`, so both backends agree.
   Adding a draw call means adding a `DrawCommand` kind and handling it in every backend.
+- **Looking at it**: `.claude/launch.json` has a `stable` config that serves a built
+  copy on port 4390, immune to the dev server's HMR reloading the page mid-inspection
+  (`npm run build` first). `window.__game` exists in dev builds and in a production
+  build loaded with `?debug`; from it, `togglePause()`, then set both `camera.x/y`
+  and `camera.targetX/targetY` to pin the view, `clock.light = 1` for daylight, and
+  scale `#game-canvas`'s CSS size to zoom (re-grab the element after start, since the
+  backend swaps it in). When screenshots stall, rasterise the recorded frame or the
+  sprite `<img>`s to ASCII from the page; that has worked every time.
 - **`src/ui/HUD.ts`** — builds the DOM overlay from a template string. The log is
   append-only HTML strings (`addCombatMessage`).
 
