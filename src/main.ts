@@ -2077,8 +2077,6 @@ class Game {
         this.pois,
         questDest,
         this.overworldRecentTiles,
-        this.weather?.type ?? null,
-        this.clock.light
       );
     } else {
       this.mapRenderer.render(

@@ -7,7 +7,32 @@
  * the recording trustworthy enough for the other backends to build on.
  */
 
-import type { BakedImage, Frame, RenderBackend } from '../DrawCommand';
+import type { BakedImage, Frame, RenderBackend, SceneMood } from '../DrawCommand';
+
+/** How far the world is crushed underground, where the party's torch is the only light. */
+const UNDERGROUND_DARKNESS = 0.78;
+
+/** How far it is crushed outdoors at true midnight. */
+const OUTDOOR_NIGHT_DARKNESS = 0.55;
+
+/** A fight must never be harder to read than the walk to it. */
+const COMBAT_RELIEF = 0.82;
+
+/** Reach of the carried torch, and of the moonlight the party keeps about them. */
+const TORCH_RADIUS = 310;
+const GLOW_RADIUS = 380;
+
+/** A wash per weather, matched to the ids the game actually sets. */
+const WEATHER_TINTS: Record<string, { c: string; a: number }> = {
+  cloudy: { c: '#8a93a8', a: 0.10 },
+  rain: { c: '#23374f', a: 0.18 },
+  heavy_rain: { c: '#1a2a3f', a: 0.28 },
+  fog: { c: '#b9c2cc', a: 0.22 },
+  snow: { c: '#e1e6f5', a: 0.12 },
+  sandstorm: { c: '#c09a52', a: 0.30 },
+  eerie_mist: { c: '#6f8f7a', a: 0.24 },
+  blood_red_sky: { c: '#8e1f22', a: 0.16 },
+};
 
 export class CanvasBackend implements RenderBackend {
   readonly name = 'Canvas 2D';
@@ -94,6 +119,53 @@ export class CanvasBackend implements RenderBackend {
       }
     }
     ctx.globalAlpha = 1;
+    this.applyMood(ctx, frame.mood);
+  }
+
+  /**
+   * Light and tint the finished scene.
+   *
+   * The map renderer draws the world at noon under a clear sky and leaves the
+   * mood to whoever is replaying the frame, so this is the plain-canvas answer
+   * to what Pixi does with a lighting layer and a colour grade. It is coarser
+   * on purpose — one multiply pass and one tint — but it is the difference
+   * between a dungeon that is lit by a torch and a dungeon lit like a car park.
+   *
+   * Unlike the recorder, this holds a real context, so it can use a gradient
+   * and a blend mode rather than being limited to flat rectangles.
+   */
+  private applyMood(ctx: CanvasRenderingContext2D, mood: SceneMood): void {
+    const tint = mood.weather ? WEATHER_TINTS[mood.weather] : undefined;
+    if (tint) {
+      ctx.globalAlpha = tint.a;
+      ctx.fillStyle = tint.c;
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.globalAlpha = 1;
+    }
+
+    const night = mood.underground ? UNDERGROUND_DARKNESS : OUTDOOR_NIGHT_DARKNESS * Math.max(0, 1 - mood.daylight);
+    const darkness = mood.inCombat ? night * COMBAT_RELIEF : night;
+    if (darkness <= 0.01) return;
+
+    // Multiply, so the layer can only ever scale the world down — the party's
+    // light then reveals the map's own pixels instead of laying a pool of
+    // colour over them.
+    const radius = mood.underground ? TORCH_RADIUS : GLOW_RADIUS;
+    const fx = mood.focus ? mood.focus.x : this.width / 2;
+    const fy = mood.focus ? mood.focus.y : this.height / 2;
+    const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, radius);
+    const lit = Math.round(255 * (1 - darkness * (mood.underground ? 0 : 0.45)));
+    const dark = Math.round(255 * (1 - darkness));
+    grad.addColorStop(0, `rgb(255,${lit},${Math.round(lit * 0.92)})`);
+    grad.addColorStop(1, `rgb(${dark},${dark},${Math.round(dark * 1.12)})`);
+
+    const previous = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = `rgb(${dark},${dark},${Math.round(dark * 1.12)})`;
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillStyle = grad;
+    ctx.fillRect(fx - radius, fy - radius, radius * 2, radius * 2);
+    ctx.globalCompositeOperation = previous;
   }
 
   /**

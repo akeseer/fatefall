@@ -44,6 +44,7 @@ import {
 import type { BakedImage, DrawCommand, Frame, RenderBackend } from '../DrawCommand';
 import { Atmosphere } from './pixi/Atmosphere';
 import { Lighting } from './pixi/Lighting';
+import { Weather } from './pixi/Weather';
 
 /** A colour parsed once out of its CSS string. */
 interface Rgba {
@@ -110,6 +111,8 @@ export class PixiBackend implements RenderBackend {
 
   private frameId = 0;
 
+  /** Rain, snow, fog and dust, composited over the frame and under the lighting. */
+  private weather: Weather | null = null;
   /** The darkening-and-torch pass, composited over the finished world. */
   private lighting: Lighting | null = null;
   /** Colour grade, vignette and bloom, as filters over the lit world. */
@@ -143,6 +146,7 @@ export class PixiBackend implements RenderBackend {
     app.stage.addChild(world);
     this.world = world;
 
+    this.weather = new Weather(width, height);
     this.lighting = new Lighting(width, height);
     this.atmosphere = new Atmosphere(app.renderer, width, height);
     this.atmosphere.attach(world);
@@ -188,13 +192,22 @@ export class PixiBackend implements RenderBackend {
 
     this.flushRun();
 
-    // The lighting layer multiplies down everything drawn above, so it goes on
-    // last, and it has to be re-added because the display list was torn down at
-    // the top of this frame.
     const now = performance.now();
     const dt = now - this.lastSubmitMs;
     this.lastSubmitMs = now;
 
+    // Weather is in the scene rather than on the lens, so it goes above the
+    // drawn world and below the lighting that darkens both. Like the lighting it
+    // has to be re-added, because the display list was torn down at the top of
+    // this frame; unlike it, a clear sky is left out of the list entirely.
+    const weather = this.weather;
+    if (weather) {
+      weather.update(frame.mood, dt);
+      if (weather.active) world.addChild(weather.layer);
+    }
+
+    // The lighting layer multiplies down everything drawn above, so it goes on
+    // last.
     const lighting = this.lighting;
     if (lighting) {
       lighting.update(frame.mood, dt);
@@ -234,6 +247,8 @@ export class PixiBackend implements RenderBackend {
     this.atmosphere = null;
     this.lighting?.destroy();
     this.lighting = null;
+    this.weather?.destroy();
+    this.weather = null;
 
     // The canvas belongs to the game and another backend may be about to take
     // it over, so the view is left in the DOM.

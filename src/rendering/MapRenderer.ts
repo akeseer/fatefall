@@ -36,6 +36,128 @@ const TILE_COLORS: Record<TileType, string> = {
 };
 
 /**
+ * ── Overworld terrain transitions ──
+ *
+ * Two terrains that meet on a 32 px grid otherwise show a perfectly straight
+ * staircase, which is the single thing that makes a tile map read as a
+ * spreadsheet rather than a drawn map. Every overworld tile therefore paints a
+ * broken band of its *stronger* neighbours over its own edge, so the seam is
+ * settled once, in one direction, by rank:
+ *
+ *   water < swamp < grass < forest < desert < sand < snow < mountain
+ *          < town < road/bridge < dungeon entrance
+ *
+ * Sand spills onto grass, snow creeps over forest, scree tumbles off the
+ * mountains, road dirt feathers into the verge. The recessive tile does all the
+ * work, so no two tiles ever fight over the same boundary and nothing has to be
+ * drawn twice.
+ *
+ * Water is the exception, and gets a real coast instead of a bleed: the land
+ * tile lays down a damp-sand fringe on its side and the water tile lays down a
+ * band of shallows with a little foam on its own. Each half is drawn by the
+ * tile it belongs to, so a shoreline is still decided by rank, not contested.
+ */
+const TERRAIN_RANK: Partial<Record<TileType, number>> = {
+  [TileType.Water]: 0,
+  [TileType.Swamp]: 1,
+  [TileType.Grass]: 2,
+  [TileType.Forest]: 3,
+  [TileType.Desert]: 4,
+  [TileType.Sand]: 5,
+  [TileType.Snow]: 6,
+  [TileType.Mountain]: 7,
+  [TileType.Town]: 8,
+  [TileType.Road]: 9,
+  [TileType.Bridge]: 9,
+  [TileType.DungeonEntrance]: 10,
+};
+
+/** The two tones a terrain bleeds with, light first. */
+const BLEND_TONES: Partial<Record<TileType, [string, string]>> = {
+  [TileType.Swamp]: ['#31563a', '#284a30'],
+  [TileType.Grass]: ['#2f5f2f', '#2a542a'],
+  [TileType.Forest]: ['#2a5730', '#1f4325'],
+  [TileType.Desert]: ['#a4843f', '#95773a'],
+  [TileType.Sand]: ['#b6a768', '#a89854'],
+  [TileType.Snow]: ['#d8dce0', '#c6ccd4'],
+  [TileType.Mountain]: ['#71717c', '#5c5c67'],
+  [TileType.Town]: ['#5f5140', '#524534'],
+  [TileType.Road]: ['#8a7a5a', '#7b6b4c'],
+  [TileType.Bridge]: ['#7a6240', '#69543a'],
+  [TileType.DungeonEntrance]: ['#4a4a42', '#3a3a30'],
+};
+
+/** Damp sand on the land side of a coast, then the pale line right on the water. */
+const SHORE_DAMP: [string, string] = ['#97895e', '#867950'];
+const SHORE_RIM = '#bcae80';
+/** Shallows on the water side, and the foam that catches on the bank. */
+const SHALLOW: [string, string] = ['#3a72b4', '#31679f'];
+const FOAM = 'rgba(206,232,255,0.42)';
+
+/** Edge offsets in draw order: north, east, south, west. */
+const EDGE_STEPS: readonly (readonly [number, number])[] = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+/** Diagonal offsets plus which corner of the tile each one owns. */
+const CORNER_STEPS: readonly (readonly [number, number, number, number])[] = [
+  [-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1],
+];
+
+/**
+ * A stable 0..96 value for one cell of one tile. Position-derived, never
+ * random: a shoreline that re-rolled itself every frame would shimmer, which
+ * is far worse than a hard edge.
+ */
+function cellHash(x: number, y: number, k: number): number {
+  const h = (x * 7 + y * 13 + k * 29) * (x * 3 + y * 11 + 7);
+  return (h < 0 ? -h : h) % 97;
+}
+
+/**
+ * Lay a flat terrain tile and mottle it.
+ *
+ * What this replaces is why it exists: every one of these terrains chose its
+ * shade with `(x + y) % 2`, a literal checkerboard, and grass picked one of
+ * three tones for the whole tile. Either way the variation had a thirty-two
+ * pixel period aligned to the lattice, and the eye finds that instantly — the
+ * ground read as tiles no matter how good the seams between them were.
+ *
+ * So the base is one flat colour, and the only variation is a patch smaller
+ * than a tile, sized and placed off a hash, on roughly a third of them. It
+ * costs a third of a rectangle per tile and has no period to lock onto.
+ */
+function mottledTile(
+  ctx: CanvasRenderingContext2D,
+  sx: number, sy: number, x: number, y: number,
+  base: string, patch: string, seed: number,
+): void {
+  const f = Math.floor;
+  ctx.fillStyle = base;
+  ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
+  const h = cellHash(x, y, seed);
+  if (h % 3 !== 0) return;
+  const w = 9 + (h % 4) * 4;
+  const ht = 7 + ((h >> 2) % 4) * 3;
+  const px = (h * 5) % (TILE_SIZE - w);
+  const py = (h * 11) % (TILE_SIZE - ht);
+  ctx.fillStyle = patch;
+  ctx.fillRect(f(sx) + px, f(sy) + py, w, ht);
+}
+
+/** True where a road may run straight through into the next tile. */
+function joinsRoad(map: TileMap, x: number, y: number): boolean {
+  const t = map.tiles[y]?.[x];
+  return t === TileType.Road || t === TileType.Bridge || t === TileType.Town
+    || t === TileType.DungeonEntrance;
+}
+
+/** N/E/S/W bitmask of the neighbours a road or bridge carries traffic to. */
+function roadLinks(map: TileMap, x: number, y: number): number {
+  return (joinsRoad(map, x, y - 1) ? 1 : 0)
+    | (joinsRoad(map, x + 1, y) ? 2 : 0)
+    | (joinsRoad(map, x, y + 1) ? 4 : 0)
+    | (joinsRoad(map, x - 1, y) ? 8 : 0);
+}
+
+/**
  * Per-dungeon-theme palettes. Every theme in the game gets its own floor /
  * wall / accent colors so a Feywild Glade reads purple and glowing while an
  * Abyssal Rift reads red and scorched.
@@ -657,6 +779,183 @@ export class MapRenderer {
   }
 
   /**
+   * One rectangle measured inward from a tile edge.
+   *
+   * `dir` is 0 north, 1 east, 2 south, 3 west; `off` and `len` run along the
+   * edge and `depth` bites into the tile. Every transition is expressed through
+   * this so the four directions share one body instead of four.
+   */
+  private edgeRect(
+    ctx: CanvasRenderingContext2D,
+    sx: number, sy: number, dir: number,
+    off: number, len: number, depth: number,
+  ): void {
+    const T = TILE_SIZE;
+    if (dir === 0) ctx.fillRect(sx + off, sy, len, depth);
+    else if (dir === 1) ctx.fillRect(sx + T - depth, sy + off, depth, len);
+    else if (dir === 2) ctx.fillRect(sx + off, sy + T - depth, len, depth);
+    else ctx.fillRect(sx, sy + off, depth, len);
+  }
+
+  /**
+   * A stronger neighbour's colour broken along one edge of this tile.
+   *
+   * Four 8 px cells, each at one of three depths picked from the tile hash, so
+   * the boundary steps in and out instead of ruling a line; one cell then gets
+   * a narrower tongue pushed further in, which is what stops the result reading
+   * as a scalloped border. Cells are drawn a tone at a time because the Pixi
+   * backend batches runs of same-coloured rectangles and a per-cell colour
+   * change would break the run four times an edge.
+   *
+   * Five rectangles.
+   */
+  private blendEdge(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, sx: number, sy: number, dir: number,
+    toneA: string, toneB: string, minDepth: number, spread: number,
+  ): void {
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = pass === 0 ? toneA : toneB;
+      for (let i = 0; i < 4; i++) {
+        const h = cellHash(x, y, dir * 7 + i);
+        if (h % 2 !== pass) continue;
+        this.edgeRect(ctx, sx, sy, dir, i * 8, 8, minDepth + (h % 3) * spread);
+      }
+    }
+    const t = cellHash(x, y, dir * 7 + 11);
+    ctx.fillStyle = toneA;
+    this.edgeRect(ctx, sx, sy, dir, (t % 4) * 8 + 2, 4, minDepth + spread * 3 + (t % 2) * 2);
+  }
+
+  /** A stepped nub of a stronger diagonal neighbour, so corners are not square. */
+  private blendCorner(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, sx: number, sy: number,
+    cx: number, cy: number, tone: string, base = 5,
+  ): void {
+    const s = base + (cellHash(x, y, 53 + cx * 3 + cy * 5) % 3) * 2;
+    ctx.fillStyle = tone;
+    ctx.fillRect(cx === 0 ? sx : sx + TILE_SIZE - s, cy === 0 ? sy : sy + TILE_SIZE - s, s, s);
+  }
+
+  /** The land half of a coast: damp sand, then a bleached rim on the waterline. */
+  private shoreLand(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, sx: number, sy: number, dir: number,
+  ): void {
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = SHORE_DAMP[pass];
+      for (let i = 0; i < 4; i++) {
+        const h = cellHash(x, y, 60 + dir * 7 + i);
+        if (h % 2 !== pass) continue;
+        this.edgeRect(ctx, sx, sy, dir, i * 8, 8, 2 + (h % 4) * 2);
+      }
+    }
+    // The bleached rim skips a cell here and there, so a headland is not traced
+    // in one even stroke the way an outline would be.
+    ctx.fillStyle = SHORE_RIM;
+    for (let i = 0; i < 4; i++) {
+      const h = cellHash(x, y, 60 + dir * 7 + i);
+      if (h % 5 === 0) continue;
+      this.edgeRect(ctx, sx, sy, dir, i * 8 + (h % 3), 8 - (h % 3), 1 + (h % 3));
+    }
+  }
+
+  /** The water half of a coast: a band of shallows with foam on the bank. */
+  private shoreWater(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, sx: number, sy: number, dir: number,
+  ): void {
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = SHALLOW[pass];
+      for (let i = 0; i < 4; i++) {
+        const h = cellHash(x, y, 80 + dir * 7 + i);
+        if (h % 2 !== pass) continue;
+        this.edgeRect(ctx, sx, sy, dir, i * 8, 8, 5 + (h % 3) * 3);
+      }
+    }
+    ctx.fillStyle = FOAM;
+    for (let i = 0; i < 4; i++) {
+      const h = cellHash(x, y, 80 + dir * 7 + i);
+      if (h % 3 === 0) continue;
+      this.edgeRect(ctx, sx, sy, dir, i * 8 + 1, 6, 2);
+    }
+  }
+
+  /**
+   * Everything a tile owes its neighbours: bleeds from stronger terrain on the
+   * four edges, nubs on the four diagonals, a coast where it meets water, and
+   * the shadow any mountain to the north or west throws across it.
+   *
+   * A tile in the middle of a biome costs nothing at all — every branch is
+   * gated on the neighbour actually differing.
+   */
+  private blendOverworldTile(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number, tile: TileType,
+  ): void {
+    const rank = TERRAIN_RANK[tile];
+    if (rank === undefined) return;
+    const isWater = tile === TileType.Water;
+    // A bridge is a structure standing in the water, not a beach.
+    const spanning = tile === TileType.Bridge;
+
+    for (let d = 0; d < 4; d++) {
+      const step = EDGE_STEPS[d];
+      const n = map.tiles[y + step[1]]?.[x + step[0]] ?? TileType.Void;
+      if (n === tile) continue;
+      const nr = TERRAIN_RANK[n];
+      if (nr === undefined) continue;
+      if (isWater) {
+        if (n !== TileType.Bridge) this.shoreWater(ctx, x, y, sx, sy, d);
+        continue;
+      }
+      if (n === TileType.Water) {
+        if (!spanning) this.shoreLand(ctx, x, y, sx, sy, d);
+        continue;
+      }
+      if (nr <= rank) continue;
+      const tones = BLEND_TONES[n];
+      if (tones) this.blendEdge(ctx, x, y, sx, sy, d, tones[0], tones[1], 4, 2);
+    }
+
+    for (const [dx, dy, cx, cy] of CORNER_STEPS) {
+      const n = map.tiles[y + dy]?.[x + dx] ?? TileType.Void;
+      if (n === tile) continue;
+      const nr = TERRAIN_RANK[n];
+      if (nr === undefined) continue;
+      if (isWater) {
+        if (n !== TileType.Bridge) this.blendCorner(ctx, x, y, sx, sy, cx, cy, SHALLOW[0], 3);
+        continue;
+      }
+      if (n === TileType.Water) {
+        // Banks are kept tighter at the corners than an inland blend: a river
+        // one tile wide otherwise disappears under its own beaches.
+        if (!spanning) this.blendCorner(ctx, x, y, sx, sy, cx, cy, SHORE_DAMP[0], 3);
+        continue;
+      }
+      if (nr <= rank) continue;
+      const tones = BLEND_TONES[n];
+      if (tones) this.blendCorner(ctx, x, y, sx, sy, cx, cy, tones[1]);
+    }
+
+    // Mountains are lit from the north-west throughout, so the ground below and
+    // east of one sits in its shadow. This is form, not time of day — the
+    // backend's own lighting pass still grades the whole scene on top. Peaks
+    // themselves are exempt: they already overlap each other, and a band across
+    // every one of them would put the grid straight back.
+    if (tile === TileType.Mountain) return;
+    if ((map.tiles[y - 1]?.[x] ?? TileType.Void) === TileType.Mountain) {
+      ctx.fillStyle = 'rgba(16,16,26,0.30)';
+      ctx.fillRect(sx, sy, TILE_SIZE, 6 + (cellHash(x, y, 91) % 3));
+    }
+    if ((map.tiles[y]?.[x - 1] ?? TileType.Void) === TileType.Mountain) {
+      ctx.fillStyle = 'rgba(16,16,26,0.20)';
+      ctx.fillRect(sx, sy, 4, TILE_SIZE);
+    }
+  }
+
+  /**
    * Overworld rendering — the massive open world. Grass, forests, mountains,
    * animated water, roads/bridges, biome floors, town buildings, dungeon
    * entrances, wandering NPCs, wildlife, and the party.
@@ -675,9 +974,7 @@ export class MapRenderer {
     campTiles: { x: number; y: number }[] = [],
     pois: { tile: { x: number; y: number }; kind: string; discovered: boolean; name: string }[] = [],
     questTile: { x: number; y: number } | null = null,
-    trail: { x: number; y: number }[] = [],
-    weatherType: string | null = null,
-    light: number = 1
+    trail: { x: number; y: number }[] = []
   ) {
     this.time += 0.016;
     this.renderTime += dt;
@@ -699,9 +996,7 @@ export class MapRenderer {
 
         switch (tile) {
           case TileType.Grass: {
-            const v = ((x * 31 + y * 57) % 9) - 4;
-            ctx.fillStyle = v > 0 ? '#2f5f2f' : v < 0 ? '#2a542a' : '#2d5a2d';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
+            mottledTile(ctx, sx, sy, x, y, '#2d5a2d', '#2a552a', 5);
             if (hash % 19 === 0) {
               ctx.fillStyle = 'rgba(120,200,90,0.5)';
               ctx.fillRect(f(sx) + 8, f(sy) + 6, 2, 4);
@@ -718,34 +1013,98 @@ export class MapRenderer {
           case TileType.Forest: {
             ctx.fillStyle = '#1e4024';
             ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            // Canopy
-            ctx.fillStyle = '#2c5a30';
-            ctx.fillRect(f(sx) + 4, f(sy) + 4, 24, 20);
+            // Canopy, nudged and sized by a scattered hash so a wood is not a
+            // wallpaper of one identical tree. Where the wood continues north
+            // or west the crown overhangs into that tile — those were drawn
+            // first, so the overlap sticks and the canopies close up instead of
+            // leaving a dark grid line between every pair of trees.
+            const fh = cellHash(x, y, 23);
+            const jx = (fh % 7) - 3;
+            const jy = (cellHash(x, y, 41) % 7) - 3;
+            const northWood = (map.tiles[y - 1]?.[x] ?? TileType.Void) === TileType.Forest;
+            const westWood = (map.tiles[y]?.[x - 1] ?? TileType.Void) === TileType.Forest;
+            const cl = f(sx) + (westWood ? -7 : 3) + jx;
+            const ct = f(sy) + (northWood ? -7 : 3) + jy;
+            const cw = (westWood ? 33 : 24) + (fh % 4) * 2;
+            const ch = (northWood ? 32 : 22);
+            ctx.fillStyle = fh % 3 === 0 ? '#2f6033' : '#2c5a30';
+            ctx.fillRect(cl, ct, cw, ch);
+            // Sunlit crown to the north-west, matching the mountains' light.
+            ctx.fillStyle = '#3d7a41';
+            ctx.fillRect(f(sx) + 6 + jx, f(sy) + 6 + jy, 10, 6);
             ctx.fillStyle = '#36703a';
-            ctx.fillRect(f(sx) + 8, f(sy) + 8, 8, 6);
-            ctx.fillRect(f(sx) + 18, f(sy) + 12, 6, 5);
+            ctx.fillRect(f(sx) + 18 + jx, f(sy) + 12 + jy, 6, 5);
             // Trunk
             ctx.fillStyle = '#5a4024';
-            ctx.fillRect(f(sx) + 14, f(sy) + 24, 4, 6);
-            // Shade at base
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.fillRect(f(sx) + 2, f(sy) + 28, 28, 2);
+            ctx.fillRect(f(sx) + 14 + jx, f(sy) + 24, 4, 6);
+            // Shade under the crown, only where the wood actually ends.
+            if ((map.tiles[y + 1]?.[x] ?? TileType.Void) !== TileType.Forest) {
+              ctx.fillStyle = 'rgba(0,0,0,0.2)';
+              ctx.fillRect(f(sx) + 2, f(sy) + 28, 28, 2);
+            }
             break;
           }
           case TileType.Mountain: {
-            ctx.fillStyle = '#5e5e68';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            ctx.fillStyle = '#6e6e78';
-            ctx.fillRect(f(sx) + 4, f(sy) + 4, 24, 10);
-            ctx.fillStyle = '#7a7a86';
-            ctx.fillRect(f(sx) + 10, f(sy) + 6, 6, 4);
-            ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.fillRect(f(sx) + 4, f(sy) + 18, 24, 2);
-            // Snow cap on northern mountains
-            if (y < map.height * 0.28) {
-              ctx.fillStyle = '#e8ecf0';
-              ctx.fillRect(f(sx) + 8, f(sy) + 2, 12, 6);
-              ctx.fillRect(f(sx) + 12, f(sy) + 0, 6, 2);
+            // Peaks are silhouettes, not stacked boxes: each is a triangle lit
+            // from the north-west and standing on the bottom edge of its tile,
+            // and where there is more mountain to the north it rises well into
+            // that tile. Neighbouring peaks therefore overlap, which is the only
+            // thing that makes a range read as ridges one behind another rather
+            // than as a wallpaper of identical pyramids.
+            const px = f(sx);
+            const py = f(sy);
+            const h1 = cellHash(x, y, 3);
+            const h2 = cellHash(x, y, 17);
+            const northward = (map.tiles[y - 1]?.[x] ?? TileType.Void) === TileType.Mountain;
+            const rise = northward ? 9 + (h1 % 8) : 0;
+            const apexX = px + 9 + (h1 % 15);
+            const apexY = py + 1 + (h2 % 8) - rise;
+            const baseY = py + TILE_SIZE;
+            // Three depth tones, so some ridges sit back behind others; and one
+            // tile in four is a saddle with no near peak at all, which is what
+            // puts passes and valleys into a range instead of an even comb.
+            const far = h1 % 3;
+            const shade = far === 0 ? '#5b5b66' : far === 1 ? '#64646f' : '#6c6c78';
+            const lit = far === 0 ? '#82828e' : far === 1 ? '#90909d' : '#9b9ba7';
+            const saddle = h2 % 4 === 0;
+            // Scree the range stands on.
+            ctx.fillStyle = h2 % 2 === 0 ? '#4c4c57' : '#464651';
+            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            // A lower shoulder to the east, drawn first so the peak overlaps it.
+            ctx.fillStyle = '#55555f';
+            ctx.beginPath();
+            ctx.moveTo(px + 19 + (h2 % 9), py + 7 + (h1 % 7) - rise);
+            ctx.lineTo(px + TILE_SIZE, baseY);
+            ctx.lineTo(px + 6, baseY);
+            ctx.closePath();
+            ctx.fill();
+            if (!saddle) {
+              // The shaded eastern flank of the near peak.
+              ctx.fillStyle = shade;
+              ctx.beginPath();
+              ctx.moveTo(apexX, apexY);
+              ctx.lineTo(apexX + 15 + (h1 % 7), baseY);
+              ctx.lineTo(apexX - 15 - (h2 % 7), baseY);
+              ctx.closePath();
+              ctx.fill();
+              // The lit north-western flank, a good third of the peak.
+              ctx.fillStyle = lit;
+              ctx.beginPath();
+              ctx.moveTo(apexX, apexY);
+              ctx.lineTo(apexX - 15 - (h2 % 7), baseY);
+              ctx.lineTo(apexX - 3, baseY);
+              ctx.closePath();
+              ctx.fill();
+              // Snow only on the summits that actually stand above the range.
+              if (y < map.height * 0.34 && apexY < py) {
+                ctx.fillStyle = '#e8ecf0';
+                ctx.beginPath();
+                ctx.moveTo(apexX, apexY);
+                ctx.lineTo(apexX + 7, apexY + 10);
+                ctx.lineTo(apexX - 7, apexY + 10);
+                ctx.closePath();
+                ctx.fill();
+              }
             }
             break;
           }
@@ -759,24 +1118,21 @@ export class MapRenderer {
             break;
           }
           case TileType.Sand: {
-            ctx.fillStyle = (x + y) % 2 === 0 ? '#b0a060' : '#a89854';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
+            mottledTile(ctx, sx, sy, x, y, '#b0a060', '#a89854', 41);
             ctx.fillStyle = 'rgba(255,240,200,0.35)';
             ctx.fillRect(f(sx) + 6, f(sy) + 8, 3, 2);
             ctx.fillRect(f(sx) + 18, f(sy) + 22, 3, 2);
             break;
           }
           case TileType.Snow: {
-            ctx.fillStyle = (x + y) % 2 === 0 ? '#d8dce0' : '#ccd2d8';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
+            mottledTile(ctx, sx, sy, x, y, '#d8dce0', '#ccd2d8', 43);
             ctx.fillStyle = 'rgba(180,200,230,0.4)';
             ctx.fillRect(f(sx) + 8, f(sy) + 6, 4, 3);
             ctx.fillRect(f(sx) + 20, f(sy) + 18, 4, 3);
             break;
           }
           case TileType.Desert: {
-            ctx.fillStyle = (x + y) % 2 === 0 ? '#a08040' : '#967a3a';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
+            mottledTile(ctx, sx, sy, x, y, '#a08040', '#967a3a', 47);
             ctx.fillStyle = 'rgba(200,180,110,0.4)';
             ctx.fillRect(f(sx) + 2, f(sy) + 16, 14, 3);
             ctx.fillStyle = 'rgba(60,40,10,0.25)';
@@ -784,8 +1140,7 @@ export class MapRenderer {
             break;
           }
           case TileType.Swamp: {
-            ctx.fillStyle = (x + y) % 2 === 0 ? '#2a4a2e' : '#25452a';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
+            mottledTile(ctx, sx, sy, x, y, '#2a4a2e', '#25452a', 53);
             // Murky pool
             ctx.fillStyle = 'rgba(40,90,50,0.6)';
             ctx.fillRect(f(sx) + 8, f(sy) + 10, 16, 12);
@@ -798,34 +1153,73 @@ export class MapRenderer {
             break;
           }
           case TileType.Road: {
-            ctx.fillStyle = (x + y) % 2 === 0 ? '#8a7a5a' : '#847452';
-            ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            // Worn wheel ruts
+            // Ruts and verges follow where the road actually goes, so a run of
+            // road reads as one continuous track instead of thirty-two-pixel
+            // segments each capped with its own kerb.
+            const link = roadLinks(map, x, y);
+            mottledTile(ctx, sx, sy, x, y, '#8a7a5a', '#847452', 59);
             ctx.fillStyle = 'rgba(60,45,25,0.35)';
-            ctx.fillRect(f(sx) + 6, f(sy), 3, TILE_SIZE);
-            ctx.fillRect(f(sx) + 23, f(sy), 3, TILE_SIZE);
-            // Edge stones
-            ctx.fillStyle = 'rgba(200,190,160,0.3)';
-            ctx.fillRect(f(sx), f(sy), 2, TILE_SIZE);
-            ctx.fillRect(f(sx) + TILE_SIZE - 2, f(sy), 2, TILE_SIZE);
+            if (link & 0b0101) {
+              ctx.fillRect(f(sx) + 8, f(sy), 3, TILE_SIZE);
+              ctx.fillRect(f(sx) + 21, f(sy), 3, TILE_SIZE);
+            }
+            if (link & 0b1010) {
+              ctx.fillRect(f(sx), f(sy) + 8, TILE_SIZE, 3);
+              ctx.fillRect(f(sx), f(sy) + 21, TILE_SIZE, 3);
+            }
+            if (link === 0) ctx.fillRect(f(sx) + 10, f(sy) + 10, 12, 12);
+            // Pale grit kerbs only where the road genuinely ends.
+            ctx.fillStyle = 'rgba(204,194,164,0.30)';
+            if (!(link & 0b0001)) ctx.fillRect(f(sx), f(sy), TILE_SIZE, 2);
+            if (!(link & 0b0010)) ctx.fillRect(f(sx) + TILE_SIZE - 2, f(sy), 2, TILE_SIZE);
+            if (!(link & 0b0100)) ctx.fillRect(f(sx), f(sy) + TILE_SIZE - 2, TILE_SIZE, 2);
+            if (!(link & 0b1000)) ctx.fillRect(f(sx), f(sy), 2, TILE_SIZE);
             break;
           }
           case TileType.Bridge: {
+            // Planks lie across the traffic and the rails run with it, so which
+            // way the span points has to be worked out before anything is drawn.
+            const link = roadLinks(map, x, y);
+            const ew = ((link & 0b0010) ? 1 : 0) + ((link & 0b1000) ? 1 : 0);
+            const ns = ((link & 0b0001) ? 1 : 0) + ((link & 0b0100) ? 1 : 0);
+            const across = ew > ns;
             ctx.fillStyle = '#6a5434';
             ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            // Planks
             for (let p = 0; p < 4; p++) {
               ctx.fillStyle = p % 2 === 0 ? '#7a6240' : '#6e5838';
-              ctx.fillRect(f(sx), f(sy) + p * 8, TILE_SIZE, 8);
+              if (across) ctx.fillRect(f(sx) + p * 8, f(sy), 8, TILE_SIZE);
+              else ctx.fillRect(f(sx), f(sy) + p * 8, TILE_SIZE, 8);
             }
-            // Railings
             ctx.fillStyle = '#4a3a22';
-            ctx.fillRect(f(sx), f(sy), 2, TILE_SIZE);
-            ctx.fillRect(f(sx) + TILE_SIZE - 2, f(sy), 2, TILE_SIZE);
-            // Water beneath (gaps at the edges)
-            ctx.fillStyle = 'rgba(34,68,136,0.7)';
-            ctx.fillRect(f(sx) + 2, f(sy) + 4, TILE_SIZE - 4, 2);
-            ctx.fillRect(f(sx) + 2, f(sy) + 26, TILE_SIZE - 4, 2);
+            if (across) {
+              ctx.fillRect(f(sx), f(sy), TILE_SIZE, 3);
+              ctx.fillRect(f(sx), f(sy) + TILE_SIZE - 3, TILE_SIZE, 3);
+            } else {
+              ctx.fillRect(f(sx), f(sy), 3, TILE_SIZE);
+              ctx.fillRect(f(sx) + TILE_SIZE - 3, f(sy), 3, TILE_SIZE);
+            }
+            // The dark of the water showing under the deck beside each rail.
+            ctx.fillStyle = 'rgba(20,38,74,0.55)';
+            if (across) {
+              ctx.fillRect(f(sx), f(sy) + 3, TILE_SIZE, 2);
+              ctx.fillRect(f(sx), f(sy) + TILE_SIZE - 5, TILE_SIZE, 2);
+            } else {
+              ctx.fillRect(f(sx) + 3, f(sy), 2, TILE_SIZE);
+              ctx.fillRect(f(sx) + TILE_SIZE - 5, f(sy), 2, TILE_SIZE);
+            }
+            // Stone abutments where the span comes ashore.
+            ctx.fillStyle = '#8a8276';
+            const lands = (nx: number, ny: number) => {
+              const t = map.tiles[ny]?.[nx] ?? TileType.Void;
+              return t !== TileType.Bridge && t !== TileType.Water && t !== TileType.Void;
+            };
+            if (across) {
+              if (lands(x - 1, y)) ctx.fillRect(f(sx), f(sy), 4, TILE_SIZE);
+              if (lands(x + 1, y)) ctx.fillRect(f(sx) + TILE_SIZE - 4, f(sy), 4, TILE_SIZE);
+            } else {
+              if (lands(x, y - 1)) ctx.fillRect(f(sx), f(sy), TILE_SIZE, 4);
+              if (lands(x, y + 1)) ctx.fillRect(f(sx), f(sy) + TILE_SIZE - 4, TILE_SIZE, 4);
+            }
             break;
           }
           case TileType.Town: {
@@ -897,6 +1291,10 @@ export class MapRenderer {
             break;
           }
         }
+
+        // Soften every seam this tile is the weaker half of, on top of the
+        // terrain it has just laid down.
+        this.blendOverworldTile(ctx, map, x, y, f(sx), f(sy), tile);
       }
     }
 
@@ -1155,99 +1553,14 @@ export class MapRenderer {
       });
     }
 
-    // Weather overlay — animated translucent veils over the whole viewport.
-    if (weatherType && weatherType !== 'clear') {
-      this.renderWeatherOverlay(ctx, weatherType);
-    }
-    // Day/night: shade the world toward nightfall. Towns stay readable as
-    // dim pools of yellow against the blue-black gloom.
-    const night = Math.max(0, 1 - light);
-    if (night > 0) {
-      ctx.fillStyle = `rgba(8,10,30,${(night * 0.72).toFixed(3)})`;
-      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-      // A soft warmer tint just beneath the gloom for a readable tabletop feel.
-      ctx.fillStyle = `rgba(120,110,60,${(night * 0.06).toFixed(3)})`;
-      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    }
+    // Weather and nightfall are deliberately absent: this draws the world at
+    // noon under a clear sky, and the backend lights and grades it from the
+    // SceneMood attached to the frame. Both used to be painted here as well,
+    // which meant a night was darkened twice — once to 28% here and again by
+    // the lighting pass — leaving about an eighth of the picture visible, and
+    // a snowfall was tinted three times over.
   }
 
-  /** Draw an animated translucent weather veil over the visible viewport. */
-  private renderWeatherOverlay(ctx: CanvasRenderingContext2D, type: string): void {
-    const camX = 0;
-    const camY = 0;
-    const w = GAME_WIDTH;
-    const h = GAME_HEIGHT;
-
-    if (type === 'rain' || type === 'heavy_rain') {
-      ctx.fillStyle = type === 'heavy_rain' ? 'rgba(30,45,70,0.30)' : 'rgba(35,55,85,0.18)';
-      ctx.fillRect(camX, camY, w, h);
-      ctx.strokeStyle = type === 'heavy_rain' ? 'rgba(200,215,255,0.55)' : 'rgba(180,205,255,0.35)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < (type === 'heavy_rain' ? 70 : 45); i++) {
-        const sx = camX + ((i * 97) % w) + Math.sin(this.time * 6 + i) * 14;
-        const sy = camY + ((i * 151) % h) + ((this.time * 260 + i * 61) % (h + 40));
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx - 3, sy + 14);
-        ctx.stroke();
-      }
-    } else if (type === 'snow') {
-      ctx.fillStyle = 'rgba(225,230,245,0.12)';
-      ctx.fillRect(camX, camY, w, h);
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      for (let i = 0; i < 60; i++) {
-        const wx = camX + ((i * 83) % w) + Math.sin(this.time * 1.5 + i) * 10;
-        const wy = camY + ((i * 137) % h) + ((this.time * 40 + i * 47) % (h + 30));
-        ctx.fillRect(Math.floor(wx), Math.floor(wy), 2, 2);
-      }
-    } else if (type === 'fog' || type === 'eerie_mist') {
-      const tint = type === 'eerie_mist' ? '40,60,80' : '160,170,190';
-      ctx.fillStyle = `rgba(${tint},${type === 'eerie_mist' ? 0.28 : 0.22})`;
-      ctx.fillRect(camX, camY, w, h);
-      // Drifting mist banks.
-      for (let i = 0; i < 8; i++) {
-        const bw = w * (0.35 + (i % 4) * 0.15);
-        const bx = camX - ((this.time * 12 + i * 130) % (w + bw)) + i * 90;
-        const by = camY + h * 0.15 + ((i * 59) % (h * 0.7));
-        ctx.fillStyle = type === 'eerie_mist'
-          ? 'rgba(70,110,90,0.10)'
-          : 'rgba(220,225,235,0.08)';
-        ctx.fillRect(Math.floor(bx), Math.floor(by), Math.floor(bw), 60);
-      }
-    } else if (type === 'sandstorm') {
-      ctx.fillStyle = 'rgba(150,120,60,0.25)';
-      ctx.fillRect(camX, camY, w, h);
-      ctx.fillStyle = 'rgba(220,190,120,0.7)';
-      for (let i = 0; i < 90; i++) {
-        const sx = camX + ((i * 71) % w) + ((this.time * 420 + i * 53) % (w + 60));
-        const sy = camY + ((i * 211) % h);
-        ctx.fillRect(Math.floor(sx), Math.floor(sy), 8, 2);
-      }
-    } else if (type === 'magical_aurora') {
-      ctx.fillStyle = 'rgba(20,10,50,0.30)';
-      ctx.fillRect(camX, camY, w, h);
-      // Auroral ribbons sweeping across the sky.
-      for (let band = 0; band < 5; band++) {
-        const by = camY + band * 42 + Math.sin(this.time * 1.2 + band) * 12;
-        const colors = ['rgba(80,255,160,0.20)', 'rgba(120,90,255,0.20)', 'rgba(255,90,200,0.18)', 'rgba(60,220,255,0.18)', 'rgba(160,255,120,0.18)'];
-        ctx.fillStyle = colors[band % colors.length];
-        ctx.fillRect(camX, by, w, 26);
-      }
-    } else if (type === 'blood_red_sky') {
-      ctx.fillStyle = 'rgba(140,10,10,0.34)';
-      ctx.fillRect(camX, camY, h * 0.4, Math.floor(h * 0.4));
-      ctx.fillStyle = 'rgba(140,10,10,0.18)';
-      ctx.fillRect(camX, camY + Math.floor(h * 0.4), w, Math.floor(h * 0.2));
-      ctx.fillStyle = 'rgba(255,60,30,0.08)';
-      ctx.fillRect(camX, camY, w, h);
-    }
-  }
-
-  /**
-   * Return the animated world-pixel position for a party member, easing it
-   * toward `member.tile` over `moveMs` with a smoothstep so steps read as
-   * walking. Teleports (new dungeon, formation warps) snap instantly.
-   */
   private getVisual(member: GameCharacter, dt: number, moveMs: number): VisualSprite {
     const targetX = member.tile.x * TILE_SIZE;
     const targetY = member.tile.y * TILE_SIZE;
