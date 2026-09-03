@@ -1705,6 +1705,429 @@ export class MapRenderer {
   }
 
   /**
+   * How far above its tile each landmark's drawing reaches, so its name can
+   * sit above the tallest thing instead of across it. Towers go a tile and
+   * a half up; most things only clear the top edge by a few pixels.
+   */
+  private static readonly LANDMARK_RISE: Record<string, number> = {
+    ancient_ruins: 3, abandoned_mine: 0, witch_hut: 8, dragon_lair: 3,
+    ancient_battlefield: 4, hidden_shrine: 3, crystal_cave: 6, bandit_outpost: 4,
+    lost_tomb: 5, enchanted_grove: 1, watchtower: 25, wizard_tower: 27,
+    haunted_forest: 8, mineral_spring: 4, failed_settlement: 2, goblin_camp: 8,
+    moon_forge: 14,
+  };
+
+  /**
+   * One overworld landmark, drawn in the hand of the terrain around it.
+   *
+   * These replace a table of emoji glyphs on coloured squares, which were the
+   * one thing on a hand-drawn map that looked pasted on. Each is drawn to
+   * fill its tile and to rise above it where the real thing would — the
+   * towers go well up into the tile to the north — lit from the north-west
+   * like the mountains and the towns, with its shadow on the ground to the
+   * south-east. Anything that burns, glows or floats breathes off
+   * `this.time`; everything else holds still, so the map does not shimmer.
+   *
+   * Sixteen kinds and a fallback; between twenty and fifty rectangles each.
+   */
+  private drawLandmark(ctx: CanvasRenderingContext2D, kind: string, X: number, Y: number, tx: number, ty: number): void {
+    const t = this.time;
+    const f = Math.floor;
+    const r = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    const a = (rgb: string, alpha: number) => 'rgba(' + rgb + ',' + alpha.toFixed(3) + ')';
+    const sh = 'rgba(0,0,0,0.25)';
+    // Three puffs climbing and thinning, as the town chimneys do.
+    const puffs = (px: number, py: number, seed: number, rgb: string, spread = 1.5) => {
+      for (let i = 0; i < 3; i++) {
+        const ph = (t * 0.6 + seed * 0.37 + i * 0.33) % 1;
+        r(px + Math.round(Math.sin(ph * 6.28 + seed) * spread), py - 2 - f(ph * 12), i === 2 ? 3 : 2, i === 2 ? 3 : 2, a(rgb, 0.55 * (1 - ph)));
+      }
+    };
+    // A fire: light on the ground, a body of flame licking up, a hot core.
+    const fire = (px: number, py: number, seed: number) => {
+      const lick = Math.sin(t * 9 + seed) * 0.5 + 0.5;
+      const lick2 = Math.sin(t * 13 + seed * 1.7) * 0.5 + 0.5;
+      r(px - 5, py - 1, 14, 5, a('255,120,40', 0.16 + lick * 0.10));
+      r(px, py - 4 - f(lick * 2), 4, 4 + f(lick * 2), a('255,140,40', 0.85));
+      r(px + 1, py - 6 - f(lick2 * 2), 2, 3, a('255,220,120', 0.8));
+    };
+
+    switch (kind) {
+      case 'ancient_ruins': {
+        // A plinth with three columns on it, two of them broken, and the
+        // lintel they once carried lying across the front. Ivy on the ones
+        // still standing.
+        r(X + 2, Y + 20, 28, 9, '#6e6a76'); r(X + 2, Y + 20, 28, 1, '#8a8694'); r(X + 2, Y + 28, 28, 1, '#3a3640');
+        r(X + 5, Y - 1, 5, 21, '#8a8694'); r(X + 8, Y - 1, 2, 21, '#5e5a64');
+        r(X + 4, Y - 3, 7, 2, '#9c98a6'); r(X + 4, Y + 19, 7, 2, '#5e5a64');
+        r(X + 14, Y + 10, 5, 10, '#8a8694'); r(X + 17, Y + 10, 2, 10, '#5e5a64');
+        r(X + 14, Y + 8, 2, 2, '#8a8694'); r(X + 17, Y + 9, 2, 1, '#5e5a64');
+        r(X + 23, Y + 4, 5, 16, '#8a8694'); r(X + 26, Y + 4, 2, 16, '#5e5a64');
+        r(X + 23, Y + 2, 2, 2, '#8a8694'); r(X + 25, Y + 3, 3, 1, '#5e5a64');
+        r(X + 9, Y + 24, 9, 4, '#7e7a88'); r(X + 17, Y + 22, 9, 4, '#7e7a88');
+        r(X + 9, Y + 24, 9, 1, '#9c98a6'); r(X + 17, Y + 22, 9, 1, '#9c98a6');
+        r(X + 9, Y + 27, 9, 1, '#4e4a52'); r(X + 17, Y + 25, 9, 1, '#4e4a52');
+        r(X + 1, Y + 27, 3, 2, '#5e5a64'); r(X + 28, Y + 26, 3, 2, '#5e5a64');
+        r(X + 5, Y + 8, 2, 6, '#3d7a41'); r(X + 6, Y + 13, 3, 3, '#2f6033');
+        r(X + 25, Y + 11, 2, 5, '#3d7a41'); r(X + 24, Y + 15, 3, 2, '#2f6033');
+        r(X + 12, Y + 28, 3, 2, '#3d7a41'); r(X + 21, Y + 27, 3, 2, '#3d7a41');
+        r(X + 4, Y + 29, 28, 2, sh);
+        break;
+      }
+      case 'abandoned_mine': {
+        // A hillside with a timbered adit cut into it; rails run out of the
+        // dark and a loaded cart stands in the mouth. A pick leans by the post.
+        r(X, Y + 8, 32, 20, '#585048'); r(X + 2, Y + 3, 26, 6, '#6a6058'); r(X + 7, Y, 14, 4, '#7a7068');
+        r(X + 7, Y, 5, 1, '#8e8478'); r(X + 2, Y + 3, 5, 1, '#8e8478'); r(X, Y + 8, 4, 2, '#7a7068');
+        r(X + 27, Y + 8, 5, 20, '#3e3630'); r(X + 22, Y + 3, 6, 3, '#4e4640');
+        r(X + 4, Y + 2, 6, 1, '#3d7a41'); r(X + 24, Y + 6, 5, 1, '#3d7a41');
+        r(X + 7, Y + 10, 18, 3, '#7a5a34'); r(X + 7, Y + 10, 18, 1, '#8e6c40');
+        r(X + 8, Y + 12, 3, 16, '#6a4a2a'); r(X + 21, Y + 12, 3, 16, '#6a4a2a');
+        r(X + 10, Y + 13, 1, 15, '#4a3018'); r(X + 23, Y + 13, 1, 15, '#4a3018');
+        r(X + 11, Y + 13, 10, 15, '#0a0a10'); r(X + 11, Y + 13, 10, 1, '#1e1a1a');
+        r(X + 12, Y + 25, 8, 1, '#5a4024'); r(X + 12, Y + 29, 8, 1, '#5a4024');
+        r(X + 13, Y + 22, 1, 9, '#8a8a90'); r(X + 18, Y + 22, 1, 9, '#8a8a90');
+        r(X + 12, Y + 24, 8, 5, '#5a3a22'); r(X + 12, Y + 24, 8, 1, '#7a5a34');
+        r(X + 13, Y + 22, 6, 2, '#8a8aa0'); r(X + 14, Y + 22, 2, 1, '#b0b0c0');
+        r(X + 12, Y + 29, 2, 2, '#2a2018'); r(X + 18, Y + 29, 2, 2, '#2a2018');
+        r(X + 4, Y + 20, 1, 8, '#6a4a2a'); r(X + 2, Y + 19, 5, 1, '#8a8a90');
+        r(X + 2, Y + 28, 30, 2, sh);
+        break;
+      }
+      case 'witch_hut': {
+        // A hut on stilts that leans east under a roof that comes to a
+        // crooked, curling point. One window lit green, a ladder down, and a
+        // cauldron going under the floor.
+        r(X + 8, Y + 29, 22, 2, sh);
+        r(X + 6, Y + 20, 2, 10, '#4a3020'); r(X + 13, Y + 21, 2, 9, '#4a3020');
+        r(X + 20, Y + 21, 2, 9, '#4a3020'); r(X + 26, Y + 19, 2, 11, '#4a3020');
+        r(X + 8, Y + 25, 5, 1, '#5a4024'); r(X + 22, Y + 24, 4, 1, '#5a4024');
+        r(X + 8, Y + 24, 5, 5, '#2a2a30'); r(X + 7, Y + 24, 6, 1, '#3a3a44');
+        r(X + 9, Y + 23, 3, 1, a('120,255,120', 0.6 + Math.sin(t * 5 + tx) * 0.3));
+        r(X + 5, Y + 9, 20, 6, '#6a5236'); r(X + 7, Y + 15, 20, 6, '#62492e');
+        r(X + 5, Y + 12, 20, 1, '#54402a'); r(X + 7, Y + 18, 20, 1, '#54402a');
+        r(X + 24, Y + 9, 1, 6, '#3e2e1c'); r(X + 26, Y + 15, 1, 6, '#3e2e1c');
+        r(X + 19, Y + 13, 5, 8, '#2a2018');
+        r(X + 8, Y + 10, 6, 6, '#2a2018');
+        r(X + 9, Y + 11, 4, 4, a('170,255,120', 0.7 + Math.sin(t * 3 + ty) * 0.2));
+        r(X + 2, Y + 6, 26, 4, '#3a3028'); r(X + 5, Y + 3, 18, 3, '#433830');
+        r(X + 8, Y, 12, 3, '#4a3e36'); r(X + 11, Y - 3, 7, 3, '#4a3e36');
+        r(X + 14, Y - 6, 4, 3, '#4a3e36'); r(X + 17, Y - 8, 3, 2, '#4a3e36');
+        r(X + 5, Y + 3, 3, 1, '#6a5a50'); r(X + 8, Y, 3, 1, '#6a5a50'); r(X + 11, Y - 3, 2, 1, '#6a5a50');
+        r(X + 22, Y - 2, 3, 6, '#4a4048');
+        puffs(X + 23, Y - 3, tx + ty, '190,210,170');
+        r(X + 16, Y + 21, 1, 9, '#5a4024'); r(X + 19, Y + 21, 1, 9, '#5a4024');
+        r(X + 16, Y + 23, 4, 1, '#6a4a2a'); r(X + 16, Y + 26, 4, 1, '#6a4a2a'); r(X + 16, Y + 29, 4, 1, '#6a4a2a');
+        break;
+      }
+      case 'dragon_lair': {
+        // Dark red rock with a wide mouth scorched black around it, embers
+        // deep inside breathing like something asleep, and what the dragon
+        // has eaten lying at the threshold.
+        r(X, Y + 6, 32, 24, '#3e2e2e'); r(X + 3, Y + 1, 26, 6, '#4e3a3a'); r(X + 8, Y - 3, 16, 5, '#5a4444');
+        r(X + 8, Y - 3, 6, 2, '#6e5656'); r(X + 3, Y + 1, 6, 2, '#6e5656'); r(X, Y + 6, 5, 2, '#5a4444');
+        r(X + 27, Y + 6, 5, 24, '#2a1e1e'); r(X + 22, Y + 1, 7, 4, '#3a2a2a');
+        r(X + 5, Y + 9, 22, 4, '#1e1414'); r(X + 3, Y + 12, 4, 12, '#2a1a1a'); r(X + 25, Y + 12, 4, 10, '#1e1414');
+        r(X + 8, Y + 11, 16, 17, '#0a0606'); r(X + 6, Y + 15, 20, 13, '#0a0606');
+        r(X + 9, Y + 11, 2, 3, '#5a4444'); r(X + 14, Y + 11, 2, 4, '#5a4444'); r(X + 19, Y + 11, 2, 3, '#5a4444');
+        const ember = Math.sin(t * 1.3 + tx) * 0.5 + 0.5;
+        r(X + 9, Y + 18, 14, 10, a('255,80,20', 0.18 + ember * 0.22));
+        r(X + 12, Y + 22, 8, 5, a('255,160,50', 0.15 + ember * 0.25));
+        r(X + 14, Y + 25, 3, 1, a('255,230,150', 0.3 + ember * 0.5));
+        r(X + 1, Y + 24, 5, 4, '#e8e0d0'); r(X + 2, Y + 25, 1, 1, '#1a1010'); r(X + 4, Y + 25, 1, 1, '#1a1010'); r(X + 1, Y + 28, 5, 1, '#c8c0b0');
+        r(X + 26, Y + 24, 1, 5, '#d8d0c0'); r(X + 28, Y + 23, 1, 6, '#d8d0c0'); r(X + 30, Y + 25, 1, 4, '#d8d0c0');
+        r(X + 8, Y + 29, 8, 1, '#d8d0c0'); r(X + 7, Y + 28, 2, 2, '#e8e0d0'); r(X + 15, Y + 28, 2, 2, '#e8e0d0');
+        puffs(X + 15, Y + 10, tx, '70,50,50', 2.5);
+        r(X + 2, Y + 30, 30, 1, sh);
+        break;
+      }
+      case 'ancient_battlefield': {
+        // Churned ground, two standards on broken poles, a sword driven in
+        // to the guard, a spear, a shield, a helm, and a crow that has not
+        // left.
+        r(X + 2, Y + 17, 28, 12, '#5a4e3c'); r(X + 6, Y + 22, 8, 3, '#4c4232'); r(X + 18, Y + 20, 7, 4, '#4c4232');
+        r(X + 4, Y + 29, 26, 2, sh);
+        const wave = Math.round(Math.sin(t * 3 + tx) * 1.2);
+        r(X + 6, Y - 2, 2, 30, '#5a4024'); r(X + 6, Y - 2, 1, 30, '#7a5a34');
+        r(X + 8, Y - 1 + wave, 10, 7, '#a03030'); r(X + 8, Y - 1 + wave, 10, 1, '#c04848');
+        r(X + 16, Y + 6 + wave, 2, 2, '#a03030'); r(X + 12, Y + 6 + wave, 2, 3, '#a03030');
+        r(X + 11, Y + 1 + wave, 3, 3, '#e8d070');
+        r(X + 24, Y + 8, 2, 20, '#5a4024'); r(X + 23, Y + 7, 1, 2, '#5a4024');
+        r(X + 18, Y + 9, 6, 8, '#3a4a80'); r(X + 18, Y + 17, 2, 2, '#3a4a80'); r(X + 21, Y + 17, 2, 3, '#3a4a80');
+        r(X + 23, Y + 5, 3, 2, '#141418'); r(X + 25, Y + 4, 1, 1, '#141418');
+        r(X + 13, Y + 9, 2, 2, '#8a6a30'); r(X + 13, Y + 11, 2, 4, '#5a3a22'); r(X + 11, Y + 15, 6, 1, '#c0c4cc');
+        r(X + 13, Y + 16, 2, 10, '#c0c4cc'); r(X + 14, Y + 16, 1, 10, '#8a8e96');
+        r(X + 29, Y + 10, 1, 17, '#6a4a2a'); r(X + 28, Y + 7, 3, 3, '#a0a4ac');
+        r(X + 2, Y + 24, 6, 5, '#6a4a2a'); r(X + 2, Y + 24, 6, 1, '#8a6a40'); r(X + 4, Y + 26, 2, 2, '#a0a4ac');
+        r(X + 19, Y + 25, 5, 3, '#8a8e96'); r(X + 20, Y + 24, 3, 1, '#a0a4ac'); r(X + 19, Y + 27, 5, 1, '#5e6068');
+        r(X + 26, Y + 27, 3, 2, '#e8e0d0');
+        break;
+      }
+      case 'hidden_shrine': {
+        // A little stone shrine: two steps, two pillars, a roof with turned
+        // up ends, an idol in the niche and a flame in a bowl before it.
+        // Lanterns either side, moss on the steps.
+        r(X + 5, Y + 29, 26, 2, sh);
+        r(X + 3, Y + 22, 26, 7, '#7e7a88'); r(X + 3, Y + 22, 26, 1, '#9c98a6'); r(X + 3, Y + 28, 26, 1, '#4e4a52');
+        r(X + 6, Y + 19, 20, 4, '#8a8694'); r(X + 6, Y + 22, 20, 1, '#5e5a64');
+        r(X + 8, Y + 6, 4, 13, '#8a8694'); r(X + 11, Y + 6, 1, 13, '#5e5a64');
+        r(X + 20, Y + 6, 4, 13, '#8a8694'); r(X + 23, Y + 6, 1, 13, '#5e5a64');
+        r(X + 13, Y + 8, 6, 11, '#2a262e');
+        r(X + 15, Y + 10, 2, 4, '#a49cac'); r(X + 14, Y + 14, 4, 3, '#8a8694');
+        r(X + 4, Y + 3, 24, 3, '#4e4854'); r(X + 6, Y, 20, 3, '#5e5a64'); r(X + 10, Y - 3, 12, 3, '#6e6a76');
+        r(X + 10, Y - 3, 12, 1, '#9c98a6'); r(X + 3, Y + 1, 2, 2, '#5e5a64'); r(X + 27, Y + 1, 2, 2, '#5e5a64');
+        r(X, Y + 13, 5, 2, '#5e5a64'); r(X + 1, Y + 15, 3, 7, '#7e7a88');
+        r(X + 27, Y + 13, 5, 2, '#5e5a64'); r(X + 28, Y + 15, 3, 7, '#7e7a88');
+        r(X + 3, Y + 24, 3, 2, '#3d7a41'); r(X + 26, Y + 26, 3, 2, '#3d7a41');
+        const fl = Math.sin(t * 7 + tx) * 0.5 + 0.5;
+        r(X + 14, Y + 20, 4, 2, '#5a4024');
+        r(X + 11, Y + 17, 10, 5, a('255,200,100', 0.12 + fl * 0.12));
+        r(X + 15, Y + 17 - f(fl * 1.5), 2, 3 + f(fl * 1.5), a('255,200,80', 0.9));
+        r(X + 15, Y + 16 - f(fl * 1.5), 2, 1, a('255,240,180', 0.9));
+        break;
+      }
+      case 'crystal_cave': {
+        // Blue-grey rock with a dark mouth, and crystals growing out of it
+        // in clusters: inside, where the light barely reaches them, and out
+        // on the faces where it catches their tips one at a time.
+        r(X, Y + 8, 32, 21, '#4a5262'); r(X + 3, Y + 3, 26, 6, '#5a6474'); r(X + 9, Y - 1, 14, 5, '#6a7686');
+        r(X + 9, Y - 1, 5, 2, '#8a96a6'); r(X + 3, Y + 3, 5, 2, '#8a96a6'); r(X, Y + 8, 5, 2, '#6a7686');
+        r(X + 26, Y + 8, 6, 21, '#343c4a'); r(X + 23, Y + 3, 6, 4, '#4a5262');
+        r(X + 9, Y + 13, 14, 15, '#0e1420'); r(X + 11, Y + 11, 10, 2, '#0e1420');
+        const gl = Math.sin(t * 2 + tx) * 0.5 + 0.5;
+        r(X + 10, Y + 18, 12, 10, a('100,200,255', 0.10 + gl * 0.16));
+        r(X + 12, Y + 20, 2, 8, '#5ac8ff'); r(X + 14, Y + 17, 2, 11, '#8ae0ff'); r(X + 17, Y + 22, 2, 6, '#5ac8ff');
+        r(X + 2, Y + 18, 2, 7, '#5ac8ff'); r(X + 4, Y + 15, 3, 10, '#8ae0ff');
+        r(X + 25, Y + 16, 3, 9, '#6ad0ff'); r(X + 28, Y + 19, 2, 6, '#5ac8ff');
+        r(X + 15, Y - 5, 2, 5, '#8ae0ff'); r(X + 13, Y - 2, 2, 3, '#6ad0ff'); r(X + 22, Y + 2, 2, 4, '#6ad0ff');
+        r(X + 4, Y + 27, 2, 2, '#5ac8ff'); r(X + 22, Y + 26, 3, 2, '#5ac8ff');
+        r(X + 5, Y + 14, 1, 1, a('255,255,255', 0.6 + Math.sin(t * 4 + tx) * 0.4));
+        r(X + 15, Y - 6, 1, 1, a('255,255,255', 0.6 + Math.sin(t * 4 + ty + 2) * 0.4));
+        r(X + 26, Y + 15, 1, 1, a('255,255,255', 0.6 + Math.sin(t * 4 + tx + 4) * 0.4));
+        r(X + 14, Y + 16, 2, 1, a('224,248,255', 0.5 + gl * 0.5));
+        r(X + 2, Y + 29, 30, 2, sh);
+        break;
+      }
+      case 'bandit_outpost': {
+        // Two tents and a fire behind a palisade of sharpened stakes, a
+        // black flag over the lot.
+        r(X + 2, Y + 30, 30, 1, sh);
+        r(X + 3, Y + 8, 26, 16, '#5a4e3c');
+        r(X + 10, Y + 5, 2, 2, '#a08860'); r(X + 8, Y + 7, 6, 2, '#a08860'); r(X + 6, Y + 9, 10, 3, '#a08860'); r(X + 4, Y + 12, 14, 5, '#a08860');
+        r(X + 11, Y + 7, 3, 2, '#7c6848'); r(X + 11, Y + 9, 5, 3, '#7c6848'); r(X + 11, Y + 12, 7, 5, '#7c6848');
+        r(X + 10, Y + 13, 3, 4, '#2a2018');
+        r(X + 24, Y + 8, 2, 2, '#98805a'); r(X + 22, Y + 10, 6, 3, '#98805a'); r(X + 20, Y + 13, 10, 4, '#98805a');
+        r(X + 25, Y + 10, 3, 3, '#746040'); r(X + 25, Y + 13, 5, 4, '#746040'); r(X + 24, Y + 14, 2, 3, '#2a2018');
+        r(X + 13, Y + 20, 7, 2, '#5e5a64'); r(X + 14, Y + 19, 5, 1, '#5a3a22');
+        fire(X + 14, Y + 19, tx);
+        r(X, Y + 22, 32, 9, '#6a4a2a'); r(X, Y + 22, 32, 1, '#8a6a40');
+        for (let i = 0; i < 7; i++) r(X + 3 + i * 4, Y + 22, 1, 9, '#2a2018');
+        for (let i = 0; i < 8; i++) r(X + 1 + i * 4, Y + 20, 2, 2, '#7a5a34');
+        r(X, Y + 6, 4, 16, '#6a4a2a'); r(X, Y + 5, 3, 1, '#7a5a34');
+        r(X, Y + 10, 4, 1, '#2a2018'); r(X, Y + 14, 4, 1, '#2a2018'); r(X, Y + 18, 4, 1, '#2a2018');
+        const fw = Math.round(Math.sin(t * 3 + ty) * 0.8);
+        r(X + 27, Y - 4, 1, 12, '#3a2a18'); r(X + 28, Y - 3 + fw, 4, 4, '#1a1a1e'); r(X + 29, Y - 2 + fw, 2, 2, '#e0d8c8');
+        break;
+      }
+      case 'lost_tomb': {
+        // A barrow with a stone face set into it: pillars, a lintel, a
+        // sealed door with iron bands and something pale showing at the
+        // seam, and a standing stone on the crown of the mound.
+        r(X + 2, Y + 30, 30, 1, sh);
+        r(X, Y + 10, 32, 19, '#3a5a32'); r(X + 3, Y + 5, 26, 6, '#4a6a3a'); r(X + 8, Y + 1, 16, 5, '#557a44');
+        r(X + 8, Y + 1, 6, 2, '#6a8e54'); r(X + 3, Y + 5, 6, 2, '#6a8e54'); r(X, Y + 10, 5, 2, '#557a44');
+        r(X + 26, Y + 10, 6, 19, '#2c4626'); r(X + 23, Y + 5, 6, 4, '#3a5a32');
+        r(X + 15, Y - 5, 2, 7, '#8a8694'); r(X + 15, Y - 5, 1, 7, '#a49cac'); r(X + 13, Y - 3, 6, 1, '#8a8694');
+        r(X + 8, Y + 12, 16, 16, '#7e7a88'); r(X + 8, Y + 12, 16, 1, '#a49cac'); r(X + 22, Y + 13, 2, 15, '#4e4854');
+        r(X + 7, Y + 11, 18, 2, '#8a8694'); r(X + 9, Y + 13, 2, 15, '#9c98a6'); r(X + 21, Y + 13, 2, 15, '#5e5a64');
+        r(X + 12, Y + 15, 8, 13, '#3a3640'); r(X + 12, Y + 18, 8, 1, '#5a5a64'); r(X + 12, Y + 23, 8, 1, '#5a5a64');
+        r(X + 16, Y + 15, 1, 13, a('120,200,140', 0.25 + (Math.sin(t * 1.5 + tx) * 0.5 + 0.5) * 0.35));
+        r(X + 2, Y + 19, 3, 9, '#6e6a76'); r(X + 2, Y + 19, 3, 1, '#8a8694'); r(X + 27, Y + 19, 3, 9, '#6e6a76'); r(X + 27, Y + 19, 3, 1, '#8a8694');
+        r(X + 11, Y + 28, 10, 1, '#8a8694'); r(X + 10, Y + 29, 12, 1, '#5e5a64');
+        break;
+      }
+      case 'enchanted_grove': {
+        // Pale-barked trees in a ring around a light that should not be
+        // there, with mushrooms in a ring of their own and motes drifting up
+        // through it.
+        r(X + 3, Y + 29, 26, 2, 'rgba(0,0,0,0.15)');
+        const gg = Math.sin(t * 1.6 + tx) * 0.5 + 0.5;
+        r(X + 9, Y + 12, 14, 12, a('120,255,160', 0.18 + gg * 0.18));
+        r(X + 12, Y + 15, 8, 6, a('220,255,230', 0.25 + gg * 0.3));
+        r(X + 13, Y + 17, 6, 3, a('255,255,255', 0.3 + gg * 0.4));
+        const tree = (px: number, py: number) => {
+          r(px + 3, py + 7, 2, 8, '#e0d8cc'); r(px + 4, py + 7, 1, 8, '#a09888');
+          r(px, py + 1, 8, 7, '#9ad0a0'); r(px + 1, py, 6, 2, '#9ad0a0'); r(px + 1, py + 1, 3, 3, '#c8f0c8');
+        };
+        tree(X + 1, Y - 1); tree(X + 23, Y - 1);
+        tree(X - 1, Y + 12); tree(X + 25, Y + 12);
+        tree(X + 5, Y + 17); tree(X + 19, Y + 17);
+        r(X + 10, Y + 24, 3, 2, '#e05060'); r(X + 11, Y + 26, 1, 2, '#f0e8e0');
+        r(X + 20, Y + 25, 3, 2, '#e05060'); r(X + 21, Y + 27, 1, 2, '#f0e8e0');
+        r(X + 15, Y + 8, 3, 2, '#e05060'); r(X + 16, Y + 10, 1, 2, '#f0e8e0');
+        for (let i = 0; i < 3; i++) {
+          const ph = (t * 0.4 + i * 0.33 + tx * 0.1) % 1;
+          r(X + 8 + i * 7 + Math.round(Math.sin(t * 2 + i) * 2), Y + 22 - f(ph * 16), 1, 1, a('220,255,220', 0.9 * (1 - ph)));
+        }
+        break;
+      }
+      case 'watchtower': {
+        // A round stone tower a tile and a half tall, crenellated, with a
+        // brazier burning on top and a pennant above that.
+        r(X + 12, Y + 29, 18, 2, 'rgba(0,0,0,0.3)'); r(X + 23, Y + 18, 5, 11, 'rgba(16,16,26,0.22)');
+        r(X + 6, Y + 26, 20, 3, '#5e5a64'); r(X + 3, Y + 27, 4, 2, '#6e6a76'); r(X + 26, Y + 26, 4, 3, '#6e6a76');
+        r(X + 9, Y - 10, 14, 37, '#7a7280'); r(X + 9, Y - 10, 4, 37, '#a49cac'); r(X + 20, Y - 10, 3, 37, '#4e4854');
+        r(X + 9, Y - 2, 14, 1, '#5e5a64'); r(X + 9, Y + 6, 14, 1, '#5e5a64'); r(X + 9, Y + 14, 14, 1, '#5e5a64');
+        r(X + 7, Y - 14, 18, 4, '#7a7280'); r(X + 7, Y - 14, 18, 1, '#a49cac'); r(X + 7, Y - 11, 18, 1, '#4e4854');
+        r(X + 7, Y - 16, 3, 2, '#a49cac'); r(X + 12, Y - 16, 3, 2, '#a49cac'); r(X + 17, Y - 16, 3, 2, '#a49cac'); r(X + 22, Y - 16, 3, 2, '#8a8694');
+        r(X + 15, Y + 3, 2, 4, '#2a262e'); r(X + 15, Y + 16, 2, 4, '#2a262e');
+        r(X + 15, Y - 6, 2, 3, a('255,220,140', 0.85));
+        r(X + 13, Y + 21, 6, 7, '#2a262e'); r(X + 14, Y + 20, 4, 1, '#2a262e');
+        fire(X + 14, Y - 16, tx + 3);
+        const pw = Math.round(Math.sin(t * 3 + tx) * 0.8);
+        r(X + 22, Y - 23, 1, 8, '#3a2a18'); r(X + 23, Y - 22 + pw, 6, 3, '#c04040');
+        break;
+      }
+      case 'wizard_tower': {
+        // Taller and thinner than the watchtower, in violet stone under a
+        // steep indigo cap, one window always lit, and a light that circles
+        // the top and is not a bird. It passes behind the tower on the far
+        // half of its orbit.
+        const orbit = t * 1.4 + tx;
+        const ox = X + 16 + Math.round(Math.cos(orbit) * 11);
+        const oy = Y - 10 + Math.round(Math.sin(orbit) * 4);
+        const orb = () => { r(ox - 2, oy - 2, 5, 5, a('180,120,255', 0.3)); r(ox - 1, oy - 1, 3, 3, a('220,190,255', 0.95)); };
+        if (Math.sin(orbit) < 0) orb();
+        r(X + 14, Y + 29, 16, 2, 'rgba(0,0,0,0.3)'); r(X + 20, Y + 14, 4, 15, 'rgba(16,16,26,0.22)');
+        r(X + 9, Y + 25, 14, 4, '#4e4854'); r(X + 13, Y + 28, 6, 1, '#8a8694');
+        r(X + 3, Y + 23, 3, 6, '#6a5a8a'); r(X + 26, Y + 22, 3, 7, '#6a5a8a');
+        r(X + 4, Y + 25, 1, 1, a('190,140,255', 0.5 + Math.sin(t * 2 + tx) * 0.4));
+        r(X + 27, Y + 24, 1, 1, a('190,140,255', 0.5 + Math.sin(t * 2 + ty + 1.5) * 0.4));
+        r(X + 12, Y - 16, 8, 42, '#5a4a7a'); r(X + 12, Y - 16, 2, 42, '#8a7aaa'); r(X + 18, Y - 16, 2, 42, '#3a2e52');
+        r(X + 12, Y - 8, 8, 1, '#463a5e'); r(X + 12, Y + 14, 8, 1, '#463a5e');
+        r(X + 10, Y + 2, 12, 2, '#6a5a8a'); r(X + 10, Y + 4, 12, 1, '#3a2e52');
+        r(X + 10, Y - 18, 12, 3, '#3a3060'); r(X + 12, Y - 21, 8, 3, '#443878'); r(X + 14, Y - 24, 4, 3, '#4c4088');
+        r(X + 15, Y - 27, 2, 3, '#a0a0c0'); r(X + 10, Y - 18, 3, 1, '#7a70b0'); r(X + 12, Y - 21, 2, 1, '#7a70b0');
+        r(X + 15, Y - 13, 2, 3, a('190,140,255', 0.6 + Math.sin(t * 2.5 + tx) * 0.3));
+        r(X + 15, Y + 8, 2, 3, a('255,220,140', 0.85));
+        r(X + 14, Y + 22, 4, 6, '#2a1e3a');
+        if (Math.sin(orbit) >= 0) orb();
+        break;
+      }
+      case 'haunted_forest': {
+        // Three dead trees, a grave among the roots, mist at their feet, and
+        // a light that wanders between them.
+        const deadTree = (px: number, py: number, h: number) => {
+          r(px, py, 3, h, '#3a3230'); r(px, py, 1, h, '#544a46');
+          r(px - 4, py + 4, 4, 1, '#3a3230'); r(px - 5, py + 2, 1, 3, '#3a3230');
+          r(px + 3, py + 7, 5, 1, '#3a3230'); r(px + 7, py + 4, 1, 4, '#3a3230');
+          r(px + 1, py - 3, 1, 3, '#3a3230');
+          r(px - 2, py + h - 1, 7, 1, '#2e2826');
+        };
+        deadTree(X + 6, Y + 3, 24); deadTree(X + 17, Y - 5, 32); deadTree(X + 26, Y + 8, 19);
+        r(X + 23, Y - 2, 3, 2, '#141418'); r(X + 25, Y - 3, 1, 1, '#141418');
+        r(X + 1, Y + 22, 4, 6, '#6e6a76'); r(X + 1, Y + 21, 4, 1, '#8a8694'); r(X + 2, Y + 24, 2, 1, '#4e4a52');
+        r(X + 9, Y + 9, 1, 5, '#4a5a48'); r(X + 20, Y + 3, 1, 6, '#4a5a48');
+        const mist = Math.sin(t * 0.8 + tx) * 0.5 + 0.5;
+        r(X, Y + 23, 32, 6, a('160,180,170', 0.12 + mist * 0.10));
+        r(X + 4, Y + 20, 20, 3, a('160,180,170', 0.06 + mist * 0.08));
+        const wx = X + 14 + Math.round(Math.sin(t * 1.1 + tx) * 9);
+        const wy = Y + 12 + Math.round(Math.sin(t * 1.7 + ty) * 5);
+        r(wx - 2, wy - 2, 7, 7, a('120,255,180', 0.22));
+        r(wx, wy, 3, 3, a('160,255,210', 0.9));
+        r(wx - Math.round(Math.cos(t * 1.1 + tx) * 3), wy + 1, 1, 1, a('160,255,210', 0.5));
+        break;
+      }
+      case 'mineral_spring': {
+        // A pool of hot mineral water in a rim of rock, crusted pale where
+        // it has dried, with steam coming off it.
+        r(X + 4, Y + 29, 26, 2, sh);
+        r(X + 4, Y + 6, 24, 2, '#6e6a76'); r(X + 2, Y + 8, 28, 20, '#6e6a76'); r(X + 4, Y + 28, 24, 1, '#5e5a64');
+        r(X + 4, Y + 6, 10, 2, '#8a8694'); r(X + 2, Y + 8, 3, 8, '#8a8694');
+        r(X + 27, Y + 12, 3, 16, '#4e4a52'); r(X + 8, Y + 26, 20, 2, '#4e4a52');
+        r(X, Y + 18, 4, 4, '#5e5a64'); r(X + 28, Y + 5, 4, 4, '#5e5a64'); r(X + 12, Y + 27, 5, 3, '#5e5a64');
+        const sw = Math.sin(t * 2 + tx * 0.6 + ty * 0.4) * 0.5 + 0.5;
+        r(X + 6, Y + 11, 20, 14, `rgb(${f(50 + sw * 12)},${f(160 + sw * 16)},${f(150 + sw * 20)})`);
+        r(X + 6, Y + 11, 20, 1, '#d8e8d0'); r(X + 6, Y + 11, 1, 14, '#d8e8d0'); r(X + 7, Y + 24, 19, 1, '#a8c8b8'); r(X + 25, Y + 12, 1, 12, '#8ab8a8');
+        r(X + 8 + f((t * 3 + tx) % 14), Y + 15, 4, 1, a('220,255,250', 0.5));
+        r(X + 8 + f((t * 2 + ty + 7) % 12), Y + 20, 6, 1, a('220,255,250', 0.4));
+        for (let i = 0; i < 4; i++) {
+          const ph = (t * 0.35 + i * 0.25 + tx * 0.13) % 1;
+          const px = X + 8 + i * 5 + Math.round(Math.sin(t * 1.5 + i * 2) * 2);
+          r(px, Y + 16 - f(ph * 20), 3 + (i & 1), 2 + (i & 1), a('240,250,250', 0.5 * (1 - ph)));
+        }
+        break;
+      }
+      case 'goblin_camp': {
+        // Two hide huts, a totem with a skull on it, a fire, and a spear
+        // stuck in the ground where the last one fell.
+        r(X + 3, Y + 30, 26, 1, sh);
+        r(X + 2, Y + 10, 28, 18, '#5a4e3c');
+        r(X + 3, Y + 14, 12, 10, '#7a6a3c'); r(X + 5, Y + 11, 8, 3, '#7a6a3c'); r(X + 7, Y + 9, 4, 2, '#7a6a3c');
+        r(X + 12, Y + 14, 3, 10, '#5a4c2a'); r(X + 5, Y + 17, 8, 1, '#8c7c4c'); r(X + 7, Y + 19, 4, 5, '#2a2018');
+        r(X + 19, Y + 16, 10, 8, '#6e5e36'); r(X + 21, Y + 13, 6, 3, '#6e5e36'); r(X + 26, Y + 16, 3, 8, '#4e4224'); r(X + 22, Y + 20, 3, 4, '#2a2018');
+        r(X + 15, Y - 4, 4, 17, '#6a4a2a');
+        r(X + 15, Y - 8, 4, 4, '#e8e0d0'); r(X + 16, Y - 7, 1, 1, '#1a1010'); r(X + 18, Y - 7, 1, 1, '#1a1010');
+        r(X + 13, Y - 6, 2, 3, '#e0e0e0'); r(X + 19, Y - 6, 2, 3, '#e0e0e0');
+        r(X + 15, Y - 3, 4, 3, '#c04040'); r(X + 16, Y - 2, 1, 1, '#fff'); r(X + 18, Y - 2, 1, 1, '#fff');
+        r(X + 15, Y + 2, 4, 3, '#d0a030'); r(X + 16, Y + 3, 1, 1, '#1a1010'); r(X + 18, Y + 3, 1, 1, '#1a1010');
+        r(X + 15, Y + 7, 4, 3, '#4080c0'); r(X + 15, Y + 10, 4, 1, '#fff');
+        r(X + 13, Y + 25, 8, 2, '#5e5a64'); fire(X + 15, Y + 24, ty + 1);
+        r(X + 1, Y + 26, 3, 3, '#e8e0d0'); r(X + 28, Y + 26, 3, 2, '#e8e0d0');
+        r(X + 30, Y + 8, 1, 12, '#6a4a2a'); r(X + 29, Y + 6, 3, 2, '#a0a4ac');
+        break;
+      }
+      case 'moon_forge': {
+        // An anvil on a ring of stone between two rune-stones, with a
+        // crescent hanging above it that gives the only light: silver and
+        // cold. Sparks rise off the anvil though nobody is working it.
+        r(X + 4, Y + 29, 26, 2, sh);
+        r(X + 2, Y + 18, 28, 11, '#4e4a52'); r(X + 2, Y + 18, 28, 1, '#8a8694'); r(X + 4, Y + 16, 24, 2, '#6e6a76');
+        const ms = Math.sin(t * 1.2 + tx) * 0.5 + 0.5;
+        r(X + 1, Y + 8, 4, 10, '#5e5a64'); r(X + 1, Y + 8, 4, 1, '#8a8694'); r(X + 2, Y + 11, 2, 1, a('200,170,255', 0.4 + ms * 0.5));
+        r(X + 27, Y + 8, 4, 10, '#5e5a64'); r(X + 27, Y + 8, 4, 1, '#8a8694'); r(X + 28, Y + 12, 2, 1, a('200,170,255', 0.4 + ms * 0.5));
+        r(X + 12, Y + 16, 8, 5, '#3a3a44'); r(X + 13, Y + 14, 6, 2, '#4a4a56'); r(X + 8, Y + 11, 16, 3, '#6a6a78');
+        r(X + 5, Y + 11, 3, 2, '#6a6a78'); r(X + 8, Y + 11, 16, 1, '#a0a0b0'); r(X + 22, Y + 12, 2, 2, '#3a3a44');
+        r(X + 16, Y + 7, 2, 4, '#5a3a22'); r(X + 15, Y + 5, 4, 2, '#8a8a98');
+        r(X + 8, Y + 10, 16, 1, a('220,220,255', 0.2 + ms * 0.4));
+        const my = Y - 11 + Math.round(Math.sin(t * 1.2 + tx) * 1.5);
+        r(X + 8, my - 2, 14, 15, a('190,150,255', 0.10 + ms * 0.12));
+        r(X + 13, my, 7, 2, '#e8e8f8'); r(X + 11, my + 2, 3, 2, '#e8e8f8'); r(X + 10, my + 4, 2, 5, '#e8e8f8');
+        r(X + 11, my + 9, 3, 2, '#e8e8f8'); r(X + 13, my + 11, 7, 2, '#e8e8f8');
+        r(X + 10, my + 4, 1, 5, '#ffffff');
+        for (let i = 0; i < 3; i++) {
+          const ph = (t * 0.9 + i * 0.33 + tx * 0.1) % 1;
+          r(X + 12 + i * 4 + Math.round(Math.sin(t * 3 + i) * 1.5), Y + 10 - f(ph * 9), 1, 1, a('230,230,255', 0.9 * (1 - ph)));
+        }
+        break;
+      }
+      case 'failed_settlement': {
+        // What is left of a village: a cottage with its roof fallen in,
+        // another burnt to its beams, the well between them, a dead tree,
+        // and weeds through everything.
+        r(X + 3, Y + 29, 28, 2, sh);
+        r(X + 2, Y + 14, 13, 10, '#7c6c50'); r(X + 2, Y + 23, 13, 1, '#5a4a34');
+        r(X + 1, Y + 11, 15, 3, '#4a3a2a'); r(X + 2, Y + 9, 6, 2, '#4a3a2a'); r(X + 3, Y + 8, 3, 1, '#5a4a36');
+        r(X + 9, Y + 9, 6, 3, '#2a2018'); r(X + 7, Y + 18, 3, 6, '#2a2018'); r(X + 3, Y + 17, 3, 3, '#2a2018');
+        r(X + 19, Y + 16, 11, 8, '#5a4a3a'); r(X + 19, Y + 16, 11, 2, '#2a2018'); r(X + 28, Y + 18, 2, 6, '#3e3228');
+        r(X + 20, Y + 11, 1, 5, '#3a2a1a'); r(X + 27, Y + 10, 1, 6, '#3a2a1a'); r(X + 20, Y + 11, 8, 1, '#3a2a1a');
+        r(X + 13, Y + 24, 6, 4, '#6e6a76'); r(X + 12, Y + 23, 8, 1, '#8a8694'); r(X + 13, Y + 20, 1, 3, '#5a3a22'); r(X + 18, Y + 20, 1, 3, '#5a3a22'); r(X + 12, Y + 19, 8, 1, '#4a3a2a');
+        r(X + 27, Y - 2, 2, 12, '#3a3230'); r(X + 24, Y + 2, 3, 1, '#3a3230'); r(X + 29, Y, 3, 1, '#3a3230'); r(X + 23, Y, 1, 2, '#3a3230');
+        r(X + 4, Y + 26, 3, 2, '#3d7a41'); r(X + 22, Y + 26, 4, 2, '#3d7a41'); r(X + 16, Y + 12, 2, 3, '#3d7a41'); r(X + 12, Y + 15, 2, 2, '#3d7a41');
+        r(X + 1, Y + 27, 6, 1, '#5a4024'); r(X + 2, Y + 25, 1, 3, '#5a4024'); r(X + 6, Y + 25, 1, 3, '#5a4024');
+        break;
+      }
+      default: {
+        // A kind this renderer has not met: a signpost, so it is at least
+        // clearly a place.
+        r(X + 14, Y + 8, 3, 21, '#6a4a2a'); r(X + 8, Y + 6, 16, 6, '#8a6a40'); r(X + 8, Y + 6, 16, 1, '#a08050');
+        r(X + 12, Y + 29, 10, 2, sh);
+        break;
+      }
+    }
+  }
+
+  /**
    * Overworld rendering — the massive open world. Grass, forests, mountains,
    * animated water, roads/bridges, biome floors, town buildings, dungeon
    * entrances, wandering NPCs, wildlife, and the party.
@@ -2242,34 +2665,29 @@ export class MapRenderer {
       ctx.fillRect(Math.floor(sx) + 17, Math.floor(sy) + 8, 2, 2);
     }
 
-    // Points of Interest: discovered POIs get a glowing icon.
+    // Points of interest: discovered ones are drawn as landmarks. Under each
+    // is a soft wash on the ground in the kind's own colour, in three steps
+    // so it has no hard edge — kept from the old glyph markers because it is
+    // how a magical place tells itself apart from a mundane one from across
+    // the map — and on top of that the landmark itself, in pixels.
     for (const poi of pois) {
       if (!poi.discovered) continue;
       const sx = poi.tile.x * TILE_SIZE - camera.x;
       const sy = poi.tile.y * TILE_SIZE - camera.y;
       if (sx < -40 || sy < -40 || sx > GAME_WIDTH + 40 || sy > GAME_HEIGHT + 40) continue;
-      // Glow pulse
+      const X = Math.floor(sx), Y = Math.floor(sy);
       const glow = Math.sin(this.time * 2 + poi.tile.x * 0.5) * 0.3 + 0.7;
       const color = poi.kind === 'dragon_lair' ? 'rgba(255,80,20,' : poi.kind === 'crystal_cave' ? 'rgba(100,200,255,' : poi.kind === 'enchanted_grove' ? 'rgba(100,255,150,' : poi.kind === 'wizard_tower' ? 'rgba(180,120,255,' : poi.kind === 'haunted_forest' ? 'rgba(120,255,180,' : poi.kind === 'mineral_spring' ? 'rgba(80,200,255,' : poi.kind === 'moon_forge' ? 'rgba(190,150,255,' : 'rgba(255,215,0,';
-      ctx.fillStyle = color + (glow * 0.4) + ')';
-      ctx.fillRect(Math.floor(sx) + 4, Math.floor(sy) + 4, 24, 24);
-      // Icon based on kind
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px monospace';
-      const icons: Record<string, string> = {
-        ancient_ruins: '\u{1f3da}', abandoned_mine: '\u{26cf}', witch_hut: '\u{1f9d9}',
-        dragon_lair: '\u{1f409}', ancient_battlefield: '\u{2694}', hidden_shrine: '\u2728',
-        crystal_cave: '\u{1f48e}', bandit_outpost: '\u{1f3f4}', lost_tomb: '\u{26b1}',
-        enchanted_grove: '\u{1f333}', watchtower: '\u{1f3ef}', wizard_tower: '\u{1f52e}',
-        haunted_forest: '\u{1f47b}', mineral_spring: '\u2668', failed_settlement: '\u{1f3da}', goblin_camp: '\u{1f47a}',
-        moon_forge: '\u{1f319}',
-      };
-      ctx.fillText(icons[poi.kind] || '?', Math.floor(sx) + 8, Math.floor(sy) + 20);
-      // Name label if close
-      if (poi.tile.x * TILE_SIZE - camera.x > -10 && poi.tile.x * TILE_SIZE - camera.x < GAME_WIDTH + 10) {
+      ctx.fillStyle = color + (glow * 0.05).toFixed(3) + ')';
+      ctx.fillRect(X - 2, Y - 2, 36, 36);
+      ctx.fillRect(X + 3, Y + 3, 26, 26);
+      ctx.fillRect(X + 8, Y + 8, 16, 16);
+      this.drawLandmark(ctx, poi.kind, X, Y, poi.tile.x, poi.tile.y);
+      // Name label if close, above whatever the landmark raises.
+      if (sx > -10 && sx < GAME_WIDTH + 10) {
         ctx.fillStyle = '#fff';
         ctx.font = '9px monospace';
-        ctx.fillText(poi.name, Math.floor(sx) + 2, Math.floor(sy) - 4);
+        ctx.fillText(poi.name, X + 2, Y - 4 - (MapRenderer.LANDMARK_RISE[poi.kind] ?? 0));
       }
     }
 
