@@ -60,6 +60,10 @@ export const T = {
   info: '#8cbede',
   /** Coin / treasure brown-gold. */
   coin: '#d2a862',
+  /** The gold frame of a JRPG window (the victory summary's border). */
+  frame: '#b8963e',
+  /** The warm ink behind a JRPG window, as the victory summary paints it. */
+  windowGrad: 'linear-gradient(180deg, rgba(32,27,20,0.98), rgba(14,12,10,0.98))',
   /** Title font stack (local faces only). */
   titleFont: "'Palatino Linotype', 'Book Antiqua', Palatino, 'Iowan Old Style', Georgia, serif",
   /** Body font stack (local faces only). */
@@ -167,6 +171,15 @@ export function installTheme(): void {
     }
     .dp-row-click { cursor: pointer; }
     .dp-row-click:hover { border-color: ${T.goldDim}; background: ${T.rowHot}; }
+    /* A JRPG window: the gold-framed box the battle screen is built from —
+       command menu, narration, party status — drawn exactly as the victory
+       summary is, so the whole fight speaks one dialect. */
+    .dp-window {
+      background: ${T.windowGrad};
+      border: 2px solid ${T.frame};
+      border-radius: ${T.r3};
+      box-shadow: 0 6px 30px rgba(0,0,0,0.7), inset 0 0 0 1px ${T.rule};
+    }
 
     /* ── Chips ─────────────────────────────────────────────────── */
     /* One shape for every status pill in the game: weather, delve mood,

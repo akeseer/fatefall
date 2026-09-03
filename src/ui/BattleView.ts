@@ -51,6 +51,8 @@ export class BattleView {
   private feedLinesEl: HTMLElement;
   private roundEl: HTMLElement;
   private bannerEl: HTMLElement;
+  /** Rows of the party status window (bottom-left, under the command menu). */
+  private statusRowsEl: HTMLElement;
   private spellRenderer: SpriteRenderer | null = null;
   private party: Party | null = null;
   private enemies: Monster[] = [];
@@ -178,11 +180,123 @@ export class BattleView {
     this.root.id = 'battle-view';
     this.root.style.cssText = [
       'position:absolute; inset:0; z-index:45; display:none;',
-      `background:radial-gradient(ellipse at 50% 38%, #16120e 0%, #0a0807 68%, #050405 100%);`,
+      `background:${T.ink};`,
       `flex-direction:column; font-family:${T.bodyFont}; overflow:hidden;`,
     ].join('');
     this.root.innerHTML = `
       <style>
+        /* ── The field ──────────────────────────────────────────────
+           A side-view battlefield: a thin band of sky, a horizon rule,
+           and a floor the two sides stand on. The floor is lit from
+           below the way the map is lit by its torches. */
+        #battle-ground {
+          position: absolute; inset: 0; pointer-events: none;
+          background:
+            radial-gradient(ellipse 70% 55% at 50% 100%, rgba(232,197,106,0.13), transparent 70%),
+            radial-gradient(ellipse 90% 40% at 50% 10%, rgba(232,197,106,0.05), transparent 70%),
+            linear-gradient(180deg, #07060a 0%, #0c0a0e 9%, #1a1410 10%, #16110d 55%, #0f0c09 100%);
+        }
+        #battle-ground::before {
+          /* Horizon: a gold hairline with haze above it. */
+          content: ''; position: absolute; left: 0; right: 0; top: 10%; height: 1px;
+          background: linear-gradient(90deg, transparent, ${T.rule} 20%, rgba(232,197,106,0.32) 50%, ${T.rule} 80%, transparent);
+        }
+        #battle-ground::after {
+          /* Floor: faint perspective courses and a vignette to the sides. */
+          content: ''; position: absolute; left: 0; right: 0; top: 10%; bottom: 0;
+          background:
+            linear-gradient(90deg, rgba(0,0,0,0.5), transparent 18%, transparent 82%, rgba(0,0,0,0.5)),
+            repeating-linear-gradient(180deg, transparent 0 26px, rgba(232,197,106,0.035) 26px 27px);
+        }
+        /* ── Stands ─────────────────────────────────────────────────
+           Every combatant is a stand: the sprite over a shadow, a name
+           tag and a health bar beneath. Positioned absolutely by the
+           formation layout; moves glide when the ranks reshuffle. */
+        .battle-card {
+          position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px;
+          transition: left .35s ease, top .35s ease, transform .18s ease-out;
+          will-change: transform;
+        }
+        .battle-card.bv-hero.bv-active { transform: translateX(-14px); }
+        .battle-card.bv-foe.bv-active { transform: translateX(14px); }
+        .bv-figure {
+          position: relative; display: flex; align-items: flex-end; justify-content: center;
+          flex: 0 0 auto;
+        }
+        .bv-shadow {
+          position: absolute; left: 50%; bottom: -2px; transform: translateX(-50%);
+          width: 88%; height: 22%; border-radius: 50%;
+          background: radial-gradient(ellipse at center, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.45) 45%, transparent 72%);
+          pointer-events: none;
+        }
+        .bv-ring {
+          position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%);
+          width: 104%; height: 28%; border-radius: 50%;
+          border: 2px solid ${T.gold}; box-shadow: 0 0 12px rgba(232,197,106,0.55), inset 0 0 8px rgba(232,197,106,0.35);
+          opacity: 0; transition: opacity .15s ease; pointer-events: none;
+        }
+        .battle-card.bv-active .bv-ring { opacity: 1; animation: bv-ring-pulse 1.4s ease-in-out infinite; }
+        @keyframes bv-ring-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+        .bv-sprite {
+          position: relative; z-index: 2; image-rendering: pixelated; display: block;
+          filter: drop-shadow(0 4px 3px rgba(0,0,0,0.55));
+          transition: transform .3s ease, opacity .4s ease, filter .4s ease;
+        }
+        .battle-card.bv-active .bv-sprite { filter: drop-shadow(0 4px 3px rgba(0,0,0,0.55)) drop-shadow(0 0 6px rgba(232,197,106,0.45)); }
+        /* The fallen: foes fade out where they stood; heroes lie down. */
+        .battle-card.bv-down .bv-sprite { opacity: 0.28; filter: grayscale(1) drop-shadow(0 2px 2px rgba(0,0,0,0.5)); }
+        .battle-card.bv-hero.bv-down .bv-sprite { transform: rotate(90deg) translateY(12%); opacity: 0.5; }
+        .battle-card.bv-down .bv-shadow { opacity: 0.4; }
+        .bv-tag {
+          font-family: ${T.titleFont}; font-weight: bold; letter-spacing: 0.4px;
+          text-align: center; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          max-width: 100%; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.8);
+        }
+        .bv-hpbar {
+          position: relative; width: 100%; height: 6px; border-radius: 2px; overflow: hidden;
+          background: rgba(0,0,0,0.6); border: 1px solid rgba(232,197,106,0.28);
+        }
+        /* Two fills: the pale ghost drains slowly behind the live bar, so a
+           blow reads as a chunk of health torn away rather than a snap. */
+        .bv-hpghost { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,225,200,0.55); transition: width .9s ease-out .22s; }
+        .bv-hpfill { position: absolute; left: 0; top: 0; bottom: 0; transition: width .3s ease-out, background-color .3s ease; }
+        .bv-hpnum { font-size: 9px; color: ${T.muted}; line-height: 1.1; text-shadow: 0 1px 2px #000; }
+        .bv-extra { font-size: 8.5px; line-height: 1.2; text-align: center; max-width: 100%; text-shadow: 0 1px 2px #000; }
+        /* Queued-order chip on hero stands: slides in when an order lands. */
+        @keyframes bv-chip-in {
+          0% { transform: translateY(-6px) scale(0.8); opacity: 0; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        .bv-order-chip {
+          font-size: 8px; padding: 1px 6px; border-radius: 7px;
+          border: 1px solid ${T.goldDim}; background: rgba(60,48,14,0.75); color: #f2dca0;
+          white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+          animation: bv-chip-in 0.25s ease-out;
+        }
+        /* Targeting: the classic pointer hangs over the chosen creature and
+           its ground ring burns red. */
+        .battle-card.bv-targeted .bv-ring {
+          opacity: 1; border-color: #ff7a5a;
+          box-shadow: 0 0 12px rgba(255,120,80,0.55), inset 0 0 8px rgba(255,120,80,0.35);
+          animation: none;
+        }
+        .battle-card.bv-targeted .bv-figure::before {
+          content: '▼'; position: absolute; left: 50%; top: -18px; transform: translateX(-50%);
+          color: #ff7a5a; font-size: 14px; z-index: 3; text-shadow: 0 0 6px rgba(255,120,80,0.8), 0 1px 2px #000;
+          animation: bv-pointer-bob 0.6s ease-in-out infinite alternate;
+        }
+        @keyframes bv-pointer-bob { 0% { transform: translate(-50%, 0); } 100% { transform: translate(-50%, 4px); } }
+        /* Gamepad pip: glows beside the header while a pad is connected. */
+        @keyframes pad-pip-blink { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+        .pad-pip { color: ${T.gold}; animation: pad-pip-blink 2s ease-in-out infinite; }
+        /* FF-style blinking command cursor. */
+        @keyframes menu-cursor-blink {
+          0%, 55% { opacity: 1; }
+          56%, 100% { opacity: 0.15; }
+        }
+        /* ── Kinetics ───────────────────────────────────────────────
+           All of these move the figure, never the stand: the tag and
+           bar stay put while the creature recoils or lunges. */
         @keyframes battle-shake {
           0%, 100% { transform: translateX(0); }
           20% { transform: translateX(-5px); }
@@ -190,38 +304,6 @@ export class BattleView {
           60% { transform: translateX(-3px); }
           80% { transform: translateX(2px); }
         }
-        /* Queued-order chip on hero cards: slides in when an order lands. */
-        @keyframes bv-chip-in {
-          0% { transform: translateY(-6px) scale(0.8); opacity: 0; }
-          100% { transform: translateY(0) scale(1); opacity: 1; }
-        }
-        .bv-order-chip {
-          font-size: 8px; padding: 1px 6px; border-radius: 7px;
-          border: 1px solid #a08a4a; background: rgba(60,48,14,0.6); color: #f2dca0;
-          white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-          animation: bv-chip-in 0.25s ease-out;
-        }
-        /* Targeting mode: the chosen battle card gets an FF-style crosshair
-           ring instead of a menu pointer — the pointer lives on the field. */
-        .battle-card.bv-targeted {
-          outline: 2px solid #ff7a5a !important;
-          box-shadow: 0 0 16px rgba(255,120,80,0.45) !important;
-        }
-        .battle-card.bv-targeted::after {
-          content: '✛';
-          position: absolute; top: 3px; right: 6px;
-          color: #ff7a5a; font-size: 12px;
-          animation: menu-cursor-blink 0.9s steps(1) infinite;
-        }
-        /* Gamepad pip: glows beside the header while a pad is connected. */
-        @keyframes pad-pip-blink { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-        .pad-pip { color: #e8c56a; animation: pad-pip-blink 2s ease-in-out infinite; }
-        /* FF-style blinking command cursor. */
-        @keyframes menu-cursor-blink {
-          0%, 55% { opacity: 1; }
-          56%, 100% { opacity: 0.15; }
-        }
-        /* Crit shake: violent, with vertical component — the card recoils. */
         @keyframes battle-crit-shake {
           0%, 100% { transform: translate(0, 0) rotate(0); }
           12% { transform: translate(-9px, -4px) rotate(-2deg); }
@@ -231,60 +313,54 @@ export class BattleView {
           76% { transform: translate(-4px, 1px) rotate(-0.8deg); }
           90% { transform: translate(2px, 0) rotate(0.4deg); }
         }
-        @keyframes battle-lunge-up {
-          0%, 100% { transform: translateY(0); }
-          45% { transform: translateY(-16px) scale(1.06); }
+        /* Lunge toward the far side: heroes step left, foes step right. */
+        @keyframes battle-lunge-left {
+          0%, 100% { transform: translateX(0); }
+          45% { transform: translateX(-22px) scale(1.06); }
         }
-        @keyframes battle-lunge-down {
-          0%, 100% { transform: translateY(0); }
-          45% { transform: translateY(16px) scale(1.06); }
+        @keyframes battle-lunge-right {
+          0%, 100% { transform: translateX(0); }
+          45% { transform: translateX(22px) scale(1.06); }
         }
         @keyframes battle-damage-pop {
-          0% { transform: translateY(0) scale(0.6); opacity: 0; }
-          15% { transform: translateY(-8px) scale(1.25); opacity: 1; }
-          70% { transform: translateY(-26px) scale(1); opacity: 1; }
-          100% { transform: translateY(-40px) scale(0.9); opacity: 0; }
+          0% { transform: translate(-50%, 0) scale(0.6); opacity: 0; }
+          15% { transform: translate(-50%, -8px) scale(1.25); opacity: 1; }
+          70% { transform: translate(-50%, -26px) scale(1); opacity: 1; }
+          100% { transform: translate(-50%, -40px) scale(0.9); opacity: 0; }
         }
-        @keyframes battle-heal-pop {
-          0% { transform: translateY(0) scale(0.6); opacity: 0; }
-          15% { transform: translateY(-8px) scale(1.2); opacity: 1; }
-          70% { transform: translateY(-26px) scale(1); opacity: 1; }
-          100% { transform: translateY(-40px) scale(0.9); opacity: 0; }
+        .battle-card.bv-shake .bv-figure { animation: battle-shake 0.35s ease-in-out; }
+        .battle-card.bv-lunge-left .bv-figure { animation: battle-lunge-left 0.3s ease-out; }
+        .battle-card.bv-lunge-right .bv-figure { animation: battle-lunge-right 0.3s ease-out; }
+        .battle-card.bv-hit .bv-sprite { filter: brightness(2.2) saturate(0.4) drop-shadow(0 0 8px #ff6040); transition: none; }
+        /* Critical hit: violent shake + harsh red flash washing over the figure. */
+        .battle-card.bv-crit .bv-figure {
+          animation: battle-crit-shake 0.5s ease-in-out;
         }
-        .battle-card.bv-shake { animation: battle-shake 0.35s ease-in-out; }
-        .battle-card.bv-lunge-up { animation: battle-lunge-up 0.3s ease-out; }
-        .battle-card.bv-lunge-down { animation: battle-lunge-down 0.3s ease-out; }
-        .battle-card.bv-hit { filter: brightness(2.2) saturate(0.4) drop-shadow(0 0 8px #ff6040); }
-        /* Critical hit: violent shake + harsh red flash washing over the card. */
-        .battle-card.bv-crit {
-          animation: battle-crit-shake 0.5s ease-in-out, battle-crit-flash 0.55s ease-out;
-        }
-        .battle-card.bv-crit::after {
-          content: ''; position: absolute; inset: 0; pointer-events: none;
-          background: radial-gradient(ellipse at center, rgba(255,50,20,0.45) 0%, rgba(255,20,10,0.18) 55%, transparent 80%);
+        .battle-card.bv-crit .bv-sprite { animation: battle-crit-flash 0.55s ease-out; }
+        .battle-card.bv-crit .bv-figure::after {
+          content: ''; position: absolute; inset: -6px; pointer-events: none; border-radius: 50%;
+          background: radial-gradient(ellipse at center, rgba(255,50,20,0.5) 0%, rgba(255,20,10,0.2) 55%, transparent 80%);
           animation: battle-crit-overlay 0.55s ease-out forwards; z-index: 5;
         }
         @keyframes battle-crit-flash {
           0% { filter: brightness(3.2) saturate(0.2) drop-shadow(0 0 14px #ff3810); }
           40% { filter: brightness(2.2) saturate(0.6) drop-shadow(0 0 10px #ff5030); }
-          100% { filter: none; }
+          100% { filter: drop-shadow(0 4px 3px rgba(0,0,0,0.55)); }
         }
         @keyframes battle-crit-overlay {
           0% { opacity: 1; } 100% { opacity: 0; }
         }
-        /* Healing: soft green glow blooming over the card. */
-        .battle-card.bv-heal-glow {
-          animation: battle-heal-glow 0.9s ease-out;
-        }
-        .battle-card.bv-heal-glow::after {
-          content: ''; position: absolute; inset: 0; pointer-events: none;
-          background: radial-gradient(ellipse at center, rgba(110,240,170,0.35) 0%, rgba(80,220,140,0.12) 55%, transparent 80%);
+        /* Healing: soft green glow blooming over the figure. */
+        .battle-card.bv-heal-glow .bv-sprite { animation: battle-heal-glow 0.9s ease-out; }
+        .battle-card.bv-heal-glow .bv-figure::after {
+          content: ''; position: absolute; inset: -6px; pointer-events: none; border-radius: 50%;
+          background: radial-gradient(ellipse at center, rgba(110,240,170,0.38) 0%, rgba(80,220,140,0.12) 55%, transparent 80%);
           animation: battle-crit-overlay 0.9s ease-out forwards; z-index: 5;
         }
         @keyframes battle-heal-glow {
           0% { filter: brightness(1.1) drop-shadow(0 0 6px #6ef0aa); }
           40% { filter: brightness(1.35) drop-shadow(0 0 16px #6ef0aa); }
-          100% { filter: none; }
+          100% { filter: drop-shadow(0 4px 3px rgba(0,0,0,0.55)); }
         }
         /* Crit spark: a starburst of shrapnel streaks from the impact point. */
         .bv-spark {
@@ -299,8 +375,8 @@ export class BattleView {
         }
         /* Spell-cast glow: element-colored aura blooming around the caster. */
         .bv-spell-glow {
-          position: absolute; inset: -4px; pointer-events: none; z-index: 6;
-          border-radius: 4px;
+          position: absolute; inset: -10px; pointer-events: none; z-index: 1;
+          border-radius: 50%;
           background: radial-gradient(ellipse at center, var(--glow) 0%, transparent 72%);
           animation: battle-glow-fade 0.9s ease-out forwards;
         }
@@ -312,7 +388,7 @@ export class BattleView {
         /* Element impact: a colored ring bursting on the struck target. */
         .bv-impact-ring {
           position: absolute; pointer-events: none; z-index: 29;
-          width: 30px; height: 30px; border-radius: 50%;
+          width: 30px; height: 30px; border-radius: 50%; margin-left: -15px;
           border: 3px solid var(--glow); box-shadow: 0 0 12px var(--glow), inset 0 0 8px var(--glow);
           animation: battle-impact-ring 0.5s ease-out forwards;
         }
@@ -320,10 +396,10 @@ export class BattleView {
           0% { transform: scale(0.3); opacity: 1; }
           100% { transform: scale(2.2); opacity: 0; }
         }
-        /* Melee slash: a white-hot streak sweeping across the struck card. */
+        /* Melee slash: a white-hot streak sweeping across the struck figure. */
         .bv-slash {
           position: absolute; pointer-events: none; z-index: 28;
-          width: 90px; height: 3px; border-radius: 2px;
+          width: 90px; height: 3px; border-radius: 2px; margin-left: -45px;
           background: linear-gradient(90deg, transparent, #fff 45%, #ffb090 60%, transparent);
           box-shadow: 0 0 8px rgba(255,200,150,0.9);
           animation: battle-slash-sweep 0.32s ease-out forwards;
@@ -334,54 +410,77 @@ export class BattleView {
           100% { transform: translate(34px, -6px) rotate(-28deg); opacity: 0; }
         }
         .bv-damage-pop {
-          position: absolute; pointer-events: none; z-index: 30;
-          font-weight: bold; font-size: 17px; font-family: ${T.monoFont};
-          text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,0.6);
+          position: absolute; pointer-events: none; z-index: 30; left: 50%;
+          font-weight: bold; font-size: 18px; font-family: ${T.monoFont};
+          text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,0.6), 0 0 1px #000;
           animation: battle-damage-pop 0.9s ease-out forwards;
         }
-        .bv-heal-pop { animation: battle-heal-pop 0.9s ease-out forwards; }
-        /* Turn-order bar: initiative chips across the top of the window. */
+        /* ── Turn order ─────────────────────────────────────────────
+           One strip of initiative chips under the header; the acting one
+           is kept in view by scrolling the strip, never the page. */
         .bv-turn-chip {
-          display: inline-flex; align-items: center; gap: 4px;
-          font-size: 9px; padding: 2px 8px; border-radius: 9px;
-          border: 1px solid #3b3540; background: rgba(16,14,19,0.88); color: #c3baa8;
-          white-space: nowrap; max-width: 118px; overflow: hidden; text-overflow: ellipsis;
+          display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+          font-size: 9px; padding: 1px 7px; border-radius: 9px;
+          border: 1px solid ${T.line}; background: rgba(16,14,19,0.88); color: ${T.text};
+          white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis;
         }
         .bv-turn-chip.foe { border-color: #6a3630; background: rgba(34,15,13,0.88); color: #dbaa9e; }
         .bv-turn-chip.active {
-          border-color: #e8c56a; color: #f2dca0;
+          border-color: ${T.gold}; color: #f2dca0;
           box-shadow: 0 0 9px rgba(232,197,106,0.45);
           animation: pad-pip-blink 1.6s ease-in-out infinite;
         }
         .bv-turn-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+        /* ── Party status window ────────────────────────────────────
+           The bottom-left window when no one is being asked for orders:
+           one line per hero, the way the classic screens list the party. */
+        .bv-status-row {
+          display: grid; grid-template-columns: 14px minmax(0, 1fr) 62px 54px; align-items: center; gap: 0 6px;
+          padding: 3px 4px; border-radius: ${T.r1}; font-size: 11.5px;
+        }
+        .bv-status-row.active { background: rgba(232,197,106,0.10); }
+        .bv-status-row .cur { color: ${T.gold}; font-size: 9px; opacity: 0; animation: menu-cursor-blink 0.9s steps(1) infinite; }
+        .bv-status-row.active .cur { opacity: 1; }
+        .bv-status-row .nm { font-family: ${T.titleFont}; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bv-status-row .sub { font-size: 8.5px; color: ${T.muted}; font-family: ${T.bodyFont}; font-weight: normal; letter-spacing: 0; }
+        .bv-status-row .hp { font-family: ${T.monoFont}; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+        .bv-status-row .pips { font-size: 8px; color: ${T.info}; text-align: right; white-space: nowrap; overflow: hidden; }
+        .bv-status-row .bar { grid-column: 2 / 5; height: 3px; border-radius: 2px; background: rgba(0,0,0,0.55); border: 1px solid rgba(232,197,106,0.18); overflow: hidden; margin-top: 1px; }
+        .bv-status-row .bar > div { height: 100%; transition: width .3s ease-out; }
+        .bv-status-row .conds { grid-column: 2 / 5; font-size: 8.5px; color: #e8a99e; }
+        .bv-status-row .chipwrap { grid-column: 2 / 5; }
       </style>
-      <div style="flex:0 0 auto; height:210px; display:flex; flex-direction:column; padding:10px 14px;">          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div id="battle-round" style="color:${T.text}; font-size:14px; font-weight:bold; letter-spacing:2px;">ROUND 1</div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div id="battle-speed" style="display:flex; gap:3px;"></div>
-            <button id="battle-mode" title="Toggle command mode: Manual = you pick every hero's action; Auto = the AI resolves all turns" style="padding:3px 9px; font-size:10px; cursor:pointer; background:linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95)); color:#f2dca0; border:1px solid #a08a4a; border-radius:4px;">Manual</button>
-            <div id="battle-banner" style="color:${T.gold}; font-size:16px; font-weight:bold; letter-spacing:2px; text-shadow:0 0 14px rgba(232,197,106,0.45);"></div>
-          </div>
+      <div id="battle-top" style="flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px; padding:0 14px; border-bottom:1px solid ${T.rule}; background:rgba(0,0,0,0.35);">
+        <div id="battle-round" style="flex:0 0 auto; color:${T.text}; font-size:13px; font-weight:bold; letter-spacing:2px;">ROUND 1</div>
+        <div id="battle-order" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:4px; overflow:hidden; white-space:nowrap; -webkit-mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent);"></div>
+        <div style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
+          <div id="battle-speed" style="display:flex; gap:3px;"></div>
+          <button id="battle-mode" title="Toggle command mode: Manual = you pick every hero's action; Auto = the AI resolves all turns" style="padding:3px 9px; font-size:10px; cursor:pointer; background:linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95)); color:#f2dca0; border:1px solid ${T.goldDim}; border-radius:4px;">Manual</button>
         </div>
-        <div id="battle-order" style="flex:0 0 auto; display:flex; justify-content:center; align-items:center; gap:4px; margin-bottom:6px; flex-wrap:wrap;"></div>
-        <!-- A big encounter wraps to a second row; without overflow of its own
-             that row painted straight over the narration below. It scrolls
-             inside its band instead, and the cards go compact past six foes. -->
-        <div id="battle-enemies" style="flex:1 1 auto; min-height:0; display:flex; justify-content:center; align-items:flex-start; align-content:flex-start; gap:10px; flex-wrap:wrap; overflow-y:auto; overflow-x:hidden;"></div>
       </div>
-      <!-- The narration grows upward off the bottom edge, the way a table's
-           talk fills the space between the foes and the party. An empty feed
-           at the start of a fight then reads as headroom, not as a void. -->
-      <div id="battle-feed" style="flex:1 1 auto; margin:0 18px; background:rgba(10,8,12,0.55); border:1px solid ${T.line}; border-radius:${T.r2}; box-shadow:inset 0 0 0 1px ${T.rule}; padding:9px 12px; overflow-y:auto; color:${T.text}; min-height:40px; max-height:38%; display:flex; flex-direction:column;">
-        <div id="battle-feed-lines" style="margin-top:auto; flex:0 0 auto;"></div>
+      <!-- The field: foes on the left, the party on the right, both in ranks
+           on one floor. Stands are laid out absolutely by layoutSide(). -->
+      <div id="battle-field" style="position:relative; flex:1 1 auto; min-height:0; overflow:hidden;">
+        <div id="battle-ground"></div>
+        <div id="battle-banner" style="position:absolute; left:0; right:0; top:14px; z-index:8; text-align:center; pointer-events:none; color:${T.gold}; font-size:30px; font-weight:bold; letter-spacing:8px; text-shadow:0 2px 4px #000, 0 0 18px rgba(232,197,106,0.55);"></div>
+        <div id="battle-enemies" style="position:absolute; left:0; top:0; bottom:0; width:50%;"></div>
+        <div id="battle-heroes" style="position:absolute; right:0; top:0; bottom:0; width:50%;"></div>
       </div>
-      <div style="flex:0 0 auto; height:210px; display:flex; flex-direction:column; padding:10px 14px;">
-        <div class="dp-section-label" style="color:${T.goldDim}; font-size:10px; margin-bottom:6px; text-align:center;">◆ PARTY ◆</div>
-        <div id="battle-heroes" style="flex:1; display:flex; justify-content:center; align-items:flex-end; gap:12px; flex-wrap:wrap;"></div>
+      <!-- The bottom windows: party status (the command menu docks over it
+           when a hero is asked for orders) and the narration box. -->
+      <div id="battle-bottom" style="flex:0 0 auto; height:232px; display:flex; gap:10px; padding:8px 14px 12px; background:linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.35));">
+        <div id="battle-party-status" class="dp-window" style="flex:0 0 292px; min-width:0; padding:8px 10px; overflow:hidden; display:flex; flex-direction:column; color:${T.text};">
+          <div class="dp-section-label" style="color:${T.goldDim}; font-size:9px; margin-bottom:4px; text-align:center;">◆ Party ◆</div>
+          <div id="battle-party-rows" style="flex:1 1 auto; min-height:0; overflow-y:auto;"></div>
+        </div>
+        <div id="battle-feed" class="dp-window" style="flex:1 1 auto; min-width:0; padding:9px 13px; overflow-y:auto; color:${T.text}; display:flex; flex-direction:column;">
+          <div id="battle-feed-lines" style="margin-top:auto; flex:0 0 auto;"></div>
+        </div>
       </div>
     `;
     this.enemyRow = this.root.querySelector('#battle-enemies')!;
     this.heroRow = this.root.querySelector('#battle-heroes')!;
+    this.statusRowsEl = this.root.querySelector('#battle-party-rows')!;
     this.feedEl = this.root.querySelector('#battle-feed')!;
     this.feedLinesEl = this.root.querySelector('#battle-feed-lines')!;
     this.roundEl = this.root.querySelector('#battle-round')!;
@@ -478,9 +577,10 @@ export class BattleView {
     this.turnOrderEl.innerHTML = '';
     if (actors.length === 0) return;
     const label = document.createElement('span');
-    label.style.cssText = 'font-size:9px; color:#5a6a7a; margin-right:6px; letter-spacing:1px;';
+    label.style.cssText = `flex:0 0 auto; font-size:9px; color:${T.faint}; margin-right:6px; letter-spacing:1px;`;
     label.textContent = 'TURN ORDER';
     this.turnOrderEl.appendChild(label);
+    let activeChip: HTMLElement | null = null;
     for (const a of actors) {
       const id = this.actorId(a);
       const isMonster = this.isMonster(a);
@@ -495,6 +595,16 @@ export class BattleView {
       const dot = `<span class="dot" style="background:${dotColor};${boss ? ' box-shadow:0 0 5px #ffb020;' : ''}"></span>`;
       chip.innerHTML = `${dot}${name}${boss ? ' ♛' : ''}`;
       this.turnOrderEl.appendChild(chip);
+      if (id === currentActorId) activeChip = chip;
+    }
+    // A big fight's strip runs past the header: slide it so the acting
+    // chip is in view. Scroll the strip's own box, never the page.
+    if (activeChip) {
+      const bar = this.turnOrderEl;
+      const want = (activeChip as HTMLElement).offsetLeft + (activeChip as HTMLElement).offsetWidth - (bar.clientWidth - 30);
+      bar.scrollLeft = Math.max(0, want);
+    } else {
+      this.turnOrderEl.scrollLeft = 0;
     }
   }
 
@@ -612,112 +722,121 @@ export class BattleView {
     return null;
   }
 
-  /** Apply the derived kinetic effects to freshly rendered cards. */
+  /** Every kinetic class a stand can carry; cleared before each batch. */
+  private static readonly FX_CLASSES = ['bv-shake', 'bv-lunge-left', 'bv-lunge-right', 'bv-hit', 'bv-crit', 'bv-heal-glow'];
+
+  /** The figure (sprite + shadow) of a stand, where every effect is anchored. */
+  private figureOf(id: string): HTMLElement | null {
+    const card = this.cardOf(id);
+    return card ? (card.querySelector('.bv-figure') as HTMLElement | null) : null;
+  }
+
+  /** The stand for an actor id, on whichever side it fights. */
+  private cardOf(id: string): HTMLElement | null {
+    return (this.enemyRow.querySelector(`.battle-card[data-id="${id}"]`) as HTMLElement | null)
+      ?? (this.heroRow.querySelector(`.battle-card[data-id="${id}"]`) as HTMLElement | null);
+  }
+
+  /**
+   * Apply the derived kinetic effects to the stands. The stands persist
+   * between ticks now, so a class has to come off, the element reflow, and
+   * the class go back on for its animation to run again.
+   */
   private applyEffects(): void {
-    const apply = (container: HTMLElement) => {
+    const apply = (container: HTMLElement, isHero: boolean) => {
       for (const card of Array.from(container.querySelectorAll('.battle-card'))) {
         const el = card as HTMLElement;
         const id = el.getAttribute('data-id') ?? '';
-        // The crit/heal ::after overlays need a positioned ancestor.
-        el.style.position = 'relative';
-        el.classList.remove('bv-shake', 'bv-lunge-up', 'bv-lunge-down', 'bv-hit', 'bv-crit', 'bv-heal-glow');
+        el.classList.remove(...BattleView.FX_CLASSES);
+        const add: string[] = [];
         if (this.critIds.has(id)) {
           // Crit: the harsher flash subsumes the plain hit flash.
-          el.classList.add('bv-crit');
+          add.push('bv-crit');
         } else if (this.hitIds.has(id)) {
-          el.classList.add('bv-shake', 'bv-hit');
+          add.push('bv-shake', 'bv-hit');
         }
-        if (this.healIds.has(id)) {
-          el.classList.add('bv-heal-glow');
-        }
-        if (this.lungedIds.has(id)) {
-          // Heroes sit at the bottom (lunge up), enemies at the top (lunge down).
-          el.classList.add(container === this.heroRow ? 'bv-lunge-up' : 'bv-lunge-down');
+        if (this.healIds.has(id)) add.push('bv-heal-glow');
+        // Heroes stand on the right and lunge left; foes lunge right.
+        if (this.lungedIds.has(id)) add.push(isHero ? 'bv-lunge-left' : 'bv-lunge-right');
+        if (add.length > 0) {
+          void el.offsetWidth; // restart the animations
+          el.classList.add(...add);
         }
       }
     };
-    apply(this.enemyRow);
-    apply(this.heroRow);
+    apply(this.enemyRow, false);
+    apply(this.heroRow, true);
+    // The hit flash is a plain style, not an animation: lift it after a beat.
+    if (this.hitIds.size > 0) {
+      window.setTimeout(() => {
+        for (const el of Array.from(this.root.querySelectorAll('.battle-card.bv-hit'))) el.classList.remove('bv-hit');
+      }, 260);
+    }
 
-    // Damage/heal pops over the affected cards.
+    // Damage/heal pops over the affected figures.
     for (const pop of this.pendingPops) {
-      const card =
-        (this.enemyRow.querySelector(`.battle-card[data-id="${pop.id}"]`) as HTMLElement | null) ??
-        (this.heroRow.querySelector(`.battle-card[data-id="${pop.id}"]`) as HTMLElement | null);
-      if (!card) continue;
-      card.style.position = 'relative';
+      const fig = this.figureOf(pop.id);
+      if (!fig) continue;
       const num = document.createElement('div');
-      num.className = 'bv-damage-pop' + (pop.heal ? ' bv-heal-pop' : '');
+      num.className = 'bv-damage-pop';
       num.textContent = pop.text;
       num.style.color = pop.heal ? '#7fe0a8' : pop.crit ? '#ffcc33' : '#ff7a5a';
-      if (pop.crit) num.style.fontSize = '22px';
-      num.style.left = '50%';
-      num.style.top = '18px';
-      card.appendChild(num);
+      if (pop.crit) num.style.fontSize = '24px';
+      num.style.top = '20%';
+      fig.appendChild(num);
       window.setTimeout(() => num.remove(), 950);
       // Critical hits erupt with a burst of hit-spark particles at the impact point.
-      if (pop.crit) this.spawnHitSparks(card);
+      if (pop.crit) this.spawnHitSparks(fig);
     }
     this.pendingPops = [];
 
     // Spell-cast glows: element-colored aura blooming around each caster.
     for (const g of this.castGlows) {
-      const card =
-        (this.enemyRow.querySelector(`.battle-card[data-id="${g.id}"]`) as HTMLElement | null) ??
-        (this.heroRow.querySelector(`.battle-card[data-id="${g.id}"]`) as HTMLElement | null);
-      if (!card) continue;
-      card.style.position = 'relative';
+      const fig = this.figureOf(g.id);
+      if (!fig) continue;
       const glow = document.createElement('div');
       glow.className = 'bv-spell-glow';
       glow.style.setProperty('--glow', g.color);
-      card.appendChild(glow);
+      fig.appendChild(glow);
       window.setTimeout(() => glow.remove(), 950);
     }
     this.castGlows = [];
 
     // Spell impact rings: element-colored burst on each struck target.
     for (const r of this.impactRings) {
-      const card =
-        (this.enemyRow.querySelector(`.battle-card[data-id="${r.id}"]`) as HTMLElement | null) ??
-        (this.heroRow.querySelector(`.battle-card[data-id="${r.id}"]`) as HTMLElement | null);
-      if (!card) continue;
-      card.style.position = 'relative';
+      const fig = this.figureOf(r.id);
+      if (!fig) continue;
       const ring = document.createElement('div');
       ring.className = 'bv-impact-ring';
       ring.style.setProperty('--glow', r.color);
       ring.style.left = '50%';
-      ring.style.top = '30px';
-      ring.style.marginLeft = '-15px';
-      card.appendChild(ring);
+      ring.style.top = '35%';
+      fig.appendChild(ring);
       window.setTimeout(() => ring.remove(), 550);
     }
     this.impactRings = [];
 
-    // Melee slash streaks on struck cards (skipped when a crit ran its own FX).
+    // Melee slash streaks on struck figures (skipped when a crit ran its own FX).
     for (const id of this.slashIds) {
       if (this.critIds.has(id)) continue; // crit sparks + flash already cover it
-      const card =
-        (this.enemyRow.querySelector(`.battle-card[data-id="${id}"]`) as HTMLElement | null) ??
-        (this.heroRow.querySelector(`.battle-card[data-id="${id}"]`) as HTMLElement | null);
-      if (!card) continue;
-      card.style.position = 'relative';
+      const fig = this.figureOf(id);
+      if (!fig) continue;
       const slash = document.createElement('div');
       slash.className = 'bv-slash';
       slash.style.left = '50%';
-      slash.style.top = '34px';
-      slash.style.marginLeft = '-45px';
-      card.appendChild(slash);
+      slash.style.top = '45%';
+      fig.appendChild(slash);
       window.setTimeout(() => slash.remove(), 400);
     }
     this.slashIds = new Set();
   }
 
   /**
-   * Erupt a starburst of glowing sparks from the top-center of a card — the
+   * Erupt a starburst of glowing sparks from the heart of a figure — the
    * visual punctuation of a critical hit. 10 shrapnel streaks fly outward in
    * a fan and fade; each cleans itself up after the animation.
    */
-  private spawnHitSparks(card: HTMLElement): void {
+  private spawnHitSparks(fig: HTMLElement): void {
     const SPARKS = 10;
     for (let i = 0; i < SPARKS; i++) {
       const s = document.createElement('div');
@@ -728,9 +847,9 @@ export class BattleView {
       s.style.setProperty('--sx', `${Math.cos(angle) * dist}px`);
       s.style.setProperty('--sy', `${Math.sin(angle) * dist}px`);
       s.style.left = '50%';
-      s.style.top = '22px';
+      s.style.top = '40%';
       s.style.animation = `battle-spark-fly ${0.45 + Math.random() * 0.25}s ease-out forwards`;
-      card.appendChild(s);
+      fig.appendChild(s);
       window.setTimeout(() => s.remove(), 800);
     }
   }
@@ -741,11 +860,11 @@ export class BattleView {
     this.renderEnemies();
   }
 
-  /** Snap all cards to their resting pose (called between rounds). */
+  /** Snap all stands to their resting pose (called between rounds). */
   private resetEffects(): void {
     for (const card of Array.from(this.root.querySelectorAll('.battle-card'))) {
       const el = card as HTMLElement;
-      el.classList.remove('bv-shake', 'bv-lunge-up', 'bv-lunge-down', 'bv-hit', 'bv-crit', 'bv-heal-glow');
+      el.classList.remove(...BattleView.FX_CLASSES);
       // Restart animations on the next batch by forcing a reflow.
       void el.offsetWidth;
     }
@@ -867,10 +986,9 @@ export class BattleView {
 
   private highlightIn(container: HTMLElement, actorId: string): void {
     for (const card of Array.from(container.querySelectorAll('.battle-card'))) {
-      const hit = card.getAttribute('data-id') === actorId;
-      (card as HTMLElement).style.outline = hit ? `2px solid ${T.gold}` : 'none';
-      (card as HTMLElement).style.boxShadow = hit ? '0 0 16px rgba(232,197,106,0.35)' : 'none';
+      card.classList.toggle('bv-active', card.getAttribute('data-id') === actorId);
     }
+    if (container === this.heroRow) this.renderPartyStatus();
   }
 
   private isMonster(x: GameCharacter | Monster): x is Monster {
@@ -881,20 +999,130 @@ export class BattleView {
     return this.isMonster(a) ? a.id : a.id;
   }
 
+  /**
+   * Classes that fight in the front rank. Everyone else — the casters, the
+   * archer, the tinkerer — stands behind them, the way a party lines up in
+   * the classic screens.
+   */
+  private static readonly FRONT_RANK = new Set(['fighter', 'barbarian', 'paladin', 'monk', 'rogue', 'blood_hunter']);
+
+  /**
+   * Foes are rebuilt in place: a stand per monster, kept between ticks so
+   * its health bar can drain and its move can glide. The fallen stay where
+   * they fell (faded) until the whole side is down.
+   */
   private renderEnemies(): void {
-    this.enemyRow.innerHTML = '';
-    for (const m of this.enemies) {
-      if (!m.isAlive && !this.enemies.some(o => o.isAlive)) continue;
-      this.enemyRow.appendChild(this.enemyCard(m));
+    const shown = this.enemies.filter(m => m.isAlive || this.enemies.some(o => o.isAlive));
+    const ids = new Set(shown.map(m => m.id));
+    for (const el of Array.from(this.enemyRow.children)) {
+      if (!ids.has(el.getAttribute('data-id') ?? '')) el.remove();
     }
+    const n = shown.length;
+    // Ranks are columns: the front rank stands nearest the party. Up to
+    // four foes make one rank, ten make two, and a horde makes three, so
+    // fifteen goblins are three files of five rather than a wall.
+    const rankCount = n <= 4 ? 1 : n <= 10 ? 2 : 3;
+    const perRank = Math.ceil(n / rankCount);
+    const ranks: HTMLElement[][] = [];
+    shown.forEach((m, i) => {
+      const card = this.ensureCard(m.id, false);
+      this.fillEnemyCard(card, m);
+      const r = Math.floor(i / perRank);
+      (ranks[r] ??= []).push(card);
+    });
+    this.layoutSide(this.enemyRow, ranks, false, n <= 2 ? 120 : n <= 4 ? 104 : n <= 8 ? 84 : 68);
     this.highlightIn(this.enemyRow, this.activeEnemyId ?? '');
   }
 
   private renderHeroes(): void {
     if (!this.party) return;
-    this.heroRow.innerHTML = '';
-    for (const m of this.party.members) this.heroRow.appendChild(this.heroCard(m));
+    const members = this.party.members;
+    const ids = new Set(members.map(m => m.id));
+    for (const el of Array.from(this.heroRow.children)) {
+      if (!ids.has(el.getAttribute('data-id') ?? '')) el.remove();
+    }
+    const [front, back] = this.heroRanks(members);
+    const ranks: HTMLElement[][] = [[], []];
+    for (const m of members) {
+      const card = this.ensureCard(m.id, true);
+      this.fillHeroCard(card, m);
+      ranks[front.includes(m) ? 0 : 1].push(card);
+    }
+    if (back.length === 0) ranks.pop();
+    this.layoutSide(this.heroRow, ranks, true, members.length <= 4 ? 96 : 80);
     this.highlightIn(this.heroRow, this.activeHeroId ?? '');
+  }
+
+  /** Split the party into a front and a back rank by class, kept balanced. */
+  private heroRanks(members: GameCharacter[]): [GameCharacter[], GameCharacter[]] {
+    if (members.length <= 2) return [[...members], []];
+    let front = members.filter(m => BattleView.FRONT_RANK.has(m.charClass.id));
+    let back = members.filter(m => !BattleView.FRONT_RANK.has(m.charClass.id));
+    // An all-steel or all-spell party still forms two files.
+    if (front.length === 0) { front = back.slice(0, Math.ceil(back.length / 2)); back = back.slice(front.length); }
+    if (back.length === 0) { back = front.slice(Math.ceil(front.length / 2)); front = front.slice(0, front.length - back.length); }
+    while (front.length > 4) back.unshift(front.pop()!);
+    while (back.length > 4) front.push(back.shift()!);
+    return [front, back];
+  }
+
+  /**
+   * Place a side's ranks on the floor. Each rank is a file (a column);
+   * the front file stands nearest the middle of the field and the files
+   * behind it step outward and are centred on the floor, so a short back
+   * rank sits staggered between the front rank's shoulders. The sprite
+   * size comes from the tallest file: everyone on a side is drawn at one
+   * scale, shrunk only as far as the floor demands.
+   */
+  private layoutSide(side: HTMLElement, ranks: HTMLElement[][], isHero: boolean, maxSprite: number): void {
+    const W = side.clientWidth || 512;
+    const H = side.clientHeight || 500;
+    const perRank = Math.max(1, ...ranks.map(r => r.length));
+    const topPad = Math.round(H * 0.13);
+    const botPad = 14;
+    const band = H - topPad - botPad;
+    const slotH = band / perRank;
+    const labelH = isHero ? 46 : 34;
+    const sprite = Math.max(36, Math.min(maxSprite, Math.floor(slotH - labelH - 2)));
+    const standW = Math.max(sprite + 28, 86);
+    const fileW = standW + 6;
+    // Files must fit the half-field; a crowded side packs its files closer.
+    const inset = 26;
+    const step = Math.min(fileW, Math.max(sprite + 8, (W - inset * 2 - standW) / Math.max(1, ranks.length - 1)));
+    ranks.forEach((rank, r) => {
+      // Vertically centre the file. A shorter file slides half a slot so
+      // its members stand between the shoulders of the fuller file rather
+      // than beside them — the classic diagonal.
+      const spare = band - rank.length * slotH;
+      const shift = rank.length < perRank
+        ? Math.min(slotH * 0.5, spare / 2) * (r % 2 === 0 ? -1 : 1)
+        : 0;
+      const y0 = topPad + spare / 2 + shift;
+      const x = isHero
+        ? inset + r * step
+        : W - inset - standW - r * step;
+      // Within its slot a front-file stand sits high and a back-file stand
+      // low, so equal files still read as a diagonal rather than a grid.
+      const lean = ranks.length > 1 ? (r % 2 === 0 ? 0.2 : 0.8) : 0.5;
+      rank.forEach((card, k) => {
+        const standH = sprite + labelH;
+        const y = Math.round(y0 + slotH * k + (slotH - standH) * lean);
+        card.style.left = `${Math.round(x)}px`;
+        card.style.top = `${Math.max(2, y)}px`;
+        card.style.width = `${standW}px`;
+        card.style.zIndex = String(10 + k); // lower on the floor draws in front
+        const fig = card.querySelector('.bv-figure') as HTMLElement;
+        const img = card.querySelector('.bv-sprite') as HTMLElement;
+        const boss = card.classList.contains('bv-boss');
+        const s = boss ? Math.round(sprite * 1.22) : sprite;
+        fig.style.width = `${sprite}px`;
+        fig.style.height = `${sprite}px`;
+        img.style.width = `${s}px`;
+        img.style.height = `${s}px`;
+        img.style.marginBottom = boss ? '-2px' : '0';
+        (card.querySelector('.bv-tag') as HTMLElement).style.fontSize = `${sprite >= 84 ? 11.5 : sprite >= 60 ? 10 : 9}px`;
+      });
+    });
   }
 
   /** Rasterize a monster/hero sprite into an <img> src data URL. */
@@ -908,75 +1136,125 @@ export class BattleView {
     }
   }
 
-  private enemyCard(m: Monster): HTMLElement {
+  /**
+   * Find or build the stand for a combatant. The skeleton is built once;
+   * the sprite is rasterized once (a data URL per tick per creature was the
+   * old window's biggest cost); everything else is filled in per tick.
+   */
+  private ensureCard(id: string, isHero: boolean): HTMLElement {
+    const side = isHero ? this.heroRow : this.enemyRow;
+    const existing = side.querySelector(`.battle-card[data-id="${id}"]`) as HTMLElement | null;
+    if (existing) return existing;
     const card = document.createElement('div');
-    card.className = 'battle-card';
-    card.setAttribute('data-id', m.id);
-    const boss = m.template.name.includes('(Boss)');
-    const frac = Math.max(0, Math.min(1, m.hp / Math.max(1, m.maxHp)));
-    const bar = hpColor(frac);
-    const conds = m.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
-    // A crowded field gets smaller cards so a big encounter still reads as one
-    // rank of foes rather than a wall wrapping into the narration below.
-    // Twelve of the smallest still fit the 1024px window on one line.
-    const n = this.enemies.length;
-    const size = n > 8
-      ? { sprite: 36, box: 'padding:4px 5px 3px; min-width:58px; max-width:72px;', font: 8.5, head: 20 }
-      : n > 6
-        ? { sprite: 44, box: 'padding:5px 7px 4px; min-width:74px; max-width:96px;', font: 9, head: 20 }
-        : { sprite: 64, box: 'padding:8px 10px 6px; min-width:96px; max-width:130px;', font: 10.5, head: 24 };
-    const sprite = size.sprite;
-    card.style.cssText = [
-      'position:relative;',
-      'display:flex; flex-direction:column; align-items:center; gap:4px;',
-      `background:linear-gradient(180deg, rgba(38,22,20,0.72), rgba(20,13,12,0.78)); border:1px solid ${T.line}; border-radius:${T.r2};`,
-      size.box,
-    ].join('');
+    card.className = 'battle-card ' + (isHero ? 'bv-hero' : 'bv-foe');
+    card.setAttribute('data-id', id);
     card.innerHTML = `
-      <div style="font-size:${size.font}px; color:${boss ? T.gold : '#dbaa9e'}; text-align:center; line-height:1.2; min-height:${size.head}px;">${m.template.name}</div>
-      <img src="${this.spriteSrc(m)}" style="width:${sprite}px; height:${sprite}px; image-rendering:pixelated; ${m.isAlive ? '' : 'opacity:0.3; filter:grayscale(1);'}" draggable="false"/>
-      <div style="width:100%; background:rgba(0,0,0,0.55); border:1px solid ${T.line}; border-radius:2px; overflow:hidden;">
-        <div style="width:${frac * 100}%; height:8px; background:linear-gradient(90deg, ${bar}, ${bar}bb); transition:width .25s;"></div>
+      <div class="bv-figure">
+        <div class="bv-shadow"></div>
+        <div class="bv-ring"></div>
+        <img class="bv-sprite" draggable="false" alt=""/>
       </div>
-      <div class="dp-num" style="font-size:9px; color:${T.muted}; width:100%; text-align:center;">${Math.max(0, Math.round(m.hp))}<span style="color:${T.faint};">/${m.maxHp}</span></div>
-      ${conds ? `<div style="font-size:8.5px; color:#e8a99e; text-align:center; line-height:1.2;">${conds}</div>` : ''}
+      <div class="bv-tag"></div>
+      <div class="bv-hpbar"><div class="bv-hpghost"></div><div class="bv-hpfill"></div></div>
+      <div class="bv-hpnum dp-num"></div>
+      <div class="bv-extra"></div>
     `;
+    side.appendChild(card);
     return card;
   }
 
-  private heroCard(hero: GameCharacter): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'battle-card';
-    card.setAttribute('data-id', hero.id);
-    const frac = Math.max(0, Math.min(1, hero.hp / Math.max(1, hero.maxHp)));
-    const bar = hpColor(frac);
+  /** Paint the live values of a stand: bar, numbers, name, conditions. */
+  private fillStand(card: HTMLElement, opts: {
+    name: string; nameColor: string; hp: number; maxHp: number; down: boolean; extraHtml: string; sprite: GameCharacter | Monster;
+  }): void {
+    const img = card.querySelector('.bv-sprite') as HTMLImageElement;
+    if (!img.getAttribute('src')) img.src = this.spriteSrc(opts.sprite);
+    const frac = Math.max(0, Math.min(1, opts.hp / Math.max(1, opts.maxHp)));
+    const tag = card.querySelector('.bv-tag') as HTMLElement;
+    if (tag.innerHTML !== opts.name) tag.innerHTML = opts.name;
+    tag.style.color = opts.nameColor;
+    const fill = card.querySelector('.bv-hpfill') as HTMLElement;
+    const ghost = card.querySelector('.bv-hpghost') as HTMLElement;
+    const width = `${(frac * 100).toFixed(1)}%`;
+    if (fill.style.width !== width) {
+      // A first paint has no history: both fills start where they are, no drain.
+      const first = !fill.style.width;
+      if (first) ghost.style.transition = 'none';
+      fill.style.width = width;
+      ghost.style.width = width;
+      if (first) window.setTimeout(() => ghost.style.removeProperty('transition'), 40);
+    }
+    fill.style.backgroundColor = hpColor(frac);
+    const num = card.querySelector('.bv-hpnum') as HTMLElement;
+    const numHtml = `${Math.max(0, Math.round(opts.hp))}<span style="color:${T.faint};">/${opts.maxHp}</span>`;
+    if (num.innerHTML !== numHtml) num.innerHTML = numHtml;
+    const extra = card.querySelector('.bv-extra') as HTMLElement;
+    if (extra.innerHTML !== opts.extraHtml) extra.innerHTML = opts.extraHtml;
+    extra.style.display = opts.extraHtml ? '' : 'none';
+    card.classList.toggle('bv-down', opts.down);
+  }
+
+  private fillEnemyCard(card: HTMLElement, m: Monster): void {
+    const boss = m.isBoss || m.template.name.includes('(Boss)');
+    card.classList.toggle('bv-boss', boss);
+    const conds = m.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
+    this.fillStand(card, {
+      name: `${boss ? '♛ ' : ''}${m.template.name}`,
+      nameColor: boss ? T.gold : '#dbaa9e',
+      hp: m.hp, maxHp: m.maxHp, down: !m.isAlive,
+      extraHtml: conds ? `<span style="color:#e8a99e;">${conds}</span>` : '',
+      sprite: m,
+    });
+  }
+
+  private fillHeroCard(card: HTMLElement, hero: GameCharacter): void {
     const accent = classColor(hero.charClass.id);
     const conds = hero.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
-    // Spell slots as pips per level.
-    const slotPips = this.slotPips(hero);
-    // A class-coloured cap on the card is the only place the party's roles are
-    // legible at a glance during a fight — the sprites are 64px and similar.
-    card.style.cssText = [
-      'position:relative;',
-      'display:flex; flex-direction:column; align-items:center; gap:4px;',
-      `background:linear-gradient(180deg, rgba(30,27,34,0.82), rgba(16,14,19,0.86)); border:1px solid ${T.line}; border-radius:${T.r2};`,
-      `border-top:2px solid ${accent};`,
-      'padding:8px 10px 6px; min-width:104px; max-width:150px;',
-    ].join('');
     const deadMarker = hero.isDead || hero.isDying ? ` <span style="color:#ef8272;">&#9760;</span>` : '';
-    card.innerHTML = `
-      <div style="font-size:11.5px; font-weight:bold; color:${accent}; text-align:center; line-height:1.2;">${hero.name}${deadMarker}</div>
-      <div style="font-size:9px; color:${T.muted}; text-align:center;">Lv${hero.level} ${hero.charClass.name}</div>
-      <img src="${this.spriteSrc(hero)}" style="width:64px; height:64px; image-rendering:pixelated; ${hero.hp <= 0 ? 'opacity:0.35; filter:grayscale(1);' : ''}" draggable="false"/>
-      <div style="width:100%; background:rgba(0,0,0,0.55); border:1px solid ${T.line}; border-radius:2px; overflow:hidden;">
-        <div style="width:${frac * 100}%; height:9px; background:linear-gradient(90deg, ${bar}, ${bar}bb); transition:width .25s;"></div>
-      </div>
-      <div class="dp-num" style="font-size:9px; color:${T.muted}; width:100%; text-align:center;">${Math.max(0, Math.round(hero.hp))}<span style="color:${T.faint};">/${hero.maxHp}</span></div>
-      ${slotPips ? `<div class="dp-num" style="font-size:9px; color:${T.info}; width:100%; text-align:center;">${slotPips}</div>` : ''}
-      ${conds ? `<div style="font-size:8.5px; color:#e8a99e; text-align:center; line-height:1.2;">${conds}</div>` : ''}
-      ${this.queuedChipHtml(hero)}
-    `;
-    return card;
+    const pips = this.slotPips(hero);
+    const extras = [
+      pips ? `<div class="dp-num" style="color:${T.info};">${pips}</div>` : '',
+      conds ? `<div style="color:#e8a99e;">${conds}</div>` : '',
+      this.queuedChipHtml(hero),
+    ].join('');
+    this.fillStand(card, {
+      name: `${hero.name}${deadMarker}`,
+      nameColor: accent,
+      hp: hero.hp, maxHp: hero.maxHp, down: hero.hp <= 0,
+      extraHtml: extras,
+      sprite: hero,
+    });
+  }
+
+  /**
+   * The party status window: one line per hero with class, health, spell
+   * slots and any standing order — the bottom-left window of the classic
+   * screen. The command menu docks over it while a hero is asked for orders.
+   */
+  private renderPartyStatus(): void {
+    if (!this.party || !this.statusRowsEl) return;
+    const rows: string[] = [];
+    for (const hero of this.party.members) {
+      const accent = classColor(hero.charClass.id);
+      const frac = Math.max(0, Math.min(1, hero.hp / Math.max(1, hero.maxHp)));
+      const active = hero.id === this.activeHeroId;
+      const conds = hero.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
+      const dead = hero.isDead || hero.isDying;
+      const pips = this.slotPips(hero);
+      const chip = this.queuedChipHtml(hero);
+      rows.push(`
+        <div class="bv-status-row${active ? ' active' : ''}" style="${dead ? 'opacity:0.55;' : ''}">
+          <span class="cur">▶</span>
+          <span class="nm" style="color:${accent};">${hero.name}${dead ? ' <span style="color:#ef8272;">&#9760;</span>' : ''} <span class="sub">Lv${hero.level} ${hero.charClass.name}</span></span>
+          <span class="hp" style="color:${hpColor(frac)};">${Math.max(0, Math.round(hero.hp))}<span style="color:${T.faint};">/${hero.maxHp}</span></span>
+          <span class="pips">${pips}</span>
+          <div class="bar"><div style="width:${(frac * 100).toFixed(1)}%; background:${hpColor(frac)};"></div></div>
+          ${conds ? `<div class="conds">${conds}</div>` : ''}
+          ${chip ? `<div class="chipwrap">${chip}</div>` : ''}
+        </div>`);
+    }
+    const html = rows.join('');
+    if (this.statusRowsEl.innerHTML !== html) this.statusRowsEl.innerHTML = html;
   }
 
   /** Short human label for a queued order ('⚔ Attack', '✦ Fireball', …). */
@@ -1001,7 +1279,7 @@ export class BattleView {
     if (!cmd) {
       // The hero the engine is paused on shows a muted 'awaiting orders' chip.
       if (this.pausedOrderKey === hero.id && hero.isAlive) {
-        return `<div class="bv-order-chip" style="border-style:dashed; border-color:#556; background:rgba(30,34,44,0.55); color:#9aa;">⏳ awaiting orders</div>`;
+        return `<div class="bv-order-chip" style="border-style:dashed; border-color:${T.lineHot}; background:rgba(30,26,20,0.6); color:${T.muted};">⏳ awaiting orders</div>`;
       }
       return '';
     }
@@ -1110,6 +1388,7 @@ export class BattleView {
     this.feedLinesEl.innerHTML = '';
     this.enemyRow.innerHTML = '';
     this.heroRow.innerHTML = '';
+    this.statusRowsEl.innerHTML = '';
     this.menuHero = null;
     if (this.menuEl) this.menuEl.remove();
     this.menuEl = null;
@@ -1262,12 +1541,13 @@ export class BattleView {
     if (!this.menuEl) {
       this.menuEl = document.createElement('div');
       this.menuEl.id = 'battle-command-menu';
+      this.menuEl.className = 'dp-window';
       this.menuEl.style.cssText = [
-        'position:absolute; right:16px; bottom:224px; z-index:25;',
-        'min-width:230px; max-width:320px; max-height:44%; overflow-y:auto;',
-        'background:linear-gradient(180deg, rgba(30,26,20,0.98), rgba(14,12,10,0.98));',
-        `border:1px solid ${T.goldDim}; border-radius:${T.r3}; box-shadow:0 6px 30px rgba(0,0,0,0.75), 0 0 20px rgba(232,197,106,0.16), inset 0 0 0 1px ${T.rule};`,
-        `font-family:${T.bodyFont}; color:${T.text}; padding:11px 13px;`,
+        'position:absolute; left:14px; bottom:12px; z-index:25;',
+        // Tall enough to cover the party status window it docks over, even
+        // as the three-line aim prompt; grows upward for a long spell list.
+        'width:292px; min-height:212px; max-height:64%; overflow-y:auto;',
+        `font-family:${T.bodyFont}; color:${T.text}; padding:10px 12px;`,
       ].join('');
       this.root.appendChild(this.menuEl);
     }
@@ -1606,7 +1886,7 @@ export class BattleView {
 
     if (event.key === 'Escape') {
       // Controls overlay open? Esc closes it first.
-      if (this.controlsEl && this.controlsEl.style.display === 'block') {
+      if (this.controlsEl && this.controlsEl.style.display === 'flex') {
         event.preventDefault();
         this.toggleControlsOverlay();
         return;
@@ -1727,8 +2007,8 @@ export class BattleView {
       ].join('');
       this.root.appendChild(this.controlsEl);
     }
-    const show = this.controlsEl.style.display !== 'block';
-    this.controlsEl.style.display = show ? 'block' : 'none';
+    const show = this.controlsEl.style.display !== 'flex';
+    this.controlsEl.style.display = show ? 'flex' : 'none';
     if (show) {
       this.remapping = null;
       this.renderControlsOverlay();
@@ -2026,11 +2306,10 @@ export class BattleView {
     if (!this.spoilsEl) {
       this.spoilsEl = document.createElement('div');
       this.spoilsEl.id = 'battle-spoils';
+      this.spoilsEl.className = 'dp-window';
       this.spoilsEl.style.cssText = [
         'position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:32;',
-        'min-width:320px; max-width:460px; max-height:70%; overflow-y:auto;',
-        'background:linear-gradient(180deg, rgba(32,27,20,0.98), rgba(14,12,10,0.98));',
-        'border:2px solid #b8963e; border-radius:8px; padding:16px 20px;',
+        'min-width:320px; max-width:460px; max-height:70%; overflow-y:auto; padding:16px 20px;',
         'box-shadow:0 6px 40px rgba(0,0,0,0.8), 0 0 26px rgba(255,200,60,0.22);',
         `font-family:${T.bodyFont}; color:#e8e0c8;`,
       ].join('');
