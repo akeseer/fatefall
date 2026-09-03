@@ -46,6 +46,7 @@ import type { BakedImage, DrawCommand, Frame, RenderBackend } from '../DrawComma
 import { Atmosphere } from './pixi/Atmosphere';
 import { Lighting } from './pixi/Lighting';
 import { Weather } from './pixi/Weather';
+import { Ambience } from './pixi/Ambience';
 
 /** A colour parsed once out of its CSS string. */
 interface Rgba {
@@ -114,6 +115,8 @@ export class PixiBackend implements RenderBackend {
 
   /** Rain, snow, fog and dust, composited over the frame and under the lighting. */
   private weather: Weather | null = null;
+  /** Dust, pollen and fireflies — the world being alive between events. */
+  private ambience: Ambience | null = null;
   /** The darkening-and-torch pass, composited over the finished world. */
   private lighting: Lighting | null = null;
   /** Colour grade, vignette and bloom, as filters over the lit world. */
@@ -148,6 +151,7 @@ export class PixiBackend implements RenderBackend {
     this.world = world;
 
     this.weather = new Weather(width, height);
+    this.ambience = new Ambience(width, height);
     this.lighting = new Lighting(width, height);
     this.atmosphere = new Atmosphere(app.renderer, width, height);
     this.atmosphere.attach(world);
@@ -207,6 +211,17 @@ export class PixiBackend implements RenderBackend {
       if (weather.active) world.addChild(weather.layer);
     }
 
+    // Ambience goes under the lighting for the same reason the weather does,
+    // and in its case that ordering is the effect: dust is only worth drawing
+    // where light catches it, so motes inside the party's torch come out lit
+    // and the ones out in the dark do not — without this file knowing where
+    // the torch is.
+    const ambience = this.ambience;
+    if (ambience) {
+      ambience.update(frame.mood, dt);
+      if (ambience.active) world.addChild(ambience.layer);
+    }
+
     // The lighting layer multiplies down everything drawn above, so it goes on
     // last.
     const lighting = this.lighting;
@@ -246,6 +261,8 @@ export class PixiBackend implements RenderBackend {
     // stage and frees it out from under them.
     this.atmosphere?.destroy();
     this.atmosphere = null;
+    this.ambience?.destroy();
+    this.ambience = null;
     this.lighting?.destroy();
     this.lighting = null;
     this.weather?.destroy();
