@@ -52,6 +52,31 @@ export interface SceneMood {
   focus: { x: number; y: number } | null;
   /** True during a fight, when the scene wants more contrast and less drift. */
   inCombat: boolean;
+  /**
+   * A screen transition in flight, or nothing. The game owns the timing and
+   * stamps a progress from 0 to 1; a backend only maps that to a picture, so
+   * the backends agree exactly and a stutter changes nothing the player sees.
+   */
+  transition?: { kind: TransitionKind; progress: number } | null;
+}
+
+/** A cut to black that fades up, or blinds that close over the map for a fight. */
+export type TransitionKind = 'fade' | 'blinds';
+
+/**
+ * What a transition looks like at a given progress: how far the blinds have
+ * closed and how black the screen is on top, each 0 to 1. A fade is all black
+ * and no blinds. Shared by every backend so they cannot drift apart.
+ */
+export function transitionShape(kind: TransitionKind, progress: number): { closed: number; black: number } {
+  const p = Math.max(0, Math.min(1, progress));
+  // The fade up starts fast and settles, which reads as arriving rather than
+  // as a light being turned up.
+  const fadeUp = (q: number) => 1 - q * q;
+  if (kind === 'fade') return { closed: 0, black: fadeUp(p) };
+  if (p < 0.45) return { closed: p / 0.45, black: 0 };
+  if (p < 0.6) return { closed: 1, black: 1 };
+  return { closed: 1, black: fadeUp((p - 0.6) / 0.4) };
 }
 
 /** One frame: what to clear to, what to draw on top, and how it should feel. */

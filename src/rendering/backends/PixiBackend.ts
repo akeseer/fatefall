@@ -47,6 +47,7 @@ import { Atmosphere } from './pixi/Atmosphere';
 import { Lighting } from './pixi/Lighting';
 import { Weather } from './pixi/Weather';
 import { Ambience } from './pixi/Ambience';
+import { Transition } from './pixi/Transition';
 
 /** A colour parsed once out of its CSS string. */
 interface Rgba {
@@ -117,6 +118,8 @@ export class PixiBackend implements RenderBackend {
   private weather: Weather | null = null;
   /** Dust, pollen and fireflies — the world being alive between events. */
   private ambience: Ambience | null = null;
+  /** The lens: fades and blinds, on the stage above the lit world. */
+  private transition: Transition | null = null;
   /** The darkening-and-torch pass, composited over the finished world. */
   private lighting: Lighting | null = null;
   /** Colour grade, vignette and bloom, as filters over the lit world. */
@@ -152,6 +155,10 @@ export class PixiBackend implements RenderBackend {
 
     this.weather = new Weather(width, height);
     this.ambience = new Ambience(width, height);
+    // Added once and kept: it is not part of the world that is torn down each
+    // frame, and it sits above everything the world container filters.
+    this.transition = new Transition(width, height);
+    app.stage.addChild(this.transition.layer);
     this.lighting = new Lighting(width, height);
     this.atmosphere = new Atmosphere(app.renderer, width, height);
     this.atmosphere.attach(world);
@@ -232,6 +239,7 @@ export class PixiBackend implements RenderBackend {
     // Graded after the lighting rather than before it, so the vignette and the
     // bloom are working on a scene that has already been lit.
     this.atmosphere?.update(frame.mood, dt);
+    this.transition?.update(frame.mood);
 
     app.render();
   }
@@ -263,6 +271,8 @@ export class PixiBackend implements RenderBackend {
     this.atmosphere = null;
     this.ambience?.destroy();
     this.ambience = null;
+    this.transition?.destroy();
+    this.transition = null;
     this.lighting?.destroy();
     this.lighting = null;
     this.weather?.destroy();

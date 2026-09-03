@@ -8,6 +8,7 @@
  */
 
 import type { BakedImage, Frame, RenderBackend, SceneMood } from '../DrawCommand';
+import { transitionShape } from '../DrawCommand';
 
 /** How far the world is crushed underground, where the party's torch is the only light. */
 const UNDERGROUND_DARKNESS = 0.78;
@@ -120,6 +121,7 @@ export class CanvasBackend implements RenderBackend {
     }
     ctx.globalAlpha = 1;
     this.applyMood(ctx, frame.mood);
+    this.applyTransition(ctx, frame.mood);
   }
 
   /**
@@ -166,6 +168,29 @@ export class CanvasBackend implements RenderBackend {
     ctx.fillStyle = grad;
     ctx.fillRect(fx - radius, fy - radius, radius * 2, radius * 2);
     ctx.globalCompositeOperation = previous;
+  }
+
+  /**
+   * The lens, last of all: the same fade and blinds the Pixi backend draws,
+   * from the same shared shape, so a transition looks identical whichever
+   * backend the player is on.
+   */
+  private applyTransition(ctx: CanvasRenderingContext2D, mood: SceneMood): void {
+    const t = mood.transition;
+    if (!t) return;
+    const { closed, black } = transitionShape(t.kind, t.progress);
+    ctx.fillStyle = '#000';
+    if (closed > 0) {
+      const n = 8;
+      const barH = Math.ceil(this.height / n);
+      const w = Math.round(this.width * closed);
+      for (let i = 0; i < n; i++) ctx.fillRect(i % 2 === 0 ? 0 : this.width - w, i * barH, w, barH);
+    }
+    if (black > 0) {
+      ctx.globalAlpha = black;
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.globalAlpha = 1;
+    }
   }
 
   /**

@@ -718,6 +718,8 @@ class Game {
   }
 
   generateNewDungeon(opts?: { name?: string; theme?: LocationTemplate | null }): void {
+    // A new floor, and a new run, both fade up from black.
+    this.beginTransition('fade');
     // Fresh floor — the breadcrumb trail and any cached exploration route reset.
     this.dungeonRecentTiles = [];
     this.dungeonRoute = [];
@@ -1478,6 +1480,7 @@ class Game {
   }
 
   private startCombat(monsters: Monster[]) {
+    this.beginTransition('blinds');
     this.combatEngine.defenseBonus = 0;
     const feature = this.currentRoom()?.feature;
     if (feature?.kind === 'chokepoint' && feature.barricaded) {
@@ -1569,13 +1572,20 @@ class Game {
     // Its in-window speed control rescales the combat tick directly.
     this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
     this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
-    this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
-    this.hud.battleView.update({
-      round: this.combatEngine.log.round,
-      actors: this.combatEngine.initiativeOrder,
-      currentActorId: this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex]?.id ?? null,
-      messages: ['⚔️ A battle begins!'],
-    });
+    // Held back long enough for the blinds to close over the map first. The
+    // window covers the canvas entirely, so opened at once it would hide the
+    // one moment the wipe exists for. A fight that is somehow already over by
+    // then does not get a window.
+    setTimeout(() => {
+      if (this.phase !== GamePhase.Combat) return;
+      this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
+      this.hud.battleView.update({
+        round: this.combatEngine.log.round,
+        actors: this.combatEngine.initiativeOrder,
+        currentActorId: this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex]?.id ?? null,
+        messages: ['⚔️ A battle begins!'],
+      });
+    }, Game.BATTLE_WINDOW_DELAY_MS);
 
     // Add monsters that were engaged
     const engaged = new Set(monsters.map(m => m.id));          this.hud.addCombatMessage('⚔️ Combat initiated!', '#c84');
@@ -2083,6 +2093,26 @@ class Game {
     if (amplitude > 0) this.camera.shake(amplitude, 260);
   }
 
+  /** How long a place change and a battle wipe take, in ms. */
+  private static readonly FADE_MS = 520;
+  private static readonly BLINDS_MS = 700;
+  /** How long the blinds have the map before the battle window covers it. */
+  private static readonly BATTLE_WINDOW_DELAY_MS = 380;
+
+  /** The transition in flight. Advanced in render(), since it is a property of the picture. */
+  private transition: { kind: 'fade' | 'blinds'; ms: number; total: number } | null = null;
+
+  /**
+   * Begin a transition. A change of place cuts to black and fades up on the
+   * new place; a fight closes blinds over the map and fades up on the battle.
+   * By the time this is called the mode has already switched — the effect is
+   * the announcement, not the mechanism, which is what lets it be added to a
+   * dozen call sites without reordering any of them.
+   */
+  beginTransition(kind: 'fade' | 'blinds'): void {
+    this.transition = { kind, ms: 0, total: kind === 'fade' ? Game.FADE_MS : Game.BLINDS_MS };
+  }
+
   private sceneMood(): SceneMood {
     // Every mode draws the world through the same camera, so the party's light
     // sits at the same place in the frame whether it is a torch in a tomb or the
@@ -2098,6 +2128,9 @@ class Game {
       weather: this.weather?.type ?? null,
       focus,
       inCombat: this.phase === GamePhase.Combat,
+      transition: this.transition
+        ? { kind: this.transition.kind, progress: Math.min(1, this.transition.ms / this.transition.total) }
+        : null,
     };
   }
 
@@ -2107,6 +2140,10 @@ class Game {
     // moved at 30 Hz while the sprites it was following interpolated at full
     // frame rate, and the party visibly slid against the ground.
     this.camera.update(this.lastDt);
+    if (this.transition) {
+      this.transition.ms += this.lastDt;
+      if (this.transition.ms >= this.transition.total) this.transition = null;
+    }
 
     // The frame is described into a recorder rather than drawn straight to a
     // context, so the same frame can be replayed by any backend. The map
@@ -4302,6 +4339,7 @@ class Game {
 
   /** The party walks into town: rest, quests, market, and a warm fire. */
   private arriveAtTown(town: OverworldTown): void {
+    this.beginTransition('fade');
     this.mode = GameMode.Town;
     this.bulletinArrivalProgress(town.id);
     this.currentTown = town;
@@ -4783,6 +4821,7 @@ class Game {
     }
     const townName = this.currentTown?.name ?? 'town';
     this.hud.townPanel.hide();
+    this.beginTransition('fade');
     this.mode = GameMode.Overworld;
     this.currentTown = null;
     this.overworldDestination = active.completed
@@ -4866,6 +4905,7 @@ class Game {
   }
 
   enterDungeonFromEntrance(e: OverworldEntrance): void {
+    this.beginTransition('fade');
     this.dungeonEntranceId = e.id;
     this.mode = GameMode.Dungeon;
     this.dungeonLevel = 1;
@@ -4897,6 +4937,7 @@ class Game {
 
   /** Leave the dungeon for the surface — quest complete or by order. */
   exitDungeonToOverworld(): void {
+    this.beginTransition('fade');
     this.descending = true;
     const entranceId = this.dungeonEntranceId;
     // Old saves may not have an overworld yet — build one on first exit.
