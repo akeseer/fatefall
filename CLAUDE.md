@@ -7,7 +7,8 @@ The player is the Dungeon Master; the party is autonomous.
 
 ```bash
 npm run dev      # dev server (127.0.0.1:5173)
-npm run build    # tsc --noEmit (strict) then vite build
+npm run typecheck # tsc (strict) over src, then over tests
+npm run build    # typecheck then vite build
 npm test         # vitest run; tests live in tests/**/*.test.ts
 ```
 

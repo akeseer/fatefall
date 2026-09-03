@@ -11,7 +11,7 @@ const entrances: OverworldEntrance[] = [
   { id: 'gate_1', name: 'The Sunken Crypts', tile: { x: 20, y: 5 }, depth: 4, description: '' },
 ];
 
-const world = (): Overworld => ({ map: new TileMap(), towns, entrances, spawnTownId: 'town_1', pois: [] });
+const world = (): Overworld => ({ map: new TileMap(), towns, entrances, spawnTownId: 'town_1', pois: [], regions: [] });
 
 describe('refreshBulletinBoard', () => {
   it('replaces untouched notices on each visit', () => {
