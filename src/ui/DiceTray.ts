@@ -1,4 +1,5 @@
 import { DiceRollEvent, DiceType, onDiceRoll } from '../rules/DiceEvents';
+import { T } from './Theme';
 import {
   DiceFace,
   buildDieScene,
@@ -74,7 +75,7 @@ export class DiceTray {
     // A flex child of the top strip (title + quest bar + rolls) so the roll
     // chips reserve their own space instead of floating over other UI.
     this.strip.style.cssText =
-      'flex:0 0 auto; max-width:340px; display:flex; flex-direction:row-reverse; gap:5px; overflow:hidden; pointer-events:none; font-family:monospace; align-self:center;';
+      `flex:0 1 auto; min-width:0; max-width:300px; display:flex; flex-direction:row-reverse; gap:5px; overflow:hidden; pointer-events:none; font-family:${T.bodyFont}; align-self:center;`;
     const host = overlay.querySelector('#top-strip') ?? overlay;
     host.appendChild(this.strip);
 
@@ -85,10 +86,10 @@ export class DiceTray {
     const color = OUTCOME_COLOR[e.outcome];
 
     const chip = document.createElement('div');
-    chip.style.cssText = `flex:0 0 auto; min-width:78px; max-width:150px; padding:3px 6px; background:rgba(8,10,18,0.92); border:1px solid ${color}44; border-left:3px solid ${color}; border-radius:3px; color:#dde; opacity:1;`;
+    chip.style.cssText = `flex:0 0 auto; min-width:74px; max-width:146px; padding:3px 7px; background:rgba(12,10,14,0.92); border:1px solid ${T.line}; border-left:3px solid ${color}; border-radius:${T.r1}; color:${T.text}; opacity:1;`;
     chip.innerHTML = `
-      <div style="font-size:8px; color:#889; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(e.label)}</div>
-      <div style="font-size:11px; white-space:nowrap;"><span style="color:#99a;">${escapeHtml(e.expression)}</span> <b style="color:${color};">= ${e.total}</b></div>`;
+      <div style="font-size:8px; color:${T.faint}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(e.label)}</div>
+      <div class="dp-num" style="font-size:11px; white-space:nowrap;"><span style="color:${T.muted};">${escapeHtml(e.expression)}</span> <b style="color:${color};">= ${e.total}</b></div>`;
     this.strip.prepend(chip);
     while (this.strip.children.length > 8) {
       this.strip.lastChild?.remove();
@@ -292,7 +293,7 @@ export class DiceTray {
       // Base styles are set directly (visible immediately) — the pop-in
       // animation is a pure enhancement, so a stalled WAAPI animation can
       // never leave the result invisible.
-      panel.style.cssText = 'position:absolute; top:40%; left:50%; transform:translate(-50%,-50%); text-align:center; font-family:monospace; z-index:95; pointer-events:none;';
+      panel.style.cssText = `position:absolute; top:40%; left:50%; transform:translate(-50%,-50%); text-align:center; font-family:${T.bodyFont}; z-index:95; pointer-events:none;`;
       const size = dramatic ? 76 : pace === 'combat' ? 46 : 58;
       panel.innerHTML = `
         <div style="font-size:12px; color:#99a;">${escapeHtml(e.label)}</div>
@@ -412,7 +413,7 @@ export class DiceTray {
   private banner(text: string, color: string) {
     const el = document.createElement('div');
     el.textContent = text;
-    el.style.cssText = `position:absolute; top:36%; left:0; right:0; text-align:center; font-family:monospace; font-size:40px; font-weight:bold; color:${color}; text-shadow:0 0 22px ${color}; z-index:90; pointer-events:none;`;
+    el.style.cssText = `position:absolute; top:36%; left:0; right:0; text-align:center; font-family:${T.monoFont}; font-size:40px; font-weight:bold; color:${color}; text-shadow:0 0 22px ${color}; z-index:90; pointer-events:none;`;
     this.overlay.appendChild(el);
     // Pop-in via rAF, then fade out and remove. No WAAPI dependency — same
     // reason as everywhere else: stalled animations leave ghost UI behind.

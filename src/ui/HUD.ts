@@ -13,7 +13,7 @@ import { DiceSounds } from './DiceSounds';
 import { buildDieScene, buildDiceModel, normalize3, quatFromAxisAngle, quatToMatrix3d } from './Dice3D';
 import { TownPanel } from './TownPanel';
 import { BattleView } from './BattleView';
-import { installTheme } from './Theme';
+import { installTheme, T, classColor, hpColor, toneForColor, LogTone } from './Theme';
 
 export type GameSpeed = 0.25 | 0.5 | 1 | 2 | 4;
 
@@ -91,6 +91,10 @@ export class HUD {
   private startDieFrame?: number;
   private bossBarEl: HTMLElement;
   private questBarEl: HTMLElement;
+  /** The purse/depth line pinned to the foot of the party rail. */
+  private partyFootEl: HTMLElement;
+  /** How many lines the log currently holds (it appends, never re-joins). */
+  private logLineCount: number = 0;
 
   constructor() {
     this.overlay = document.getElementById('ui-overlay')!;
@@ -99,7 +103,8 @@ export class HUD {
     this.logEl = this.overlay.querySelector('#combat-log')!;
     this.bossBarEl = this.overlay.querySelector('#boss-bar')!;
     this.questBarEl = this.overlay.querySelector('#quest-bar')!;
-    this.partyEl = this.overlay.querySelector('#party-status')!;
+    this.partyEl = this.overlay.querySelector('#party-list')!;
+    this.partyFootEl = this.overlay.querySelector('#party-foot')!;
     this.speedBtns = this.overlay.querySelector('#speed-controls')!;
     this.charSheetEl = this.overlay.querySelector('#char-sheet')!;
     this.compendium = new DnDCompendium(this.overlay);
@@ -118,83 +123,112 @@ export class HUD {
   private getTemplate(): string {
     return `
       <style>
-        /* HUD panel + button design language (shared by every surface below). */
+        /* The bottom band is one plank of dark wood with a gold seam along its
+           top edge — the same seam the panels and section rules use. */
         .dp-hud-panel {
-          background: linear-gradient(180deg, rgba(14,18,28,0.93), rgba(10,13,20,0.93));
-          border-top: 1px solid #2a3242;
-          box-shadow: 0 -6px 24px rgba(0,0,0,0.45);
+          background: ${T.panelGrad};
+          border-top: 1px solid ${T.line};
+          box-shadow: 0 -6px 24px rgba(0,0,0,0.55), inset 0 1px 0 ${T.rule};
         }
-        #hud-top button {
-          padding: 5px 13px;
-          font-size: 12px;
-          border-radius: 5px;
+        .dp-hud-col { padding: 8px 10px; overflow-y: auto; font-size: 11px; }
+        #hud-top button { padding: 5px 12px; font-size: 12px; }
+        /* An icon carries the colour; the label stays parchment, so seven
+           controls read as one set instead of seven unrelated buttons. */
+        #hud-top button .ic { margin-right: 5px; }
+        /* Speed: one segmented control, not five loose buttons. */
+        #speed-controls {
+          display: flex;
+          border: 1px solid ${T.line};
+          border-radius: ${T.r2};
+          overflow: hidden;
+          background: rgba(9,8,12,0.75);
         }
-        #hud-top button.btn-danger { color:#e0a094 !important; }
-        #speed-controls .speed-btn { padding: 4px 8px; font-size: 11px; color:#8a94a6; }
+        #speed-controls .speed-btn {
+          padding: 5px 8px; font-size: 11px; color: ${T.muted};
+          background: transparent !important;
+          border: none !important;
+          border-radius: 0 !important;
+          border-left: 1px solid ${T.line} !important;
+          box-shadow: none !important;
+        }
+        #speed-controls .speed-btn:first-child { border-left: none !important; }
+        #speed-controls .speed-btn:hover { color: ${T.text}; background: rgba(232,197,106,0.07) !important; }
         #speed-controls .speed-btn.speed-active {
-          color: #fff !important;
-          background: linear-gradient(180deg, rgba(74,54,20,0.95), rgba(52,38,14,0.95)) !important;
-          border-color: #a08a4a !important;
-          box-shadow: 0 0 10px rgba(232,197,106,0.25);
+          color: #f6e7bd !important;
+          background: linear-gradient(180deg, rgba(84,66,26,0.95), rgba(58,44,16,0.95)) !important;
+          box-shadow: inset 0 0 10px rgba(232,197,106,0.18);
         }
+        /* Party rail rows. */
+        .party-member {
+          display: flex; gap: 7px; padding: 4px 6px; margin-bottom: 4px;
+          border: 1px solid transparent; border-radius: ${T.r2};
+          cursor: pointer;
+          transition: border-color .15s ease, background .15s ease;
+        }
+        .party-member:hover { background: ${T.rowHot}; border-color: ${T.line}; }
+        .party-member.sel { border-color: ${T.goldDim}; background: rgba(232,197,106,0.08); }
+        .party-member.down { background: rgba(170,60,45,0.10); }
       </style>
       <div id="hud-panels" class="dp-hud-panel" style="position:absolute; bottom:0; left:0; right:0; height:200px; display:flex; flex-direction:row;">
-        <!-- Party Status -->
-        <div id="party-status" style="width:250px; background:rgba(10,10,20,0.92); color:#ccc; padding:8px; overflow-y:auto; font-family:monospace; font-size:11px; border-right:1px solid #333;">
+        <!-- Party rail: a scrolling roster with the purse pinned to the foot,
+             so a fourth member can never push the gold count out of sight. -->
+        <div id="party-status" class="dp-hud-col" style="width:246px; flex:0 0 auto; display:flex; flex-direction:column; overflow:hidden; border-right:1px solid ${T.line};">
+          <div id="party-list" style="flex:1 1 auto; overflow-y:auto; min-height:0;"></div>
+          <div id="party-foot" style="flex:0 0 auto; margin-top:5px; padding-top:5px; border-top:1px solid ${T.rule}; display:flex; justify-content:space-between; font-size:9.5px;"></div>
         </div>
 
-        <!-- Combat Log -->
-        <div style="flex:1; background:rgba(10,10,20,0.92); color:#ccc; padding:8px; overflow-y:auto; font-family:monospace; font-size:11px;">
-          <div id="boss-bar" style="display:none; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid #553;"></div>
+        <!-- The narrative log — the surface the player actually reads. -->
+        <div class="dp-hud-col" style="flex:1; min-width:0;">
+          <div id="boss-bar" style="display:none; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid ${T.rule};"></div>
           <div id="combat-log"></div>
         </div>
 
         <!-- Character Sheet (when selected) -->
-        <div id="char-sheet" style="width:250px; background:rgba(10,10,20,0.92); color:#ccc; padding:8px; overflow-y:auto; font-family:monospace; font-size:11px; border-left:1px solid #333; display:none;">
+        <div id="char-sheet" class="dp-hud-col" style="width:250px; flex:0 0 auto; border-left:1px solid ${T.line}; display:none;">
         </div>
       </div>
 
       <!-- Top bar: controls -->
-      <div id="hud-top" style="position:absolute; top:10px; right:10px; display:flex; gap:8px; z-index:20;">
-        <button id="btn-pause" title="Pause / resume the world (P)">⏸ Pause</button>
-        <div id="speed-controls" style="display:flex; gap:4px;">
+      <div id="hud-top" style="position:absolute; top:10px; right:10px; display:flex; gap:6px; z-index:20;">
+        <button id="btn-pause" title="Pause / resume the world (P)"><span class="ic">⏸</span>Pause</button>
+        <div id="speed-controls">
           <button data-speed="0.25" class="speed-btn">0.25x</button>
           <button data-speed="0.5" class="speed-btn">0.5x</button>
           <button data-speed="1" class="speed-btn">1x</button>
           <button data-speed="2" class="speed-btn">2x</button>
           <button data-speed="4" class="speed-btn">4x</button>
         </div>
-        <button id="btn-new-dungeon">↻ New Dungeon</button>
-        <button id="btn-compendium" title="Open the D&D compendium" style="color:#c9b8ff !important;">📖 Grimoire</button>
-        <button id="btn-save" title="Save the run to this browser" style="color:#d6a88f !important;">💾 Save</button>
-        <button id="btn-dm-panel" title="Issue orders to the party" style="color:#8fd6a0 !important;">\u2328 DM</button>
-        <button id="btn-town" title="Open the town (quests & market)" style="color:#e0c060 !important;">🏪 Town</button>
-        <button id="btn-menu" title="Save and return to the main menu" class="btn-danger">☰ Menu</button>
+        <button id="btn-new-dungeon" title="Generate a fresh dungeon"><span class="ic">↻</span>New Dungeon</button>
+        <button id="btn-compendium" title="Open the D&D compendium"><span class="ic" style="color:${T.arcane};">📖</span>Grimoire</button>
+        <button id="btn-save" title="Save the run to this browser"><span class="ic" style="color:${T.coin};">💾</span>Save</button>
+        <button id="btn-dm-panel" title="Issue orders to the party"><span class="ic" style="color:${T.good};">\u2328</span>DM</button>
+        <button id="btn-town" title="Open the town (quests & market)"><span class="ic" style="color:${T.gold};">🏪</span>Town</button>
+        <button id="btn-menu" title="Save and return to the main menu" class="dp-btn-bad"><span class="ic">☰</span>Menu</button>
       </div>
 
       <!-- Top strip: dungeon title + quest tracker, pinned on their own row below the
            controls so the title can never run underneath the buttons. Both truncate
            with ellipsis when the window is narrow. -->
-      <div id="top-strip" style="position:absolute; top:44px; left:10px; right:10px; display:flex; align-items:center; gap:12px; z-index:25; pointer-events:none;">
-        <div id="dungeon-title" style="font-family:monospace; font-size:16px; font-weight:bold; color:#ffd700; text-shadow:0 0 8px rgba(255,200,0,0.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; min-width:0;">
+      <div id="top-strip" style="position:absolute; top:44px; left:10px; right:10px; display:flex; align-items:center; gap:8px; z-index:25; pointer-events:none;">
+        <div id="dungeon-title" class="dp-title" style="font-size:17px; font-weight:bold; color:${T.gold}; text-shadow:0 1px 0 rgba(0,0,0,0.9), 0 0 12px rgba(232,197,106,0.35); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; min-width:104px;">
           Fatefall
         </div>
-        <div id="quest-bar" style="display:none; flex:1 1 auto; min-width:0; background:rgba(8,12,24,0.88); border:1px solid #3a4a6a; border-radius:3px; padding:4px 10px; font-family:monospace; font-size:11px; box-shadow:0 2px 10px rgba(0,0,0,0.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
-        <div id="weather-chip" style="display:none; flex:0 0 auto; align-items:center; background:rgba(8,12,24,0.85); border:1px solid #4a5a6a; border-radius:3px; padding:4px 10px; font-family:monospace; font-size:11px; color:#cfe0f2; white-space:nowrap;"></div>
-        <div id="error-banner" role="alert" style="display:none; position:absolute; top:34px; left:0; right:0; margin:0 auto; max-width:720px; background:rgba(60,12,12,0.96); border:1px solid #c44; border-radius:4px; padding:8px 12px; font-family:monospace; font-size:12px; color:#f4c6c6; box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; white-space:normal;"></div>
-        <div id="delve-mood-chip" style="display:none; flex:0 0 auto; align-items:center; background:rgba(20,8,24,0.9); border:1px solid #6a4a7a; border-radius:3px; padding:4px 10px; font-family:monospace; font-size:11px; color:#e0c8f0; white-space:nowrap; box-shadow:0 0 10px rgba(150,80,200,0.25);"></div>
+        <div id="quest-bar" class="dp-chip dp-chip-trunc" style="display:none; flex:1 1 auto; min-width:0; box-shadow:0 2px 10px rgba(0,0,0,0.5); overflow:hidden; text-overflow:ellipsis;"></div>
+        <div id="weather-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;"></div>
+        <div id="error-banner" role="alert" style="display:none; position:absolute; top:34px; left:0; right:0; margin:0 auto; max-width:720px; background:rgba(56,14,12,0.96); border:1px solid #a4574c; border-radius:${T.r2}; padding:8px 12px; font-size:12px; color:#f4c6c6; box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; white-space:normal;"></div>
+        <div id="delve-mood-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:#5a4468; color:#e0c8f0; box-shadow:0 0 10px rgba(150,80,200,0.18);"></div>
       </div>
 
       <!-- DM command bar -->
       <div id="dm-bar" style="display:none; position:absolute; left:0; right:0; bottom:200px; z-index:30;">
-        <div style="display:flex; gap:6px; padding:6px 8px; background:linear-gradient(180deg, rgba(10,24,18,0.96), rgba(6,16,12,0.96)); border-top:1px solid #2f6647; border-bottom:1px solid #2f6647;">
-          <span style="align-self:center; color:#7fd88f; font-family:'Cinzel', Georgia, serif; font-size:12px; letter-spacing:1px; text-shadow:0 0 8px rgba(127,216,143,0.35);">DM \u276f</span>
-          <span id="dm-model-chip" title="How the party reads your orders. Click to switch between the trained model and the written orders."
-                style="align-self:center; cursor:pointer; user-select:none; font-family:monospace; font-size:10px; padding:2px 7px; border-radius:9px; white-space:nowrap; border:1px solid #3f6b4f; background:#0d1410; color:#7fd88f;"></span>
+        <div style="display:flex; gap:8px; padding:7px 10px; background:linear-gradient(180deg, rgba(30,25,17,0.97), rgba(16,13,9,0.97)); border-top:1px solid ${T.goldDim}; border-bottom:1px solid ${T.line}; box-shadow:0 -2px 14px rgba(0,0,0,0.45);">
+          <span class="dp-title" style="align-self:center; color:${T.gold}; font-size:12px; letter-spacing:2px; text-shadow:0 0 10px rgba(232,197,106,0.4);">DM \u276f</span>
+          <span id="dm-model-chip" class="dp-chip dp-chip-sm" title="How the party reads your orders. Click to switch between the trained model and the written orders."
+                style="align-self:center; cursor:pointer; user-select:none;"></span>
           <input id="dm-input" type="text" autocomplete="off"
                  placeholder='Order the party\u2026 try "go north", "attack", "flee", "rest", "camp", "descend", "summon owlbear", "report", "help"'
-                 style="flex:1; min-width:0; padding:6px 8px; background:#0d1410; color:#d7efe0; border:1px solid #3f6b4f; font-size:12px;" />
-          <button id="dm-send" class="dp-btn-gold" style="padding:6px 14px; font-size:12px; cursor:pointer;">Send</button>
+                 style="flex:1; min-width:0; padding:6px 9px; font-size:12px;" />
+          <button id="dm-send" class="dp-btn-gold" style="padding:6px 16px; font-size:12px;">Send</button>
         </div>
       </div>
     `;
@@ -250,37 +284,48 @@ export class HUD {
     });
   }
 
+  /**
+   * Paint the party rail.
+   *
+   * Two lines per hero and no more: name + hit points on the first, class and
+   * a health bar on the second. Four heroes and the purse then fit the 200px
+   * band without scrolling, which is the whole job of this rail — a glance
+   * has to answer "who is hurt?" without a wheel.
+   */
   setParty(party: Party) {
     this.liveParty = party;
     const members = party.members;
     let html = '';
     for (const m of members) {
-      const hpPct = Math.max(0, Math.min(100, (m.hp / m.maxHp) * 100));
-      const hpColor = hpPct > 50 ? '#5fbf7f' : hpPct > 25 ? '#d9a94a' : '#d06a5a';
-      const classColor = this.classColor(m.charClass.id);
+      const frac = Math.max(0, Math.min(1, m.hp / Math.max(1, m.maxHp)));
+      const bar = hpColor(frac);
+      const accent = classColor(m.charClass.id);
       const isSel = m.id === this.selectedChar?.id;
+      const down = m.hp <= 0;
       html += `
-        <div class="party-member" data-id="${m.id}"
-             style="display:flex; gap:7px; padding:5px 7px; margin-bottom:5px; background:rgba(255,255,255,0.035); border:1px solid transparent; border-radius:5px; cursor:pointer; transition:border-color .15s ease, background .15s ease; ${isSel ? 'border-color:#e8c56a; background:rgba(232,197,106,0.06);' : ''}">
-          <div style="width:3px; align-self:stretch; border-radius:2px; background:${classColor}; opacity:0.85; flex:0 0 auto;"></div>
+        <div class="party-member${isSel ? ' sel' : ''}${down ? ' down' : ''}" data-id="${m.id}">
+          <div style="width:3px; align-self:stretch; border-radius:2px; background:${accent}; opacity:${down ? 0.35 : 0.9}; flex:0 0 auto;"></div>
           <div style="flex:1; min-width:0;">
-            <div style="color:${classColor}; font-weight:bold; font-size:11px;">${m.name}</div>
-            <div style="color:#8a94a6; font-size:9px;">Lv${m.level} ${m.race.name} ${m.charClass.name}</div>
-            <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
-              <div style="flex:1; height:5px; background:rgba(0,0,0,0.4); border:1px solid #2a3242; border-radius:3px; overflow:hidden;">
-                <div style="width:${hpPct}%; height:100%; background:linear-gradient(90deg, ${hpColor}, ${hpColor}cc); border-radius:3px;"></div>
+            <div style="display:flex; align-items:baseline; gap:6px;">
+              <span style="color:${accent}; font-weight:bold; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0; ${down ? 'opacity:0.6;' : ''}">${m.name}</span>
+              <span class="dp-num" style="font-size:9.5px; color:${bar}; flex:0 0 auto;">${Math.max(0, m.hp)}<span style="color:${T.faint};">/${m.maxHp}</span></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+              <span style="font-size:9px; color:${T.muted}; flex:0 0 auto;">Lv${m.level} ${m.charClass.name}</span>
+              ${this.slotPips(m)}
+              <div style="flex:1 1 auto; min-width:22px; height:4px; background:rgba(0,0,0,0.5); border:1px solid ${T.line}; border-radius:3px; overflow:hidden;">
+                <div style="width:${frac * 100}%; height:100%; background:linear-gradient(90deg, ${bar}, ${bar}bb); transition:width .25s;"></div>
               </div>
-              <span style="font-size:9px; color:#8a94a6; font-variant-numeric:tabular-nums;">${m.hp}/${m.maxHp}</span>
             </div>
             ${this.conditionChips(m)}
           </div>
         </div>`;
     }
     this.refreshQuestBar();
-    html += `<div style="margin-top:6px; padding-top:5px; border-top:1px solid rgba(232,197,106,0.12); display:flex; justify-content:space-between; font-size:9px;">`
-      + `<span style="color:#8a94a6;">${this.dungeonLevel > 0 ? `Dungeon Lv ${this.dungeonLevel}` : 'The Surface World'}</span>`
-      + `<span style="color:#c9a04a;">💰 ${party.members.reduce((s, m) => s + m.gold, 0)} gp</span></div>`;
     this.partyEl.innerHTML = html;
+    this.partyFootEl.innerHTML =
+      `<span style="color:${T.muted};">${this.dungeonLevel > 0 ? `Dungeon Lv ${this.dungeonLevel}` : 'The Surface World'}</span>`
+      + `<span class="dp-num" style="color:${T.coin};">💰 ${party.members.reduce((s, m) => s + m.gold, 0)} gp</span>`;
 
     // Click handlers
     this.partyEl.querySelectorAll('.party-member').forEach(el => {
@@ -305,14 +350,14 @@ export class HUD {
     }
     const state = this.questStateProvider();
     const progress = q.completed ? '\u2714 Complete \u2014 return to town to report' : questProgressText(q, state);
-    const accent = q.completed ? '#ffd700' : '#8cf';
-    const border = q.completed ? '#6a5a2a' : '#3a4a6a';
-    this.questBarEl.style.display = 'block';
+    const accent = q.completed ? T.gold : T.info;
+    const border = q.completed ? T.goldDim : T.line;
+    this.questBarEl.style.display = 'inline-block';
     this.questBarEl.style.borderColor = border;
     this.questBarEl.innerHTML =
       `<span style="color:${accent}; font-weight:bold;">\ud83d\udcdc ${q.title}</span>` +
-      `<span style="color:#aab; margin-left:12px;">${progress}</span>` +
-      `<span style="color:#998; margin-left:12px;">Reward: ${q.rewardGold} gp \u00b7 ${q.rewardXp} XP</span>`;
+      `<span style="color:${T.muted}; margin-left:10px;">${progress}</span>` +
+      `<span style="color:${T.faint}; margin-left:10px;">${q.rewardGold} gp \u00b7 ${q.rewardXp} XP</span>`;
   }
 
   /** Render live boss bars (HP + legendary action pips) above the combat log. */
@@ -328,12 +373,12 @@ export class HUD {
       const pips = '\u26A1'.repeat(Math.max(0, Math.min(3, b.legendary))).padEnd(3, '\u00B7');
       return `
         <div style="margin-bottom:4px;">
-          <div style="display:flex; justify-content:space-between; font-size:11px; color:#ffd700;">
-            <span>\uD83D\uDC51 ${b.name}</span>
-            <span>${b.hp}/${b.maxHp} ${pips}</span>
+          <div style="display:flex; justify-content:space-between; font-size:11px; color:${T.gold};">
+            <span class="dp-title" style="letter-spacing:1px;">\uD83D\uDC51 ${b.name}</span>
+            <span class="dp-num">${b.hp}/${b.maxHp} ${pips}</span>
           </div>
-          <div style="height:6px; background:#222; border-radius:3px; overflow:hidden;">
-            <div style="height:100%; width:${pct}%; background:linear-gradient(90deg,#a33,#e55); transition:width 0.3s;"></div>
+          <div style="height:6px; margin-top:2px; background:rgba(0,0,0,0.55); border:1px solid ${T.line}; border-radius:3px; overflow:hidden;">
+            <div style="height:100%; width:${pct}%; background:linear-gradient(90deg,#8e2f2b,#d2564a); transition:width 0.3s;"></div>
           </div>
         </div>`;
     }).join('');
@@ -392,19 +437,19 @@ export class HUD {
     const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.maxHp)) * 100));
     const hpBarColor = hpPct > 50 ? '#5fbf7f' : hpPct > 25 ? '#d9a94a' : '#d06a5a';
     // Monogram badge: class initial on a parchment-plaque instead of art.
-    const badge = `<div style="width:40px; height:40px; border-radius:8px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; background:linear-gradient(160deg, rgba(232,197,106,0.16), rgba(232,197,106,0.04)); border:1px solid ${classColor}; box-shadow:0 0 12px rgba(232,197,106,0.12); color:${classColor}; font-family:'Cinzel', Georgia, serif; font-size:22px;">${c.charClass.name.charAt(0)}</div>`;
+    const badge = `<div style="width:40px; height:40px; border-radius:8px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; background:linear-gradient(160deg, rgba(232,197,106,0.16), rgba(232,197,106,0.04)); border:1px solid ${classColor}; box-shadow:0 0 12px ${T.rule}; color:${classColor}; font-family:${T.titleFont}; font-size:22px;">${c.charClass.name.charAt(0)}</div>`;
     // Section divider with a gold hairline + small label.
-    const sec = (label: string) => `<div style="margin-top:8px; margin-bottom:3px; padding-top:6px; border-top:1px solid rgba(232,197,106,0.14); color:#a08a4a; font-size:9px; font-weight:bold; letter-spacing:1.5px;">${label}</div>`;
+    const sec = (label: string) => `<div style="margin-top:8px; margin-bottom:3px; padding-top:6px; border-top:1px solid ${T.rule}; color:${T.goldDim}; font-size:9px; font-weight:bold; letter-spacing:1.5px;">${label}</div>`;
     this.charSheetEl.innerHTML = `
       <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">
         ${badge}
         <div style="min-width:0;">
-          <div style="color:${classColor}; font-family:'Cinzel', Georgia, serif; font-size:14px; font-weight:bold; line-height:1.1;">${c.name}</div>
-          <div style="color:#8a94a6; font-size:10px; margin-top:2px;">Lv${c.level} ${c.race.name} ${c.charClass.name}</div>
+          <div style="color:${classColor}; font-family:${T.titleFont}; font-size:14px; font-weight:bold; line-height:1.1;">${c.name}</div>
+          <div style="color:${T.muted}; font-size:10px; margin-top:2px;">Lv${c.level} ${c.race.name} ${c.charClass.name}</div>
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:6px;">
-        <div style="flex:1; height:7px; background:rgba(0,0,0,0.45); border:1px solid #2a3242; border-radius:4px; overflow:hidden;">
+        <div style="flex:1; height:7px; background:rgba(0,0,0,0.45); border:1px solid ${T.line}; border-radius:4px; overflow:hidden;">
           <div style="width:${hpPct}%; height:100%; background:linear-gradient(90deg, ${hpBarColor}, ${hpBarColor}cc); border-radius:4px; transition:width .25s;"></div>
         </div>
         <span style="color:${hpBarColor}; font-size:10px; font-variant-numeric:tabular-nums;">${c.hp}/${c.maxHp} HP</span>
@@ -412,56 +457,117 @@ export class HUD {
       ${c.hp <= 0 ? `<div style="color:#d06a5a; font-size:10px; margin-top:3px; font-weight:bold;">${c.isDead ? '☠ DEAD' : c.stabilized ? 'STABILIZED — stable at 0 HP' : 'DYING — making death saves'}</div>` : ''}
       ${c.isDying ? `<div style="color:#e0a094; font-size:9px; margin-top:2px;">Death saves: ${'◉'.repeat(Math.max(0, c.deathSaveSuccesses))}${'○'.repeat(Math.max(0, 3 - c.deathSaveSuccesses))} passed · ${'◉'.repeat(Math.max(0, c.deathSaveFailures))}${'○'.repeat(Math.max(0, 3 - c.deathSaveFailures))} failed</div>` : ''}
       ${c.exhaustion > 0 ? `<div style="color:#e8b45a; font-size:9px; margin-top:2px;">Exhaustion ${c.exhaustion}/6 — ${c.exhaustionLabel}</div>` : ''}
-      <div style="color:#8a94a6; font-size:9px; margin-top:4px;">AC ${c.ac} · SPD ${c.effectiveSpeed}ft${c.effectiveSpeed !== c.speed ? ` (base ${c.speed})` : ''} · Prof +${c.profBonus}${getCasterType(c.charClass.id) !== 'none' ? ` · DC ${c.spellSaveDC}` : ''} · Hit Dice ${c.hitDiceRemaining}/${c.maxHitDice}</div>
+      <div style="color:${T.muted}; font-size:9px; margin-top:4px;">AC ${c.ac} · SPD ${c.effectiveSpeed}ft${c.effectiveSpeed !== c.speed ? ` (base ${c.speed})` : ''} · Prof +${c.profBonus}${getCasterType(c.charClass.id) !== 'none' ? ` · DC ${c.spellSaveDC}` : ''} · Hit Dice ${c.hitDiceRemaining}/${c.maxHitDice}</div>
       ${c.conditions.length > 0 || c.concentration ? `${sec('ACTIVE')}${this.conditionChips(c)}${c.conditions.length > 0 ? c.conditions.map(cond => {
         const meta = CONDITION_META[cond.id];
         return `<div style="color:${meta.color}; font-size:9px; padding:1px 4px;">• ${meta.label} — ${meta.effect}${cond.turnsLeft > 0 ? ` (${cond.turnsLeft} turn${cond.turnsLeft === 1 ? '' : 's'} left)` : ''}</div>`;
       }).join('') : ''}` : ''}
       ${sec('ATTRIBUTES')}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px 8px;">${abilsHtml}</div>
-      ${sec('XP')}<div style="color:#8a94a6; font-size:9px; padding:1px 4px;">${c.xp} / ${c.xpToNext()}</div>
+      ${sec('XP')}<div style="color:${T.muted}; font-size:9px; padding:1px 4px;">${c.xp} / ${c.xpToNext()}</div>
       ${slotsHtml}
       ${spellsHtml}
       ${gearHtml}
       ${invHtml}
-      ${sec('COMBAT')}<div style="color:#8a94a6; font-size:9px; padding:1px 4px;">+${c.attackBonus} to hit · ${c.getWeaponDamageDie()}d damage</div>
+      ${sec('COMBAT')}<div style="color:${T.muted}; font-size:9px; padding:1px 4px;">+${c.attackBonus} to hit · ${c.getWeaponDamageDie()}d damage</div>
       <div style="color:#6a7486; font-size:9px; margin-top:6px; font-style:italic;">${c.charClass.description.substring(0, 84)}…</div>
     `;
   }
 
+  /** Glyphs the game already prefixes its lines with, and the tone each implies. */
+  private static readonly GLYPH_TONE: Record<string, LogTone> = {
+    '💰': 'loot', '🪙': 'loot', '🛒': 'loot', '⚖': 'loot', '🎒': 'loot', '🎥': 'loot',
+    '📜': 'info', '📋': 'info', '📍': 'info', '📅': 'info', '🗺️': 'info', '🗺': 'info',
+    '⬆': 'gold', '🏆': 'gold', '✦': 'gold', '⚔': 'gold', '⚔️': 'gold',
+    '⚠': 'warn', '💀': 'harm', '☠': 'harm', '🔥': 'warn',
+    '🎲': 'arcane', '⚡': 'arcane', '🌕': 'arcane', '🌑': 'arcane', '🌙': 'arcane',
+    '🏕': 'good', '⛺': 'good', '🌤': 'good',
+  };
+
+  /**
+   * Append one line to the narrative log.
+   *
+   * The game passes forty-odd different hexes into this from a hundred call
+   * sites; left alone they make a wall of confetti. Every line is instead
+   * resolved into a *kind* — order, speech, scene break, harm, loot, quiet
+   * bookkeeping — and drawn on a two-column grid with the leading glyph
+   * pulled out into a fixed gutter. The prose then starts at one column and
+   * the eye can find things down the margin.
+   *
+   * Appending is a single `insertAdjacentHTML`; the old implementation
+   * re-joined and re-parsed all 150 lines on every message, which the log
+   * cannot afford when it runs all session.
+   */
   addCombatMessage(msg: string, color: string = '#ccc') {
-    this.combatMessages.push(`<span style="color:${color}">${msg}</span>`);
-    if (this.combatMessages.length > 150) {
-      this.combatMessages = this.combatMessages.slice(-100);
+    this.combatMessages.push(msg);
+    if (this.combatMessages.length > 400) this.combatMessages = this.combatMessages.slice(-200);
+    this.logEl.insertAdjacentHTML('beforeend', this.renderLogLine(msg, color));
+    this.logLineCount++;
+    // Trim from the front so the log stays a fixed size all run.
+    while (this.logLineCount > 150 && this.logEl.firstElementChild) {
+      this.logEl.removeChild(this.logEl.firstElementChild);
+      this.logLineCount--;
     }
-    this.logEl.innerHTML = this.combatMessages.join('<br>');
     this.logEl.scrollTop = this.logEl.scrollHeight;
   }
 
-  addCombatLogBatch(log: CombatLog) {
-    const colors: Record<string, string> = {
-      'hit': '#8c8',
-      'miss': '#888',
-      'heal': '#8cf',
-      'spell': '#c8a',
-      'crit': '#fc0',
-      'death': '#c44',
-      'victory': '#ffd700',
-      'defeat': '#c44',
-      'system': '#888',
-    };
+  /** Build the markup for one log line. Pure — also used by tests-by-eye. */
+  private renderLogLine(msg: string, color: string): string {
+    // Leading spaces mean "this hangs under the line above" (the game indents
+    // task details and reward breakdowns). HTML collapses them, so they were
+    // invisible; turn them into a real indent instead.
+    const indentMatch = /^( +)/.exec(msg);
+    const indent = indentMatch ? Math.min(2, Math.floor(indentMatch[1].length / 2)) : 0;
+    let body = msg.slice(indentMatch ? indentMatch[1].length : 0);
 
+    // A scene break: '--- Combat begins! Initiative rolled. ---'
+    if (/^-{2,}/.test(body)) {
+      const label = body.replace(/^-+\s*/, '').replace(/\s*-+$/, '');
+      return `<div class="dp-log-line dp-log-break"><span class="dp-log-body">${label}</span></div>`;
+    }
+
+    // Pull a leading glyph out into the gutter. Emoji, dingbats and the DM's
+    // own '❯' all qualify; a plain sentence gets an empty gutter.
+    let glyph = '';
+    const glyphMatch = /^([←-⯿\u{1F000}-\u{1FAFF}\u{FE0F}]+)\s*/u.exec(body);
+    if (glyphMatch) {
+      glyph = glyphMatch[1];
+      body = body.slice(glyphMatch[0].length);
+    }
+
+    const classes = ['dp-log-line'];
+    if (indent === 1) classes.push('dp-log-sub');
+    if (indent >= 2) classes.push('dp-log-sub2');
+
+    let tone: LogTone | null = null;
+    if (glyph === '❯') {
+      // The DM's own order, echoed back into the log.
+      classes.push('dp-log-order');
+    } else if (/^[“"'‘]/.test(body) && /[”"'’]\s*$/.test(body)) {
+      // Somebody is speaking. Prose, not telemetry.
+      classes.push('dp-log-speech');
+    } else {
+      tone = (glyph && HUD.GLYPH_TONE[glyph]) || toneForColor(color);
+      classes.push(`dp-log-${tone}`);
+    }
+
+    return `<div class="${classes.join(' ')}">`
+      + `<span class="dp-log-glyph">${glyph}</span>`
+      + `<span class="dp-log-body">${body}</span></div>`;
+  }
+
+  addCombatLogBatch(log: CombatLog) {
     for (const msg of log.messages) {
       let color = '#ccc';
-      if (msg.includes('CRIT')) color = colors.crit;
-      else if (msg.includes('casts')) color = colors.spell;
-      else if (msg.includes('heals')) color = colors.heal;
-      else if (msg.includes('misses')) color = colors.miss;
-      else if (msg.includes('slain') || msg.includes('fallen')) color = colors.death;
-      else if (msg.includes('Victory')) color = colors.victory;
-      else if (msg.includes('defeated')) color = colors.defeat;
-      else if (msg.includes('Initiative') || msg.startsWith('---')) color = colors.system;
-      else if (msg.includes('hits') || msg.includes('damage')) color = colors.hit;
+      if (msg.includes('CRIT')) color = '#ffd700';
+      else if (msg.includes('casts')) color = '#a8f';
+      else if (msg.includes('heals')) color = '#8a8';
+      else if (msg.includes('misses')) color = '#888';
+      else if (msg.includes('slain') || msg.includes('fallen')) color = '#c44';
+      else if (msg.includes('Victory')) color = '#ffd700';
+      else if (msg.includes('defeated')) color = '#c44';
+      else if (msg.includes('Initiative') || msg.startsWith('---')) color = '#888';
+      else if (msg.includes('hits') || msg.includes('damage')) color = '#c66';
 
       this.addCombatMessage(msg, color);
     }
@@ -470,6 +576,7 @@ export class HUD {
   /** Clear the combat log (used when a restored run takes over the screen). */
   resetLog() {
     this.combatMessages = [];
+    this.logLineCount = 0;
     this.logEl.innerHTML = '';
   }
 
@@ -478,8 +585,10 @@ export class HUD {
   }
 
   setDungeonTitle(name: string) {
-    const el = this.overlay.querySelector('#dungeon-title');
-    if (el) el.textContent = name;
+    const el = this.overlay.querySelector('#dungeon-title') as HTMLElement | null;
+    if (!el) return;
+    el.textContent = name;
+    el.title = name; // the strip truncates on narrow windows
   }
 
   /** Show the live overworld weather with its mechanical effects, or hide it underground. */
@@ -495,6 +604,7 @@ export class HUD {
     el.textContent = state.effects.length
       ? `${state.icon} ${state.label} \u2014 ${state.effects.join(', ')}`
       : `${state.icon} ${state.label}`;
+    el.title = el.textContent; // the strip truncates it when crowded
     const tint = { rain: '#9fb8d8', heavy_rain: '#7e9cc8', fog: '#bfcfe0',
       snow: '#eef2fb', sandstorm: '#e0c180', magical_aurora: '#d0a0f0',
       eerie_mist: '#9ad4a8', blood_red_sky: '#f09078' } as Record<string, string>;
@@ -514,6 +624,7 @@ export class HUD {
     el.textContent = state.effects.length
       ? `${state.icon} Delve: ${state.label} \u2014 ${state.effects.join(', ')}`
       : `${state.icon} Delve: ${state.label}`;
+    el.title = el.textContent; // the strip truncates it when crowded
   }
 
   /** Full-screen start overlay: pick a save slot, then continue or begin fresh. */
@@ -530,7 +641,7 @@ export class HUD {
     // A centered column: the tumbling die sits in flow ABOVE the logo, then
     // the choices. The die is a sibling of #start-content so slot re-renders
     // never wipe it.
-    screen.style.cssText = 'position:absolute; inset:0; z-index:100; background:radial-gradient(ellipse at 50% 30%, #0d1018 0%, #07080e 55%, #040508 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:monospace;';
+    screen.style.cssText = `position:absolute; inset:0; z-index:100; background:radial-gradient(ellipse at 50% 30%, #14100c 0%, #0a0808 55%, #050405 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:${T.bodyFont};`;
     this.overlay.appendChild(screen);
 
     // Decorative tumbling d20 behind the choices (sibling of the content
@@ -674,12 +785,12 @@ export class HUD {
 
   private startScreenHtml(saves: (SaveData | null)[], selected: number, confirming: boolean): string {
     const title = `
-      <div class="dp-title" style="font-size:34px; font-weight:bold; color:#ffd700; text-shadow:0 0 14px rgba(255,200,0,0.55), 0 0 40px rgba(255,120,40,0.25); letter-spacing:8px;">\u2694 FATEFALL</div>
-      <div style="color:#9aa48e; font-size:13px; margin-top:10px; font-style:italic;">An autonomous party of adventurers roams a living world of dice, dungeons, and fate.<br>Pick a save slot below \u2014 each holds one run, saved automatically.</div>`;
+      <div class="dp-title" style="font-size:34px; font-weight:bold; color:${T.gold}; text-shadow:0 0 14px rgba(232,197,106,0.5), 0 0 44px rgba(255,120,40,0.22); letter-spacing:10px;">\u2694 FATEFALL</div>
+      <div style="color:${T.muted}; font-size:13.5px; line-height:1.6; margin-top:12px; font-style:italic;">An autonomous party of adventurers roams a living world of dice, dungeons, and fate.<br>Pick a save slot below \u2014 each holds one run, saved automatically.</div>`;
 
     const slotCards = saves.map((save, i) => {
       const isSelected = i === selected;
-      const cardStyle = `flex:1; min-width:170px; padding:12px; cursor:pointer; text-align:left; background:${isSelected ? 'rgba(255,215,0,0.07)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isSelected ? '#e8c56a' : '#2a3242'}; border-radius:6px; font-family:monospace; box-shadow:${isSelected ? '0 0 16px rgba(232,197,106,0.2), inset 0 0 20px rgba(232,197,106,0.04)' : 'none'}; transition:border-color .15s ease, box-shadow .15s ease;`;
+      const cardStyle = `flex:1; min-width:170px; padding:12px 14px; cursor:pointer; text-align:left; background:${isSelected ? 'rgba(232,197,106,0.07)' : T.row}; border:1px solid ${isSelected ? T.gold : T.line}; border-radius:${T.r3}; box-shadow:${isSelected ? '0 0 16px rgba(232,197,106,0.2), inset 0 0 20px rgba(232,197,106,0.04)' : 'none'}; transition:border-color .15s ease, box-shadow .15s ease;`;
       const body = save ? (() => {
         const inDungeon = (save.mode ?? 2) === 2;
         const partyLabel = save.partyName && save.partyName !== 'The Unnamed Party' ? save.partyName : '';
@@ -690,28 +801,28 @@ export class HUD {
           ? `Level ${save.dungeonLevel}`
           : 'The Surface World';
         return `
-        ${partyLabel ? `<div style="color:#ffd700; font-size:11px; font-weight:bold; margin-top:2px;">${partyLabel}</div>` : ''}
-        <div style="color:#ccc; font-size:12px; font-weight:bold; margin-top:2px;">${locationName}</div>
-        <div style="color:#888; font-size:10px;">${locationLine} \u00b7 ${new Date(save.savedAt).toLocaleDateString()} ${new Date(save.savedAt).toLocaleTimeString()}</div>
+        ${partyLabel ? `<div class="dp-title" style="color:${T.gold}; font-size:12px; font-weight:bold; margin-top:3px; letter-spacing:0.5px;">${partyLabel}</div>` : ''}
+        <div style="color:${T.text}; font-size:12px; font-weight:bold; margin-top:3px;">${locationName}</div>
+        <div style="color:${T.faint}; font-size:10px; margin-top:2px;">${locationLine} \u00b7 ${new Date(save.savedAt).toLocaleDateString()} ${new Date(save.savedAt).toLocaleTimeString()}</div>
         ${(typeof (save as any).clockElapsed === 'number')
-          ? `<div style="color:#7aa; font-size:10px;">${this.calendarShortDate((save as any).clockElapsed)}</div>`
+          ? `<div style="color:${T.info}; font-size:10px; margin-top:2px;">${this.calendarShortDate((save as any).clockElapsed)}</div>`
           : ''}
         ${(save.expeditionJournal && save.expeditionJournal.length > 0)
-          ? `<div style="color:#8a9; font-size:9px; margin-top:3px; font-style:italic;">\u2018${save.expeditionJournal[save.expeditionJournal.length - 1]}\u2019</div>`
+          ? `<div style="color:${T.muted}; font-size:10px; margin-top:5px; font-style:italic; border-left:2px solid ${T.rule}; padding-left:7px;">\u2018${save.expeditionJournal[save.expeditionJournal.length - 1]}\u2019</div>`
           : ''}
         <div style="margin-top:6px;">
           ${save.party.members.map(m => {
             const cls = m.classId.charAt(0).toUpperCase() + m.classId.slice(1);
             const maxHp = m.exhaustion >= 4 ? Math.floor(m.baseMaxHp / 2) : m.baseMaxHp;
-            const hpColor = m.hp / maxHp > 0.5 ? '#4c4' : m.hp / maxHp > 0.25 ? '#cc4' : '#c44';
+            const hpTint = hpColor(m.hp / Math.max(1, maxHp));
             const state = m.hp <= 0 ? (m.isDead ? ' DEAD' : m.stabilized ? ' STAB' : ' DYING') : '';
-            return `<div style="color:#ccc; font-size:10px; padding:1px 0;">${m.name}<span style="color:${hpColor};">${state}</span> <span style="color:#888;">Lv${m.level} ${cls}</span> <span style="color:${hpColor};">${m.hp}/${maxHp}</span></div>`;
+            return `<div style="display:flex; gap:6px; font-size:10.5px; padding:1.5px 0;"><span style="color:${classColor(m.classId)}; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</span><span style="color:${hpTint};">${state}</span><span style="color:${T.faint}; flex:1 1 auto;">Lv${m.level} ${cls}</span><span class="dp-num" style="color:${hpTint};">${m.hp}/${maxHp}</span></div>`;
           }).join('')}
         </div>`;
-      })() : `<div style="color:#555; font-size:12px; margin-top:14px;">Empty</div>`;
+      })() : `<div style="color:${T.faint}; font-size:12px; margin-top:14px; font-style:italic;">Empty</div>`;
 
       return `<button data-slot="${i}" class="dp-slot-btn" style="${cardStyle}">
-        <div style="color:#a08a4a; font-weight:bold; font-size:10px; letter-spacing:2px;">SLOT ${i + 1}</div>
+        <div class="dp-label">Slot ${i + 1}</div>
         ${body}
       </button>`;
     }).join('');
@@ -720,28 +831,28 @@ export class HUD {
     if (this.confirmErase) {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px; align-items:center;">
-          <span style="color:#f88; font-size:12px; font-weight:bold;">\u26a0 Permanently erase Slot ${selected + 1}? This cannot be undone!</span>
-          <button data-action="confirm-erase" style="padding:10px 22px; background:#4a0a0a; color:#f44; border:2px solid #a33; cursor:pointer; font-family:monospace; font-size:13px; font-weight:bold;">\u2716 Erase Forever</button>
-          <button data-action="cancel" style="padding:10px 22px; background:#1a1a24; color:#aab; border:1px solid #4a4a66; cursor:pointer; font-family:monospace; font-size:13px;">Cancel</button>
+          <span style="color:#ef8272; font-size:12px; font-weight:bold;">\u26a0 Permanently erase Slot ${selected + 1}? This cannot be undone!</span>
+          <button data-action="confirm-erase" class="dp-btn dp-btn-bad dp-title" style="padding:9px 20px; font-size:13px; font-weight:bold; letter-spacing:1px;">\u2716 Erase Forever</button>
+          <button data-action="cancel" class="dp-btn dp-title" style="padding:9px 20px; font-size:13px; letter-spacing:1px;">Cancel</button>
         </div>`;
     } else if (confirming) {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px; align-items:center;">
-          <span style="color:#c88; font-size:12px;">Starting fresh in Slot ${selected + 1} erases the run saved there.</span>
-          <button data-action="confirm-new" style="padding:10px 22px; background:#3a1a10; color:#f88; border:1px solid #8a3a2a; cursor:pointer; font-family:monospace; font-size:13px; font-weight:bold;">Erase & New Run</button>
-          <button data-action="cancel" style="padding:10px 22px; background:#1a1a24; color:#aab; border:1px solid #4a4a66; cursor:pointer; font-family:monospace; font-size:13px;">Cancel</button>
+          <span style="color:${T.muted}; font-size:12px;">Starting fresh in Slot ${selected + 1} erases the run saved there.</span>
+          <button data-action="confirm-new" class="dp-btn dp-btn-bad dp-title" style="padding:9px 20px; font-size:13px; font-weight:bold; letter-spacing:1px;">Erase & New Run</button>
+          <button data-action="cancel" class="dp-btn dp-title" style="padding:9px 20px; font-size:13px; letter-spacing:1px;">Cancel</button>
         </div>`;
     } else if (saves[selected]) {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px;">
-          <button data-action="continue" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(74,64,20,0.9), rgba(48,42,14,0.9)); color:#ffd700; border:1px solid #a08a4a; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; font-weight:bold; border-radius:6px; letter-spacing:1px; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u25b6 Continue Slot ${selected + 1}</button>
-          <button data-action="new" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(28,32,46,0.95), rgba(18,22,32,0.95)); color:#c9d4e8; border:1px solid #4a5a78; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; border-radius:6px; letter-spacing:1px;">\u2726 New Run</button>
-          <button data-action="erase" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(52,22,22,0.95), rgba(36,14,14,0.95)); color:#d8887a; border:1px solid #6a3a34; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; border-radius:6px; letter-spacing:1px;">\u2716 Erase</button>
+          <button data-action="continue" class="dp-btn-gold dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2}; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u25b6 Continue Slot ${selected + 1}</button>
+          <button data-action="new" class="dp-btn dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">\u2726 New Run</button>
+          <button data-action="erase" class="dp-btn dp-btn-bad dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">\u2716 Erase</button>
         </div>`;
     } else {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px;">
-          <button data-action="new" class="dp-slot-btn" style="padding:10px 26px; background:linear-gradient(180deg, rgba(74,64,20,0.9), rgba(48,42,14,0.9)); color:#ffd700; border:1px solid #a08a4a; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:14px; font-weight:bold; border-radius:6px; letter-spacing:1px; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u2726 Start New Run in Slot ${selected + 1}</button>
+          <button data-action="new" class="dp-btn-gold dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2}; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u2726 Start New Run in Slot ${selected + 1}</button>
         </div>`;
     }
 
@@ -817,37 +928,49 @@ export class HUD {
     return this.isPaused;
   }
 
-  /** Render active conditions, concentration, and remaining spell uses as chips. */
+  /**
+   * Remaining spell slots as inline pips ("●●○"), for the party rail.
+   *
+   * These used to be a full-width chip under each row, which pushed the
+   * fourth party member off the bottom of a 200px rail. Inline beside the
+   * class they cost nothing and sit where you'd look for them.
+   */
+  private slotPips(m: GameCharacter): string {
+    if (getCasterType(m.charClass.id) === 'none' || m.maxSpellSlotsTotal <= 0) return '';
+    const parts: { level: number; pips: string }[] = [];
+    for (let lvl = 1; lvl <= 9; lvl++) {
+      const max = m.maxSpellSlots[lvl] || 0;
+      if (max <= 0) continue;
+      const remaining = Math.max(0, Math.min(max, m.spellSlots[lvl] || 0));
+      parts.push({ level: lvl, pips: '●'.repeat(remaining) + '○'.repeat(max - remaining) });
+    }
+    if (parts.length === 0) return '';
+    const pact = getCasterType(m.charClass.id) === 'pact' ? '⚡' : '';
+    const detail = `Spell slots — ${parts.map(p => `${ordinal(p.level)} ${p.pips}`).join(', ')}`;
+    return `<span title="${detail}" style="font-size:8px; letter-spacing:0.5px; color:${T.info}; flex:0 0 auto; opacity:0.9;">${pact}${parts.map(p => p.pips).join(' ')}</span>`;
+  }
+
+  /** Render active conditions, concentration, and death saves as chips. */
   private conditionChips(m: GameCharacter): string {
+    /** One chip shape everywhere: a pill, tinted by the thing it reports. */
+    const chip = (color: string, label: string, bg = 'rgba(10,9,13,0.85)') =>
+      `<span class="dp-chip dp-chip-sm" style="margin:2px 3px 0 0; color:${color}; border-color:${color}66; background:${bg};">${label}</span>`;
     const chips = m.conditions.map(c => {
       const meta = CONDITION_META[c.id];
-      return `<span style="display:inline-block; padding:0 4px; margin:2px 3px 0 0; font-size:9px; border-radius:2px; background:#15151f; color:${meta.color}; border:1px solid ${meta.color};">${meta.label}</span>`;
+      return chip(meta.color, meta.label);
     });
     if (m.concentration) {
-      chips.push(`<span style="display:inline-block; padding:0 4px; margin:2px 3px 0 0; font-size:9px; border-radius:2px; background:#15151f; color:#ffd700; border:1px solid #ffd700;">\u2726 Concentrating: ${m.concentration.spellName}</span>`);
-    }
-    if (getCasterType(m.charClass.id) !== 'none' && m.maxSpellSlotsTotal > 0) {
-      const parts: string[] = [];
-      for (let lvl = 1; lvl <= 9; lvl++) {
-        const max = m.maxSpellSlots[lvl] || 0;
-        if (max <= 0) continue;
-        const remaining = m.spellSlots[lvl] || 0;
-        parts.push(`${ordinal(lvl)} ${'\u25cf'.repeat(Math.max(0, remaining))}${'\u25cb'.repeat(Math.max(0, max - remaining))}`);
-      }
-      if (parts.length > 0) {
-        const pact = getCasterType(m.charClass.id) === 'pact' ? ' \u26a1 Pact' : '';
-        chips.push(`<span style="display:inline-block; padding:0 4px; margin:2px 3px 0 0; font-size:9px; border-radius:2px; background:#15151f; color:#88f; border:1px solid #446;">${parts.join(' ')}${pact}</span>`);
-      }
+      chips.push(chip(T.gold, `\u2726 ${m.concentration.spellName}`));
     }
     if (m.hp <= 0) {
       const label = m.isDead ? 'DEAD' : m.stabilized ? 'STABILIZED' : 'DYING ☠';
-      chips.push(`<span style="display:inline-block; padding:0 4px; margin:2px 3px 0 0; font-size:9px; border-radius:2px; background:#2a0d0d; color:#f66; border:1px solid #f66;">${label}</span>`);
+      chips.push(chip('#ef8272', label, 'rgba(60,16,12,0.9)'));
     }
     if (m.isDying) {
-      chips.push(`<span style="display:inline-block; padding:0 4px; margin:2px 3px 0 0; font-size:9px; border-radius:2px; background:#15151f; color:#faa; border:1px solid #faa;">Death saves ${m.deathSaveSuccesses}S/${m.deathSaveFailures}F</span>`);
+      chips.push(chip('#e8a99e', `Death saves ${m.deathSaveSuccesses}S/${m.deathSaveFailures}F`));
     }
     if (m.exhaustion > 0) {
-      chips.push(`<span style="display:inline-block; padding:0 4px; margin:2px 3px 0 0; font-size:9px; border-radius:2px; background:#2a1d0d; color:#fa0; border:1px solid #fa0;">Exhaustion ${m.exhaustion}/6</span>`);
+      chips.push(chip(T.warn, `Exhaustion ${m.exhaustion}/6`, 'rgba(44,30,10,0.9)'));
     }
     return chips.length > 0 ? `<div style="margin-top:3px; line-height:1.5;">${chips.join('')}</div>` : '';
   }
@@ -869,17 +992,8 @@ export class HUD {
     input.focus();
   }
 
+  /** Class accent, from the shared theme (all fourteen classes, not eight). */
   private classColor(classId: string): string {
-    const colors: Record<string, string> = {
-      fighter: '#c44',
-      wizard: '#48c',
-      cleric: '#ccc',
-      rogue: '#888',
-      ranger: '#484',
-      paladin: '#cc8',
-      barbarian: '#c84',
-      druid: '#8a4',
-    };
-    return colors[classId] || '#ccc';
+    return classColor(classId);
   }
 }

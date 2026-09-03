@@ -32,6 +32,7 @@ import {
   KNOWN_FOE_KILLS,
   KNOWN_FOE_EXPERT_KILLS,
 } from '../ai/LoreGenerator';
+import { T } from './Theme';
 
 // Lookups linking compendium lore to playable content.
 const MONSTER_BY_NAME = new Map(MONSTER_TEMPLATES.map(t => [t.name.toLowerCase(), t]));
@@ -409,7 +410,7 @@ export class DnDCompendium {
   constructor(host: HTMLElement) {
     this.host = host;
     this.host.insertAdjacentHTML('beforeend', `
-      <div id="compendium-overlay" class="dp-theme" style="display:none; position:absolute; inset:0; z-index:46; background:radial-gradient(ellipse at 50% 28%, #0d1118 0%, #07090e 60%, #040508 100%); color:#d6dce8;">
+      <div id="compendium-overlay" class="dp-theme" style="display:none; position:absolute; inset:0; z-index:97; background:radial-gradient(ellipse at 50% 28%, #14100c 0%, #0a0808 60%, #050405 100%); color:${T.text};">
         <div style="height:100%; display:flex; flex-direction:column; padding:18px; box-sizing:border-box;">
           <div style="display:flex; align-items:center; gap:10px; border-bottom:1px solid #2a3242; padding-bottom:12px;">
             <div class="dp-title" style="flex:1; color:#e8c56a; font-size:19px; font-weight:700; letter-spacing:2px; text-shadow:0 0 14px rgba(232,197,106,0.28);">D&D Compendium</div>
@@ -417,12 +418,12 @@ export class DnDCompendium {
             <button id="btn-close-compendium" class="dp-btn-gold" title="Close compendium" style="padding:5px 12px; font-size:12px; cursor:pointer;">Close</button>
           </div>
           <div style="display:flex; gap:8px; margin:12px 0 8px;">
-            <input id="compendium-search" type="search" placeholder="Search creatures, spells, rules..." style="flex:1; min-width:0; padding:8px; background:#12131b; color:#eee; border:1px solid #454759; font-family:monospace;">
-            <select id="compendium-category" style="width:180px; padding:8px; background:#12131b; color:#eee; border:1px solid #454759; font-family:monospace;"></select>
+            <input id="compendium-search" type="search" placeholder="Search creatures, spells, rules..." style="flex:1; min-width:0; padding:8px;">
+            <select id="compendium-category" style="width:180px; padding:8px;"></select>
           </div>
           <div style="display:flex; gap:8px; margin:0 0 12px; align-items:center;">
-            <select id="compendium-type" title="Filter by monster type" style="width:160px; padding:8px; background:#12131b; color:#eee; border:1px solid #454759; font-family:monospace;"></select>
-            <select id="compendium-cr" title="Filter by challenge rating" style="width:130px; padding:8px; background:#12131b; color:#eee; border:1px solid #454759; font-family:monospace;"></select>
+            <select id="compendium-type" title="Filter by monster type" style="width:160px; padding:8px;"></select>
+            <select id="compendium-cr" title="Filter by challenge rating" style="width:130px; padding:8px;"></select>
             <label id="compendium-playable-label" title="Only kinds with a playable stat block & sprite (the 124-monster roster)" style="color:#b8a; font-size:12px; display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;">
               <input type="checkbox" id="compendium-playable" checked style="cursor:pointer;"> Playable only
             </label>
@@ -716,7 +717,7 @@ export class DnDCompendium {
         ? `<span style="color:#ff9a3c; font-size:10px; margin-left:6px;">\ud83d\udde1 \u00d7${kills}</span>`
         : '';
       return `
-      <button data-entry-id="${escapeHtml(entry.id)}" style="display:block; width:100%; text-align:left; padding:8px; margin-bottom:5px; background:${entry.id === this.selectedId ? '#3d3422' : '#151721'}; color:${entry.id === this.selectedId ? '#ffd76a' : '#ccc'}; border:1px solid ${entry.id === this.selectedId ? '#9c7733' : '#2e3040'}; cursor:pointer; font-family:monospace;">
+      <button data-entry-id="${escapeHtml(entry.id)}" class="dp-row-click" style="display:block; width:100%; text-align:left; padding:7px 9px; margin-bottom:4px; background:${entry.id === this.selectedId ? 'rgba(232,197,106,0.10)' : T.row}; color:${entry.id === this.selectedId ? '#f2dca0' : T.text}; border:1px solid ${entry.id === this.selectedId ? T.goldDim : T.line}; border-radius:${T.r2}; cursor:pointer; font-family:${T.bodyFont};">
         <div style="font-weight:bold;">${escapeHtml(entry.name)}${badge}</div>
         <div style="color:#888; font-size:10px; margin-top:3px;">${escapeHtml(entry.subtitle)}</div>
       </button>`;
@@ -818,8 +819,8 @@ export class DnDCompendium {
     }
     const buttonsHtml = entry.action ? `
       <div style="margin-top:16px; padding-top:12px; border-top:1px solid #3a3a48; display:flex; gap:8px; flex-wrap:wrap;">
-        <button data-compendium-action="encounter" style="padding:6px 10px; background:#3d3422; color:#ffd76a; border:1px solid #9c7733; cursor:pointer; font-family:monospace;">${escapeHtml(actionLabel(entry.action.kind))}</button>
-        <button data-compendium-action="legend" style="padding:6px 10px; background:#151721; color:#a9976b; border:1px solid #454759; cursor:pointer; font-family:monospace;">\ud83d\udcdc Recite Its Legend</button>
+        <button data-compendium-action="encounter" class="dp-btn-gold" style="padding:6px 13px; font-size:12px;">${escapeHtml(actionLabel(entry.action.kind))}</button>
+        <button data-compendium-action="legend" class="dp-btn" style="padding:6px 13px; font-size:12px;">\ud83d\udcdc Recite Its Legend</button>
       </div>` : '';
     this.detailPane.innerHTML = `
       <div style="color:#ffd76a; font-size:20px; font-weight:bold;">${escapeHtml(entry.name)}</div>

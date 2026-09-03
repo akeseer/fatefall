@@ -9,6 +9,7 @@ import { maxSlotsFor, getCasterType, SPELLS } from '../data/gameData';
 import type { Spell } from '../data/gameData';
 import type { PartyCommand } from '../combat/CombatEngine';
 import type { DiceSounds } from './DiceSounds';
+import { T, classColor, hpColor } from './Theme';
 
 /** A consumable the command menu can offer: a potion or scroll in someone's pack. */
 export interface MenuConsumable {
@@ -44,7 +45,10 @@ export class BattleView {
   private root: HTMLElement;
   private enemyRow: HTMLElement;
   private heroRow: HTMLElement;
+  /** The scrolling frame of the narration panel. */
   private feedEl: HTMLElement;
+  /** The lines themselves, bottom-anchored inside that frame. */
+  private feedLinesEl: HTMLElement;
   private roundEl: HTMLElement;
   private bannerEl: HTMLElement;
   private spellRenderer: SpriteRenderer | null = null;
@@ -174,8 +178,8 @@ export class BattleView {
     this.root.id = 'battle-view';
     this.root.style.cssText = [
       'position:absolute; inset:0; z-index:45; display:none;',
-      'background:radial-gradient(ellipse at 50% 38%, #101418 0%, #07090c 70%, #040506 100%);',
-      'flex-direction:column; font-family:monospace; overflow:hidden;',
+      `background:radial-gradient(ellipse at 50% 38%, #16120e 0%, #0a0807 68%, #050405 100%);`,
+      `flex-direction:column; font-family:${T.bodyFont}; overflow:hidden;`,
     ].join('');
     this.root.innerHTML = `
       <style>
@@ -193,7 +197,7 @@ export class BattleView {
         }
         .bv-order-chip {
           font-size: 8px; padding: 1px 6px; border-radius: 7px;
-          border: 1px solid #b8963f; background: rgba(60,48,14,0.55); color: #ffd700;
+          border: 1px solid #a08a4a; background: rgba(60,48,14,0.6); color: #f2dca0;
           white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
           animation: bv-chip-in 0.25s ease-out;
         }
@@ -211,7 +215,7 @@ export class BattleView {
         }
         /* Gamepad pip: glows beside the header while a pad is connected. */
         @keyframes pad-pip-blink { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-        .pad-pip { color: #ffd700; animation: pad-pip-blink 2s ease-in-out infinite; }
+        .pad-pip { color: #e8c56a; animation: pad-pip-blink 2s ease-in-out infinite; }
         /* FF-style blinking command cursor. */
         @keyframes menu-cursor-blink {
           0%, 55% { opacity: 1; }
@@ -331,7 +335,7 @@ export class BattleView {
         }
         .bv-damage-pop {
           position: absolute; pointer-events: none; z-index: 30;
-          font-weight: bold; font-size: 17px; font-family: monospace;
+          font-weight: bold; font-size: 17px; font-family: ${T.monoFont};
           text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,0.6);
           animation: battle-damage-pop 0.9s ease-out forwards;
         }
@@ -340,37 +344,46 @@ export class BattleView {
         .bv-turn-chip {
           display: inline-flex; align-items: center; gap: 4px;
           font-size: 9px; padding: 2px 8px; border-radius: 9px;
-          border: 1px solid #3a5a80; background: rgba(14,22,34,0.85); color: #b8c8d8;
+          border: 1px solid #3b3540; background: rgba(16,14,19,0.88); color: #c3baa8;
           white-space: nowrap; max-width: 118px; overflow: hidden; text-overflow: ellipsis;
         }
-        .bv-turn-chip.foe { border-color: #6a3030; background: rgba(34,14,14,0.85); color: #d8a8a0; }
+        .bv-turn-chip.foe { border-color: #6a3630; background: rgba(34,15,13,0.88); color: #dbaa9e; }
         .bv-turn-chip.active {
-          border-color: #ffd700; color: #ffd700;
-          box-shadow: 0 0 9px rgba(255,200,0,0.4);
+          border-color: #e8c56a; color: #f2dca0;
+          box-shadow: 0 0 9px rgba(232,197,106,0.45);
           animation: pad-pip-blink 1.6s ease-in-out infinite;
         }
         .bv-turn-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
       </style>
       <div style="flex:0 0 auto; height:210px; display:flex; flex-direction:column; padding:10px 14px;">          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div id="battle-round" style="color:#cfd6e6; font-size:13px; font-weight:bold; letter-spacing:1px;">ROUND 1</div>
+          <div id="battle-round" style="color:${T.text}; font-size:14px; font-weight:bold; letter-spacing:2px;">ROUND 1</div>
           <div style="display:flex; align-items:center; gap:8px;">
             <div id="battle-speed" style="display:flex; gap:3px;"></div>
-            <button id="battle-mode" title="Toggle command mode: Manual = you pick every hero's action; Auto = the AI resolves all turns" style="padding:2px 8px; font-size:10px; font-family:monospace; cursor:pointer; background:#2a2418; color:#ffd700; border:1px solid #b8963e; border-radius:3px;">Manual</button>
-            <div id="battle-banner" style="color:#ffd700; font-size:15px; font-weight:bold; letter-spacing:2px; text-shadow:0 0 12px rgba(255,200,0,0.5);"></div>
+            <button id="battle-mode" title="Toggle command mode: Manual = you pick every hero's action; Auto = the AI resolves all turns" style="padding:3px 9px; font-size:10px; cursor:pointer; background:linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95)); color:#f2dca0; border:1px solid #a08a4a; border-radius:4px;">Manual</button>
+            <div id="battle-banner" style="color:${T.gold}; font-size:16px; font-weight:bold; letter-spacing:2px; text-shadow:0 0 14px rgba(232,197,106,0.45);"></div>
           </div>
         </div>
         <div id="battle-order" style="flex:0 0 auto; display:flex; justify-content:center; align-items:center; gap:4px; margin-bottom:6px; flex-wrap:wrap;"></div>
-        <div id="battle-enemies" style="flex:1; display:flex; justify-content:center; align-items:flex-start; gap:12px; flex-wrap:wrap;"></div>
+        <!-- A big encounter wraps to a second row; without overflow of its own
+             that row painted straight over the narration below. It scrolls
+             inside its band instead, and the cards go compact past six foes. -->
+        <div id="battle-enemies" style="flex:1 1 auto; min-height:0; display:flex; justify-content:center; align-items:flex-start; align-content:flex-start; gap:10px; flex-wrap:wrap; overflow-y:auto; overflow-x:hidden;"></div>
       </div>
-      <div id="battle-feed" style="flex:1 1 auto; margin:0 16px; background:rgba(8,12,18,0.6); border:1px solid #2a3540; border-radius:4px; padding:8px 10px; overflow-y:auto; color:#c8d2de; font-size:12px; min-height:40px; max-height:38%;"></div>
+      <!-- The narration grows upward off the bottom edge, the way a table's
+           talk fills the space between the foes and the party. An empty feed
+           at the start of a fight then reads as headroom, not as a void. -->
+      <div id="battle-feed" style="flex:1 1 auto; margin:0 18px; background:rgba(10,8,12,0.55); border:1px solid ${T.line}; border-radius:${T.r2}; box-shadow:inset 0 0 0 1px ${T.rule}; padding:9px 12px; overflow-y:auto; color:${T.text}; min-height:40px; max-height:38%; display:flex; flex-direction:column;">
+        <div id="battle-feed-lines" style="margin-top:auto; flex:0 0 auto;"></div>
+      </div>
       <div style="flex:0 0 auto; height:210px; display:flex; flex-direction:column; padding:10px 14px;">
-        <div class="dp-section-label" style="color:#8fd6a0; font-size:11px; margin-bottom:6px; text-align:center;">◆ PARTY ◆</div>
+        <div class="dp-section-label" style="color:${T.goldDim}; font-size:10px; margin-bottom:6px; text-align:center;">◆ PARTY ◆</div>
         <div id="battle-heroes" style="flex:1; display:flex; justify-content:center; align-items:flex-end; gap:12px; flex-wrap:wrap;"></div>
       </div>
     `;
     this.enemyRow = this.root.querySelector('#battle-enemies')!;
     this.heroRow = this.root.querySelector('#battle-heroes')!;
     this.feedEl = this.root.querySelector('#battle-feed')!;
+    this.feedLinesEl = this.root.querySelector('#battle-feed-lines')!;
     this.roundEl = this.root.querySelector('#battle-round')!;
     this.bannerEl = this.root.querySelector('#battle-banner')!;
     this.turnOrderEl = this.root.querySelector('#battle-order')!;
@@ -394,7 +407,7 @@ export class BattleView {
     // window can't eat keystrokes (idempotent: same fn reference, no dupes).
     window.addEventListener('keydown', this.handleMenuKey);
     this.startPadPoll();
-    this.feedEl.innerHTML = '';
+    this.feedLinesEl.innerHTML = '';
     this.lastTurnActors = []; // fresh fight — bar fills on the first tick
     if (this.turnOrderEl) this.turnOrderEl.innerHTML = '';
     this.renderEnemies();
@@ -738,18 +751,53 @@ export class BattleView {
     }
   }
 
+  /**
+   * Append one line to the fight's narration.
+   *
+   * Same two-column grid as the HUD's combat log: a glyph gutter and the
+   * prose. The engine's own dingbats (⚔ 🛡 🏃 💀) move into that gutter, and
+   * a quoted line is drawn as speech rather than as another damage report —
+   * during a fight the feed is scrolling fast and the eye needs a margin to
+   * follow.
+   */
   private pushFeed(msg: string): void {
     const line = document.createElement('div');
-    line.style.marginBottom = '2px';
-    line.style.lineHeight = '1.35';
-    let color = '#c8d2de';
-    if (msg.includes('CRIT')) color = '#ffcc33';
-    else if (/\bheal/.test(msg)) color = '#7fe0a8';
-    else if (msg.includes('misses') || msg.includes('slain') || msg.includes('fallen')) color = '#ff7a6a';
-    else if (msg.includes('Victory')) color = '#ffd700';
-    else if (msg.includes('Initiative') || msg.startsWith('---')) color = '#8a93a3';
-    else {
-      // Spell lines take their element color — the feed matches the FX.
+    line.className = 'dp-log-line';
+
+    // A scene break: '--- Combat begins! Initiative rolled. ---'
+    if (/^-{2,}/.test(msg)) {
+      line.classList.add('dp-log-break');
+      const body = document.createElement('span');
+      body.className = 'dp-log-body';
+      body.textContent = msg.replace(/^-+\s*/, '').replace(/\s*-+$/, '');
+      line.appendChild(body);
+      this.appendFeedLine(line);
+      return;
+    }
+
+    // Pull a leading glyph into the gutter.
+    let text = msg;
+    let glyph = '';
+    const g = /^([←-⯿\u{1F000}-\u{1FAFF}\u{FE0F}]+)\s*/u.exec(text);
+    if (g) { glyph = g[1]; text = text.slice(g[0].length); }
+
+    let color: string | null = null;
+    if (/^[“"'‘]/.test(text) && /[”"'’]\s*$/.test(text)) {
+      line.classList.add('dp-log-speech');
+    } else if (msg.includes('CRIT')) {
+      line.classList.add('dp-log-gold');
+    } else if (/\bheal/.test(msg)) {
+      line.classList.add('dp-log-good');
+    } else if (msg.includes('misses')) {
+      line.classList.add('dp-log-muted');
+    } else if (msg.includes('slain') || msg.includes('fallen')) {
+      line.classList.add('dp-log-harm');
+    } else if (msg.includes('Victory')) {
+      line.classList.add('dp-log-gold');
+    } else if (msg.includes('Initiative')) {
+      line.classList.add('dp-log-muted');
+    } else {
+      // Spell lines take their element colour — the feed matches the FX.
       const cast = / casts ([\w' ]+?)(?:!| on |\.)/.exec(msg);
       if (cast) {
         const spell = SPELLS.find(s => s.name.toLowerCase() === cast[1].trim().toLowerCase());
@@ -757,37 +805,71 @@ export class BattleView {
         color = BattleView.ELEMENT_COLORS[element] ?? BattleView.DEFAULT_ELEMENT;
       } else if (msg.includes('casts') || msg.includes('sigils') || msg.includes('Words of power') || msg.includes('Arcane energy') || msg.includes('air itself recoils')) {
         color = BattleView.DEFAULT_ELEMENT;
-      } else if (msg.includes('hits') || msg.includes('damage')) {
-        color = '#ffd29a';
+      } else if (msg.includes('damage')) {
+        line.classList.add('dp-log-warn');
+      } else {
+        line.classList.add('dp-log-plain');
       }
     }
-    line.textContent = msg;
-    line.style.color = color;
-    this.feedEl.appendChild(line);
-    while (this.feedEl.children.length > 60) this.feedEl.removeChild(this.feedEl.firstChild!);
+
+    const gutter = document.createElement('span');
+    gutter.className = 'dp-log-glyph';
+    gutter.textContent = glyph;
+    const body = document.createElement('span');
+    body.className = 'dp-log-body';
+    body.textContent = text;
+    if (color) { line.style.color = color; gutter.style.color = color; }
+    line.append(gutter, body);
+    this.appendFeedLine(line);
+  }
+
+  /** Append to the feed and keep it to a fixed length. */
+  private appendFeedLine(line: HTMLElement): void {
+    this.feedLinesEl.appendChild(line);
+    while (this.feedLinesEl.children.length > 60) this.feedLinesEl.removeChild(this.feedLinesEl.firstChild!);
     this.feedEl.scrollTop = this.feedEl.scrollHeight;
   }
 
+  /**
+   * Ring whoever is acting.
+   *
+   * The remembered id matters: cards are rebuilt from scratch every tick, so
+   * without it a re-render between turns drops the ring. (It used to be set
+   * inside `heroCard`, which meant it always ended up holding the *last*
+   * hero drawn — the gold ring sat on the wrong character for the whole
+   * fight, including while the command menu was asking someone else for
+   * orders.)
+   */
   private highlightActors(actors?: (GameCharacter | Monster)[], currentActorId?: string | null): void {
+    // While the menu is up the engine is paused on that hero: ring them, so
+    // "who am I giving orders to?" is answerable from the field.
+    const menuId = this.menuEl && this.menuEl.style.display !== 'none' ? this.menuHero?.id ?? null : null;
+    if (currentActorId == null && menuId) {
+      this.activeHeroId = menuId;
+      this.highlightIn(this.heroRow, menuId);
+      this.highlightIn(this.enemyRow, menuId);
+      return;
+    }
     if (!actors || currentActorId == null) return;
-    const cur = actors.reduce<(GameCharacter | Monster) | null>((acc, a) => {
-      const id = this.actorId(a);
-      if (id === currentActorId) return a;
-      return acc;
-    }, null);
+    const cur = actors.find(a => this.actorId(a) === currentActorId) ?? null;
     if (!cur) return;
-    const isMonster = this.isMonster(cur);
     const id = this.actorId(cur);
+    if (this.isMonster(cur)) {
+      this.activeEnemyId = id;
+      this.activeHeroId = null;
+    } else {
+      this.activeHeroId = id;
+      this.activeEnemyId = null;
+    }
     this.highlightIn(this.enemyRow, id);
     this.highlightIn(this.heroRow, id);
-    void isMonster;
   }
 
   private highlightIn(container: HTMLElement, actorId: string): void {
     for (const card of Array.from(container.querySelectorAll('.battle-card'))) {
       const hit = card.getAttribute('data-id') === actorId;
-      (card as HTMLElement).style.outline = hit ? '2px solid #ffd700' : '1px solid #33404d';
-      (card as HTMLElement).style.boxShadow = hit ? '0 0 14px rgba(255,200,0,0.35)' : 'none';
+      (card as HTMLElement).style.outline = hit ? `2px solid ${T.gold}` : 'none';
+      (card as HTMLElement).style.boxShadow = hit ? '0 0 16px rgba(232,197,106,0.35)' : 'none';
     }
   }
 
@@ -831,23 +913,33 @@ export class BattleView {
     card.className = 'battle-card';
     card.setAttribute('data-id', m.id);
     const boss = m.template.name.includes('(Boss)');
-    const pct = Math.max(0, Math.min(100, (m.hp / Math.max(1, m.maxHp)) * 100));
-    const hpColor = pct > 50 ? '#7fe07f' : pct > 25 ? '#f0d070' : '#ff7a5a';
+    const frac = Math.max(0, Math.min(1, m.hp / Math.max(1, m.maxHp)));
+    const bar = hpColor(frac);
     const conds = m.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
+    // A crowded field gets smaller cards so a big encounter still reads as one
+    // rank of foes rather than a wall wrapping into the narration below.
+    // Twelve of the smallest still fit the 1024px window on one line.
+    const n = this.enemies.length;
+    const size = n > 8
+      ? { sprite: 36, box: 'padding:4px 5px 3px; min-width:58px; max-width:72px;', font: 8.5, head: 20 }
+      : n > 6
+        ? { sprite: 44, box: 'padding:5px 7px 4px; min-width:74px; max-width:96px;', font: 9, head: 20 }
+        : { sprite: 64, box: 'padding:8px 10px 6px; min-width:96px; max-width:130px;', font: 10.5, head: 24 };
+    const sprite = size.sprite;
     card.style.cssText = [
       'position:relative;',
       'display:flex; flex-direction:column; align-items:center; gap:4px;',
-      'background:rgba(16,20,28,0.7); border:1px solid #33404d; border-radius:4px;',
-      'padding:8px 10px 6px; min-width:96px; max-width:130px;',
+      `background:linear-gradient(180deg, rgba(38,22,20,0.72), rgba(20,13,12,0.78)); border:1px solid ${T.line}; border-radius:${T.r2};`,
+      size.box,
     ].join('');
     card.innerHTML = `
-      <div style="font-size:10px; color:${boss ? '#ffd700' : '#8fd6a0'}; text-align:center; line-height:1.2; min-height:24px;">${m.template.name}</div>
-      <img src="${this.spriteSrc(m)}" style="width:64px; height:64px; image-rendering:pixelated; ${m.isAlive ? '' : 'opacity:0.3; filter:grayscale(1);'}" draggable="false"/>
-      <div style="width:100%; background:#1a1f26; border:1px solid #2c3742; border-radius:2px; overflow:hidden;">
-        <div style="width:${pct}%; height:8px; background:${hpColor}; transition:width .25s;"></div>
+      <div style="font-size:${size.font}px; color:${boss ? T.gold : '#dbaa9e'}; text-align:center; line-height:1.2; min-height:${size.head}px;">${m.template.name}</div>
+      <img src="${this.spriteSrc(m)}" style="width:${sprite}px; height:${sprite}px; image-rendering:pixelated; ${m.isAlive ? '' : 'opacity:0.3; filter:grayscale(1);'}" draggable="false"/>
+      <div style="width:100%; background:rgba(0,0,0,0.55); border:1px solid ${T.line}; border-radius:2px; overflow:hidden;">
+        <div style="width:${frac * 100}%; height:8px; background:linear-gradient(90deg, ${bar}, ${bar}bb); transition:width .25s;"></div>
       </div>
-      <div style="font-size:9px; color:#9aa; width:100%; text-align:center;">HP ${Math.max(0, Math.round(m.hp))}/${m.maxHp}</div>
-      ${conds ? `<div style="font-size:8px; color:#ffb0a0; text-align:center; line-height:1.1;">${conds}</div>` : ''}
+      <div class="dp-num" style="font-size:9px; color:${T.muted}; width:100%; text-align:center;">${Math.max(0, Math.round(m.hp))}<span style="color:${T.faint};">/${m.maxHp}</span></div>
+      ${conds ? `<div style="font-size:8.5px; color:#e8a99e; text-align:center; line-height:1.2;">${conds}</div>` : ''}
     `;
     return card;
   }
@@ -856,29 +948,32 @@ export class BattleView {
     const card = document.createElement('div');
     card.className = 'battle-card';
     card.setAttribute('data-id', hero.id);
-    this.activeHeroId = hero.id;
-    const pct = Math.max(0, Math.min(100, (hero.hp / Math.max(1, hero.maxHp)) * 100));
-    const hpColor = pct > 50 ? '#7fe07f' : pct > 25 ? '#f0d070' : '#ff7a5a';
+    const frac = Math.max(0, Math.min(1, hero.hp / Math.max(1, hero.maxHp)));
+    const bar = hpColor(frac);
+    const accent = classColor(hero.charClass.id);
     const conds = hero.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
     // Spell slots as pips per level.
     const slotPips = this.slotPips(hero);
+    // A class-coloured cap on the card is the only place the party's roles are
+    // legible at a glance during a fight — the sprites are 64px and similar.
     card.style.cssText = [
       'position:relative;',
       'display:flex; flex-direction:column; align-items:center; gap:4px;',
-      'background:rgba(18,26,40,0.75); border:1px solid #2e4a6d; border-radius:4px;',
+      `background:linear-gradient(180deg, rgba(30,27,34,0.82), rgba(16,14,19,0.86)); border:1px solid ${T.line}; border-radius:${T.r2};`,
+      `border-top:2px solid ${accent};`,
       'padding:8px 10px 6px; min-width:104px; max-width:150px;',
     ].join('');
-    const deadMarker = hero.isDead || hero.isDying ? ` <span style="color:#ff6060;">☠</span>` : '';
+    const deadMarker = hero.isDead || hero.isDying ? ` <span style="color:#ef8272;">&#9760;</span>` : '';
     card.innerHTML = `
-      <div style="font-size:11px; color:#9fd8ff; text-align:center; line-height:1.2;">${hero.name}${deadMarker}</div>
-      <div style="font-size:9px; color:#789; text-align:center;">Lv${hero.level} ${hero.charClass.name}</div>
+      <div style="font-size:11.5px; font-weight:bold; color:${accent}; text-align:center; line-height:1.2;">${hero.name}${deadMarker}</div>
+      <div style="font-size:9px; color:${T.muted}; text-align:center;">Lv${hero.level} ${hero.charClass.name}</div>
       <img src="${this.spriteSrc(hero)}" style="width:64px; height:64px; image-rendering:pixelated; ${hero.hp <= 0 ? 'opacity:0.35; filter:grayscale(1);' : ''}" draggable="false"/>
-      <div style="width:100%; background:#1a1f26; border:1px solid #2c3742; border-radius:2px; overflow:hidden;">
-        <div style="width:${pct}%; height:9px; background:${hpColor}; transition:width .25s;"></div>
+      <div style="width:100%; background:rgba(0,0,0,0.55); border:1px solid ${T.line}; border-radius:2px; overflow:hidden;">
+        <div style="width:${frac * 100}%; height:9px; background:linear-gradient(90deg, ${bar}, ${bar}bb); transition:width .25s;"></div>
       </div>
-      <div style="font-size:9px; color:#9aa; width:100%; text-align:center;">HP ${Math.max(0, Math.round(hero.hp))}/${hero.maxHp}</div>
-      ${slotPips ? `<div style="font-size:9px; color:#b8c8ff; width:100%; text-align:center;">${slotPips}</div>` : ''}
-      ${conds ? `<div style="font-size:8px; color:#ffb0a0; text-align:center; line-height:1.1;">${conds}</div>` : ''}
+      <div class="dp-num" style="font-size:9px; color:${T.muted}; width:100%; text-align:center;">${Math.max(0, Math.round(hero.hp))}<span style="color:${T.faint};">/${hero.maxHp}</span></div>
+      ${slotPips ? `<div class="dp-num" style="font-size:9px; color:${T.info}; width:100%; text-align:center;">${slotPips}</div>` : ''}
+      ${conds ? `<div style="font-size:8.5px; color:#e8a99e; text-align:center; line-height:1.2;">${conds}</div>` : ''}
       ${this.queuedChipHtml(hero)}
     `;
     return card;
@@ -950,9 +1045,11 @@ export class BattleView {
     if (btn) {
       // Manual = you command (gold); Auto = AI resolves (muted).
       btn.textContent = mode === 'manual' ? 'Manual' : 'Auto';
-      btn.style.color = mode === 'manual' ? '#ffd700' : '#889';
-      btn.style.borderColor = mode === 'manual' ? '#b8963e' : '#33404d';
-      btn.style.background = mode === 'manual' ? '#2a2418' : '#1a2028';
+      btn.style.color = mode === 'manual' ? '#f2dca0' : T.muted;
+      btn.style.borderColor = mode === 'manual' ? T.goldDim : T.line;
+      btn.style.background = mode === 'manual'
+        ? 'linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95))'
+        : 'rgba(20,18,23,0.9)';
     }
   }
 
@@ -969,8 +1066,8 @@ export class BattleView {
       btn.dataset.speed = String(s);
       btn.textContent = `${s}x`;
       btn.style.cssText = [
-        'padding:2px 6px; font-size:10px; font-family:monospace; cursor:pointer;',
-        'background:#1a2028; color:#889; border:1px solid #33404d; border-radius:3px;',
+        'padding:3px 7px; font-size:10px; cursor:pointer;',
+        `background:rgba(20,18,23,0.9); color:${T.muted}; border:1px solid ${T.line}; border-radius:4px;`,
       ].join('');
       btn.addEventListener('click', () => this.setSpeed(s));
       bar.appendChild(btn);
@@ -994,9 +1091,9 @@ export class BattleView {
     btns.forEach(b => {
       const el = b as HTMLElement;
       const active = parseFloat(el.dataset.speed!) === speed;
-      el.style.background = active ? '#3a4a5e' : '#1a2028';
-      el.style.color = active ? '#ffd700' : '#889';
-      el.style.borderColor = active ? '#ffd700' : '#33404d';
+      el.style.background = active ? 'linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95))' : 'rgba(20,18,23,0.9)';
+      el.style.color = active ? '#f2dca0' : T.muted;
+      el.style.borderColor = active ? T.goldDim : T.line;
     });
     this.onSpeedChange?.(speed);
   }
@@ -1010,7 +1107,7 @@ export class BattleView {
     this.root.style.display = 'none';
     this.isOpen = false;
     this.bannerEl.textContent = '';
-    this.feedEl.innerHTML = '';
+    this.feedLinesEl.innerHTML = '';
     this.enemyRow.innerHTML = '';
     this.heroRow.innerHTML = '';
     this.menuHero = null;
@@ -1059,6 +1156,7 @@ export class BattleView {
     // While the engine is paused on this hero, their card shows a live chip
     // (like queued allies) that turns gold-outline when they pick a command.
     this.pausedOrderKey = hero.id;
+    this.activeHeroId = hero.id; // the field ring follows the menu
     this.renderHeroes(); // paint the 'awaiting orders' chip immediately
     this.renderMenu();
   }
@@ -1167,9 +1265,9 @@ export class BattleView {
       this.menuEl.style.cssText = [
         'position:absolute; right:16px; bottom:224px; z-index:25;',
         'min-width:230px; max-width:320px; max-height:44%; overflow-y:auto;',
-        'background:linear-gradient(180deg, rgba(10,16,30,0.97), rgba(6,10,18,0.97));',
-        'border:2px solid #4a6a9a; border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.7), 0 0 18px rgba(60,110,180,0.25);',
-        'font-family:monospace; color:#d8e4f2; padding:10px 12px;',
+        'background:linear-gradient(180deg, rgba(30,26,20,0.98), rgba(14,12,10,0.98));',
+        `border:1px solid ${T.goldDim}; border-radius:${T.r3}; box-shadow:0 6px 30px rgba(0,0,0,0.75), 0 0 20px rgba(232,197,106,0.16), inset 0 0 0 1px ${T.rule};`,
+        `font-family:${T.bodyFont}; color:${T.text}; padding:11px 13px;`,
       ].join('');
       this.root.appendChild(this.menuEl);
     }
@@ -1184,13 +1282,13 @@ export class BattleView {
       b.style.cssText = [
         'display:flex; justify-content:space-between; align-items:center; width:100%; gap:10px;',
         'padding:8px 12px; margin:3px 0; cursor:pointer; text-align:left;',
-        `background:${danger ? '#3a1a1a' : '#16283e'}; color:${danger ? '#ff9a8a' : '#cfe0f2'};`,
-        `border:1px solid ${danger ? '#6a3030' : '#3a5a80'}; border-radius:4px; font-family:monospace; font-size:12px;`,
+        `background:${danger ? 'rgba(58,24,20,0.85)' : 'rgba(255,255,255,0.035)'}; color:${danger ? '#ef9a8a' : T.text};`,
+        `border:1px solid ${danger ? '#6a3630' : T.line}; border-radius:${T.r2}; font-size:12.5px;`,
       ].join('');
       const keyTag = keyHint
-        ? `<span style="display:inline-block; min-width:16px; margin-right:8px; padding:1px 4px; background:#0d1520; border:1px solid #3a5a80; border-radius:3px; color:#8fb8d8; font-size:10px; text-align:center;">${keyHint}</span>`
+        ? `<span class="dp-num" style="display:inline-block; min-width:16px; margin-right:8px; padding:1px 4px; background:rgba(0,0,0,0.45); border:1px solid ${T.line}; border-radius:3px; color:${T.goldDim}; font-size:10px; text-align:center;">${keyHint}</span>`
         : '';
-      b.innerHTML = `<span style="display:flex; align-items:center;">${keyTag}${label}</span><span style="color:#688; font-size:10px;">${sub}</span>`;
+      b.innerHTML = `<span style="display:flex; align-items:center;">${keyTag}${label}</span><span style="color:${T.muted}; font-size:10px;">${sub}</span>`;
       const btnIndex = this.menuButtons.length;
       // Mouse and keyboard share one cursor: hovering moves it, arrows move
       // it back. The highlight persists until the cursor moves again.
@@ -1207,7 +1305,7 @@ export class BattleView {
       const aimingAllies = this.targeting.cmd.type === 'spell' && (!cur || !cur.isEnemy);
       this.menuEl.innerHTML = ''; // targeting owns the whole pane
       const title = document.createElement('div');
-      title.style.cssText = 'font-size:12px; color:#ffcf8a; margin:2px 0 6px; text-align:center;';
+      title.style.cssText = `font-size:12.5px; color:${T.gold}; margin:2px 0 7px; text-align:center; letter-spacing:1px;`;
       title.textContent = aimingAllies ? '✛ Choose an ally…' : '✛ Choose a target…';
       this.menuEl.appendChild(title);
       const cancelBtn = menuBtn('← Cancel', 'Esc', () => this.cancelTargeting(), true);
@@ -1219,7 +1317,7 @@ export class BattleView {
       this.menuButtons.push({ el: cancelBtn, onClick: () => this.cancelTargeting(), key: '', danger: true });
       this.applyTargetCursor();
       const hint = document.createElement('div');
-      hint.style.cssText = 'font-size:9px; color:#789; margin-top:6px; text-align:center;';
+      hint.style.cssText = `font-size:9px; color:${T.faint}; margin-top:6px; text-align:center;`;
       hint.textContent = this.padConnected ? '🎮 D-pad target · Ⓐ confirm · Ⓑ cancel' : '↑↓ target · Enter confirm · Esc cancel';
       this.menuEl.appendChild(hint);
       this.menuCursor = this.menuButtons.findIndex(b => b.key === '1');
@@ -1229,11 +1327,11 @@ export class BattleView {
 
     const backBtn = menuBtn('← Back', 'Esc', () => { this.menuPane = 'root'; this.renderMenu(); }, false, '');
     const queuedTag = this.menuIsQueued && hero.id !== this.parkedHeroId
-      ? `<div style="font-size:10px; color:#8fd6a0; margin-top:2px;">⏳ order will be queued — Tab to reach another hero</div>`
-      : `<div style="font-size:10px; color:#8fd6a0; margin-top:2px;">Tab: cycle heroes · Shift+2: recast last spell</div>`;
+      ? `<div style="font-size:10px; color:${T.muted}; margin-top:2px;">⏳ order will be queued — Tab to reach another hero</div>`
+      : `<div style="font-size:10px; color:${T.muted}; margin-top:2px;">Tab: cycle heroes · Shift+2: recast last spell</div>`;
     const queuedCount = this.queuedOrders.size;
     const queuedList = queuedCount > 0
-      ? `<div style="font-size:10px; color:#9ab; margin-bottom:4px;">Queued: ${[...this.queuedOrders.entries()].map(([id, c]) => {
+      ? `<div style="font-size:10px; color:${T.info}; margin-bottom:4px;">Queued: ${[...this.queuedOrders.entries()].map(([id, c]) => {
           const m = this.partyRoster.find(x => x.id === id);
           const name = m ? m.name : '?';
           const label = c.type === 'attack' ? 'Attack' : c.type === 'flee' ? 'Flee' : c.type === 'item' ? 'Item' : this.lastSpellByHero.get(id)?.spellName ?? 'Spell';
@@ -1241,7 +1339,7 @@ export class BattleView {
         }).join(', ')}</div>`
       : '';
     const padPip = this.padConnected ? '<span class="pad-pip" title="Gamepad connected — D-pad move · Ⓐ confirm · Ⓑ back · LB hero">🎮</span> ' : '';
-    const header = `<div style="font-size:12px; color:#ffd700; letter-spacing:1px; margin-bottom:6px; border-bottom:1px solid #3a4a60; padding-bottom:5px;">${padPip}⌘ ${hero.name}${this.menuIsQueued && hero.id !== this.parkedHeroId ? ' (queued)' : ''} — your command?</div>${queuedTag}${queuedList}`;
+    const header = `<div class="dp-title" style="font-size:13px; color:${T.gold}; letter-spacing:1.2px; margin-bottom:6px; border-bottom:1px solid ${T.rule}; padding-bottom:6px;">${padPip}⌘ ${hero.name}${this.menuIsQueued && hero.id !== this.parkedHeroId ? ' (queued)' : ''} — your command?</div>${queuedTag}${queuedList}`;
 
     if (this.menuPane === 'root') {
       this.menuEl.innerHTML = header;
@@ -1268,18 +1366,18 @@ export class BattleView {
         this.pickCommand({ type: 'flee' }), true, labelFor(this.binds.flee)));
       // Formation presets: queue a standard opener for the whole party.
       const presetRow = document.createElement('div');
-      presetRow.style.cssText = 'display:flex; gap:4px; margin-top:6px; padding-top:6px; border-top:1px solid #2a3a50;';
+      presetRow.style.cssText = `display:flex; gap:5px; margin-top:7px; padding-top:7px; border-top:1px solid ${T.rule};`;
       for (const [name, preset] of Object.entries(BattleView.PRESETS)) {
         const p = document.createElement('button');
         p.style.cssText = [
-          'flex:1; padding:5px 4px; cursor:pointer; font-family:monospace; font-size:10px;',
-          'background:#1a2438; color:#d8c88a; border:1px solid #4a4a2a; border-radius:4px;',
+          'flex:1; padding:5px 4px; cursor:pointer; font-size:10.5px;',
+          `background:rgba(255,255,255,0.03); color:${T.goldDim}; border:1px solid ${T.line}; border-radius:${T.r2};`,
         ].join('');
         p.innerHTML = preset.label;
         const presetBind = { standard: this.binds.formationStandard, careful: this.binds.formationCareful, reckless: this.binds.formationReckless }[name] ?? '';
         p.title = `Formation — ${preset.hint} (key ${labelFor(presetBind)}; queues every hero's default order)`;
-        p.addEventListener('mouseenter', () => { p.style.borderColor = '#ffd700'; });
-        p.addEventListener('mouseleave', () => { p.style.borderColor = '#4a4a2a'; });
+        p.addEventListener('mouseenter', () => { p.style.borderColor = T.gold; p.style.color = '#f2dca0'; });
+        p.addEventListener('mouseleave', () => { p.style.borderColor = T.line; p.style.color = T.goldDim; });
         p.addEventListener('click', () => this.runPreset(name));
         presetRow.appendChild(p);
       }
@@ -1333,9 +1431,9 @@ export class BattleView {
 
     // Keyboard hint row under the menu.
     const hint = document.createElement('div');
-    hint.style.cssText = 'margin-top:6px; padding-top:5px; border-top:1px solid #2a3a50; color:#5a6a7a; font-size:9px; text-align:center;';
+    hint.style.cssText = `margin-top:7px; padding-top:6px; border-top:1px solid ${T.rule}; color:${T.faint}; font-size:9px; text-align:center;`;
     if (this.quickCastFlash) {
-      hint.style.color = '#fd8';
+      hint.style.color = T.gold;
       hint.textContent = this.quickCastFlash;
       this.quickCastFlash = null; // one-shot
     } else {
@@ -1370,19 +1468,19 @@ export class BattleView {
     if (this.cursorEl && this.cursorEl.parentElement) this.cursorEl.remove();
     this.cursorEl = null;
     this.menuButtons.forEach(b => {
-      b.el.style.borderColor = b.danger ? '#6a3030' : '#3a5a80';
-      b.el.style.background = b.danger ? '#3a1a1a' : '#16283e';
+      b.el.style.borderColor = b.danger ? '#6a3630' : T.line;
+      b.el.style.background = b.danger ? 'rgba(58,24,20,0.85)' : 'rgba(255,255,255,0.035)';
       const old = b.el.querySelector('.menu-cursor');
       if (old) old.remove();
     });
     const entry = this.menuButtons[this.menuCursor];
     if (!entry) return;
-    entry.el.style.borderColor = '#ffd700';
-    entry.el.style.background = '#1e3450';
+    entry.el.style.borderColor = T.gold;
+    entry.el.style.background = 'linear-gradient(180deg, rgba(84,66,26,0.75), rgba(52,40,16,0.75))';
     const ptr = document.createElement('span');
     ptr.className = 'menu-cursor';
     ptr.textContent = '▶';
-    ptr.style.cssText = 'display:inline-block; width:12px; margin-right:4px; color:#ffd700; animation:menu-cursor-blink 0.9s steps(1) infinite;';
+    ptr.style.cssText = `display:inline-block; width:12px; margin-right:4px; color:${T.gold}; animation:menu-cursor-blink 0.9s steps(1) infinite;`;
     const content = entry.el.firstElementChild;
     if (content) entry.el.insertBefore(ptr, content); else entry.el.appendChild(ptr);
     entry.el.scrollIntoView({ block: 'nearest' });
@@ -1624,7 +1722,7 @@ export class BattleView {
       this.controlsEl = document.createElement('div');
       this.controlsEl.style.cssText = [
         'position:absolute; inset:0; z-index:60; display:none;',
-        'background:rgba(4,6,10,0.82); font-family:monospace; color:#d8e4f2;',
+        `background:rgba(6,4,4,0.85); font-family:${T.bodyFont}; color:${T.text};`,
         'align-items:center; justify-content:center;',
       ].join('');
       this.root.appendChild(this.controlsEl);
@@ -1644,36 +1742,37 @@ export class BattleView {
     el.innerHTML = '';
     const panel = document.createElement('div');
     panel.style.cssText = [
-      'background:linear-gradient(180deg, rgba(14,20,32,0.98), rgba(8,12,20,0.98));',
-      'border:2px solid #4a6a9a; border-radius:8px; padding:16px 20px; max-width:560px; width:92%;',
-      'box-shadow:0 8px 40px rgba(0,0,0,0.8);',
+      'background:linear-gradient(180deg, rgba(30,26,20,0.98), rgba(14,12,10,0.98));',
+      `border:1px solid ${T.goldDim}; border-radius:${T.r3}; padding:16px 20px; max-width:560px; width:92%;`,
+      `box-shadow:0 8px 40px rgba(0,0,0,0.8), inset 0 0 0 1px ${T.rule};`,
     ].join('');
     const title = document.createElement('div');
-    title.style.cssText = 'font-size:15px; color:#ffd700; letter-spacing:1px; margin-bottom:4px;';
+    title.className = 'dp-title';
+    title.style.cssText = `font-size:16px; color:${T.gold}; letter-spacing:1.5px; margin-bottom:4px;`;
     title.textContent = '⌨ Battle Controls';
     panel.appendChild(title);
     const sub = document.createElement('div');
-    sub.style.cssText = 'font-size:10px; color:#789; margin-bottom:10px;';
+    sub.style.cssText = `font-size:10px; color:${T.faint}; margin-bottom:12px;`;
     sub.textContent = 'Arrows/Enter always navigate · click a key tile, then press a new key · Esc closes';
     panel.appendChild(sub);
     const list = document.createElement('div');
     list.style.cssText = 'display:grid; grid-template-columns:1fr; gap:4px; max-height:52vh; overflow-y:auto;';
     for (const row of BIND_ORDER) {
       const line = document.createElement('div');
-      line.style.cssText = 'display:flex; align-items:center; gap:10px; padding:5px 8px; background:rgba(20,28,42,0.8); border:1px solid #26364a; border-radius:4px;';
+      line.style.cssText = `display:flex; align-items:center; gap:10px; padding:5px 9px; background:${T.row}; border:1px solid ${T.line}; border-radius:${T.r2};`;
       const name = document.createElement('span');
-      name.style.cssText = 'flex:1; font-size:11px; color:#cfe0f2;';
+      name.style.cssText = `flex:1; font-size:11.5px; color:${T.text};`;
       name.textContent = row.name;
       const hint = document.createElement('span');
-      hint.style.cssText = 'flex:2; font-size:9px; color:#688;';
+      hint.style.cssText = `flex:2; font-size:9.5px; color:${T.muted};`;
       hint.textContent = row.hint;
       const key = document.createElement('button');
       const isRemapping = this.remapping === row.action;
       key.style.cssText = [
-        'min-width:64px; padding:4px 8px; cursor:pointer; font-family:monospace; font-size:11px;',
+        `min-width:64px; padding:4px 8px; cursor:pointer; font-family:${T.monoFont}; font-size:11px; border-radius:${T.r1};`,
         isRemapping
-          ? 'background:#3a2a10; color:#ffd700; border:1px solid #ffd700; animation:pad-pip-blink 1s ease-in-out infinite;'
-          : 'background:#0d1520; color:#8fb8d8; border:1px solid #3a5a80; border-radius:4px;',
+          ? `background:rgba(84,66,26,0.9); color:${T.gold}; border:1px solid ${T.gold}; animation:pad-pip-blink 1s ease-in-out infinite;`
+          : `background:rgba(0,0,0,0.45); color:${T.goldDim}; border:1px solid ${T.line};`,
       ].join('');
       key.textContent = isRemapping ? 'press a key…' : labelFor(this.binds[row.action]);
       key.addEventListener('click', () => {
@@ -1689,12 +1788,13 @@ export class BattleView {
     const footer = document.createElement('div');
     footer.style.cssText = 'display:flex; justify-content:space-between; margin-top:10px;';
     const padNote = document.createElement('span');
-    padNote.style.cssText = 'font-size:9px; color:#688;';
+    padNote.style.cssText = `font-size:9px; color:${T.faint};`;
     padNote.textContent = this.padConnected
       ? '🎮 Gamepad: D-pad move · Ⓐ confirm · Ⓑ back · LB hero (fixed)'
       : '🎮 Gamepad supported: D-pad move · Ⓐ confirm · Ⓑ back · LB hero';
     const resetBtn = document.createElement('button');
-    resetBtn.style.cssText = 'padding:4px 10px; cursor:pointer; font-family:monospace; font-size:10px; background:#2a1a1a; color:#ff9a8a; border:1px solid #6a3030; border-radius:4px;';
+    resetBtn.className = 'dp-btn dp-btn-bad';
+    resetBtn.style.cssText = 'padding:4px 11px; font-size:10px;';
     resetBtn.textContent = '↺ Reset to defaults';
     resetBtn.addEventListener('click', () => {
       this.binds = { ...DEFAULT_KEYBINDS };
@@ -1929,10 +2029,10 @@ export class BattleView {
       this.spoilsEl.style.cssText = [
         'position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:32;',
         'min-width:320px; max-width:460px; max-height:70%; overflow-y:auto;',
-        'background:linear-gradient(180deg, rgba(14,20,36,0.98), rgba(8,10,20,0.98));',
+        'background:linear-gradient(180deg, rgba(32,27,20,0.98), rgba(14,12,10,0.98));',
         'border:2px solid #b8963e; border-radius:8px; padding:16px 20px;',
         'box-shadow:0 6px 40px rgba(0,0,0,0.8), 0 0 26px rgba(255,200,60,0.22);',
-        'font-family:monospace; color:#e8e0c8;',
+        `font-family:${T.bodyFont}; color:#e8e0c8;`,
       ].join('');
       this.root.appendChild(this.spoilsEl);
     }
@@ -1942,38 +2042,44 @@ export class BattleView {
       magic: '✦', potion: '🧪', scroll: '📜', treasure: '💎', other: '·',
     };
     const itemLines = spoils.items.length === 0
-      ? `<div style="color:#778; font-size:11px; margin:3px 0;">The corpses yield nothing but dust.</div>`
+      ? `<div style="color:${T.faint}; font-size:11px; margin:3px 0; font-style:italic;">The corpses yield nothing but dust.</div>`
       : spoils.items.map(i =>
         `<div style="font-size:11px; margin:3px 0; color:${i.kind === 'magic' ? '#c8a8ff' : i.kind === 'treasure' ? '#e8c860' : '#a8d8b0'};">` +
         `${kindIcon[i.kind]} ${i.name}</div>`).join('');
     const killLines = spoils.kills.map(k =>
-      `<span style="display:inline-block; margin:2px 8px 2px 0; font-size:10px; color:#9aa;">☠ ${k.count}× ${k.name}</span>`).join('');
+      `<span style="display:inline-block; margin:2px 8px 2px 0; font-size:10px; color:${T.muted};">☠ ${k.count}× ${k.name}</span>`).join('');
 
     this.spoilsEl.innerHTML = `
       <div style="text-align:center; margin-bottom:10px;">
-        <div style="font-family:'Cinzel', Georgia, serif; font-size:22px; font-weight:bold; color:#ffd700; letter-spacing:5px; text-shadow:0 0 14px rgba(255,200,0,0.6);">
+        <div style="font-family:${T.titleFont}; font-size:23px; font-weight:bold; color:${T.gold}; letter-spacing:6px; text-shadow:0 0 14px rgba(232,197,106,0.55);">
           ${spoils.boss ? '⭐ VICTORY! ⭐' : 'VICTORY!'}
         </div>
-        <div style="font-size:10px; color:#8a7; letter-spacing:3px; margin-top:3px; font-style:italic;">THE FIELD IS YOURS</div>
+        <div style="font-size:10px; color:${T.goldDim}; letter-spacing:3px; margin-top:4px; font-style:italic;">THE FIELD IS YOURS</div>
       </div>
-      <div style="border-top:1px solid #3a3520; padding-top:8px;">
+      <div style="border-top:1px solid ${T.rule}; padding-top:8px;">
         <div style="display:flex; justify-content:space-between; font-size:12px; margin:4px 0;">
-          <span style="color:#8ac;">Experience</span><span style="color:#bdf; font-variant-numeric:tabular-nums;">+${spoils.xpEach} XP each</span>
+          <span style="color:${T.muted};">Experience</span><span class="dp-num" style="color:${T.info};">+${spoils.xpEach} XP each</span>
         </div>
         <div style="display:flex; justify-content:space-between; font-size:12px; margin:4px 0;">
-          <span style="color:#8ac;">Coin</span><span style="color:#c9a04a;">💰 ${spoils.gold} gp</span>
+          <span style="color:${T.muted};">Coin</span><span class="dp-num" style="color:${T.coin};">💰 ${spoils.gold} gp</span>
         </div>
       </div>
-      <div style="border-top:1px solid #3a3520; margin-top:8px; padding-top:6px;">
-        <div class="dp-section-label" style="font-size:10px; color:#886; margin-bottom:3px;">SPOILS</div>
+      <div style="border-top:1px solid ${T.rule}; margin-top:8px; padding-top:6px;">
+        <div class="dp-section-label" style="font-size:9px; color:${T.goldDim}; margin-bottom:4px;">SPOILS</div>
         ${itemLines}
       </div>
-      ${killLines ? `<div style="border-top:1px solid #3a3520; margin-top:8px; padding-top:6px;">${killLines}</div>` : ''}
+      ${killLines ? `<div style="border-top:1px solid ${T.rule}; margin-top:8px; padding-top:6px;">${killLines}</div>` : ''}
       <div style="text-align:center; margin-top:12px;">
-        <button id="spoils-continue" style="padding:9px 30px; background:linear-gradient(180deg, rgba(74,64,20,0.9), rgba(48,42,14,0.9)); color:#ffd700; border:1px solid #a08a4a; border-radius:6px; cursor:pointer; font-family:'Cinzel', Georgia, serif; font-size:13px; letter-spacing:2px; box-shadow:0 0 14px rgba(232,197,106,0.2);">Continue ▸</button>
+        <button id="spoils-continue" style="padding:9px 30px; background:linear-gradient(180deg, rgba(96,80,36,0.95), rgba(58,46,20,0.95)); color:#f6e7bd; border:1px solid ${T.goldDim}; border-radius:${T.r2}; cursor:pointer; font-family:${T.titleFont}; font-size:13px; letter-spacing:2px; box-shadow:0 0 14px rgba(232,197,106,0.2);">Continue ▸</button>
       </div>
     `;
     this.spoilsEl.querySelector('#spoils-continue')!.addEventListener('click', () => this.dismissSpoils());
+
+    // The dice tray's cinematic die lives outside this window at z-index 95,
+    // so the last roll of the fight used to hang over the victory card. Lift
+    // the whole (opaque, full-screen) battle window above it while the spoils
+    // are up; `dismissSpoils` puts it back so combat rolls stay visible.
+    this.root.style.zIndex = '96';
 
     // Auto-dismiss so an idle window never blocks the flow.
     if (this.spoilsTimer !== null) window.clearTimeout(this.spoilsTimer);
@@ -1996,6 +2102,7 @@ export class BattleView {
       this.spoilsEl.style.display = 'none';
       this.spoilsEl.innerHTML = '';
     }
+    this.root.style.zIndex = '45'; // back under the dice tray
     // A close that was deferred for the summary fires now that it's read.
     if (this.pendingClose && !this.closing) {
       this.pendingClose = false;
