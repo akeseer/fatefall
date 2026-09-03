@@ -2,7 +2,7 @@ import { Renderer } from './engine/Renderer';
 import { Camera } from './engine/Camera';
 import { TileMap } from './world/TileMap';
 import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
-import { assignFeature, assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
+import { assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
 import { RoomFeatureController } from './game/RoomFeatureController';
 import { RecordingContext } from './rendering/RecordingContext';
 import { CanvasBackend } from './rendering/backends/CanvasBackend';
@@ -10,10 +10,11 @@ import { createBackend, type RenderBackendId } from './rendering/backends';
 import type { RenderBackend, SceneMood } from './rendering/DrawCommand';
 import { BulletinBoardController } from './game/BulletinBoardController';
 import { MarketController } from './game/MarketController';
+import { SaveSerializer } from './game/SaveSerializer';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
 import { understand, IntentPredictor } from './ai/DMCommandParser';
 import { IntentModel, loadIntentModel, intentModelEnabled, setIntentModelEnabled } from './ai/IntentModel';
-import { Overworld, OverworldEntrance, OverworldTown, entranceAt, generateOverworld, getEntranceById, getTownById, nearestWalkable, ringOverworld, townAt } from './world/Overworld';
+import { Overworld, OverworldEntrance, OverworldTown, entranceAt, generateOverworld, getEntranceById, getTownById, townAt } from './world/Overworld';
 import { OverworldPOI, createMoonForgePOI, discoverNearbyPOIs, poiIcon } from './world/OverworldPOI';
 import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
 import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, createClock, dayChangeNarration, tickClock, timeOfDayFromPhase } from './world/DayNightSystem';
@@ -21,7 +22,7 @@ import { CalendarDay, calendarFromElapsed } from './world/CalendarSystem';
 import { BIOME_EVENTS, Wanderer, isWildlife, randomTravelEvent, scatterWildlife, spawnOverworldLife, stepWanderers } from './world/OverworldLife';
 import { astarPath } from './world/Pathfinding';
 import { WorldRegion, generateWorldRegions, regionAt, regionSummary } from './world/WorldRegions';
-import { FESTIVAL_FLAVOR, TownLifeState, initTownLife, isCaravanWanderer, sanitizeTownLife, tickTownLife, rollArrivalEvent, eventFor, townPriceModifier, rollTavernBuff, getTavernBuffNarration, refreshBulletinBoard } from './world/TownLife';
+import { FESTIVAL_FLAVOR, TownLifeState, initTownLife, tickTownLife, rollArrivalEvent, eventFor, townPriceModifier, rollTavernBuff, getTavernBuffNarration, refreshBulletinBoard } from './world/TownLife';
 import { TOWN_ARCHETYPES, TownServiceId, ReputationShopItem } from './world/TownTypes';
 import { Ambush, findAmbushTiles, getAmbushChance, rollAmbush } from './world/Ambushes';
 import { Quest, QuestState, checkQuestProgress, generateQuests, questProgressText, questTargetEntrance } from './quests/Quests';
@@ -47,7 +48,7 @@ import { CompendiumEntry } from './ui/DnDCompendium';
 import { CONDITION_META, rollD20, savingThrow } from './rules/Rules';
 import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules/DiceEvents';
 import { grantLuckDie, getLuckDie, onLuckDieSpent } from './rules/LuckDie';
-import { SAVE_VERSION, SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
+import { SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
 import { rollCombatLoot, LootSource, LootResult, EMPTY_PURSE } from './loot/LootTables';
 import { rollTieredGear } from './loot/TieredGear';
 import {
@@ -214,16 +215,16 @@ class Game {
   /** Cooldown so dungeon mood events don't chain mid-floor. */
   private dungeonMoodCdUntil: number = 0;
   /** Discovered bandit camps and pending clues. */
-  private banditCamps: BanditCampState = { camps: [], clues: [] };
+  public banditCamps: BanditCampState = { camps: [], clues: [] };
   private entranceBaseName: string = '';
   /** Points of Interest scattered across the overworld. */
   public pois: OverworldPOI[] = [];
-  private expeditionJournal: string[] = [];
+  public expeditionJournal: string[] = [];
   private activePOI: OverworldPOI | null = null;
-  private weather: WeatherState | null = null;
+  public weather: WeatherState | null = null;
   /** Persistent day/night clock over the overworld. */
-  private clock: ClockState = createClock();
-  private lastClockStage: TimeOfDay = 'dawn';
+  public clock: ClockState = createClock();
+  public lastClockStage: TimeOfDay = 'dawn';
   /** The named calendar day (weekday + moon) derived from the clock. */
   public calendar: CalendarDay = calendarFromElapsed(this.clock.elapsed);
   /** Pending guard hire from town service — applied when entering the next dungeon. */
@@ -239,7 +240,7 @@ class Game {
   private biomeNarrated: Set<number> = new Set();
   private townWaitTimer: number = 0;
   private travelNarrateCounter: number = 0;
-  private bossSlainThisFloor: boolean = false;
+  public bossSlainThisFloor: boolean = false;
 
   /** A running account of what this party has done — feeds room narration. */
   public history: PartyHistory = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
@@ -250,10 +251,10 @@ class Game {
   private dungeonRouteGoal: number = -1;
 
   private tickTimer: number = 0;
-  private tickInterval: number = 800; // ms between AI actions
+  public tickInterval: number = 800; // ms between AI actions
   private combatTickTimer: number = 0;
   private combatTickInterval: number = 150; // ms between combat steps
-  private monsterIdCounter: number = 0;
+  public monsterIdCounter: number = 0;
   private stuckDirCount: number = 0;
   private lastActionDir: string = '';
   private overworldStuckCount: number = 0;
@@ -265,8 +266,8 @@ class Game {
   private dungeonRecentTiles: { x: number; y: number }[] = [];
 
   // Live DM orders from the command panel
-  private dmDirection?: Direction;
-  private dmStance: 'auto' | 'aggressive' | 'cautious' = 'auto';
+  public dmDirection?: Direction;
+  public dmStance: 'auto' | 'aggressive' | 'cautious' = 'auto';
 
   private paused: boolean = false;
   private saveTimer: number = 0;
@@ -628,7 +629,7 @@ class Game {
    * party (or that predate walkable connectors) get rebuilt in place (same
    * level and theme) so continued runs can actually navigate.
    */
-  private ensureNavigableDungeon(): void {
+  ensureNavigableDungeon(): void {
     const leader = this.party.leader;
     const w = this.map.width;
     const h = this.map.height;
@@ -1437,7 +1438,7 @@ class Game {
    * Feed the kill ledger into the AI: rebuild the known-foe set (AIDirector
    * morale/bark) and the attack bonus map (CombatEngine) from it.
    */
-  private syncKnownFoes(): void {
+  syncKnownFoes(): void {
     const bonusMap: Record<string, number> = {};
     const known = new Set<string>();
     for (const [id, kills] of Object.entries(this.history.killLedger)) {
@@ -2331,6 +2332,9 @@ class Game {
 
   // ── Save / Load ────────────────────────────────
 
+  /** Reading the run out to a slot, and writing a saved one back in. */
+  private readonly saves = new SaveSerializer(this);
+
   /** Serialize the run to the active slot. Manual saves log confirmation. */
   saveGame(silent: boolean = true): boolean {
     const ok = saveToSlot(this.activeSlot, this.toSaveData());
@@ -2343,435 +2347,110 @@ class Game {
     return ok;
   }
 
+  /** The run as a slot-ready snapshot. The field-by-field mapping is in SaveSerializer. */
   private toSaveData(): SaveData {
-    return {
-      version: SAVE_VERSION,
-      savedAt: Date.now(),
-      mode: this.mode,
-      dungeonLevel: this.dungeonLevel,
-      dungeonName: this.dungeonName,
-      dungeonThemeId: this.dungeonTheme?.id ?? undefined,
-      history: { ...this.history },
-      luckDie: getLuckDie(),
-      phase: this.phase,
-      quests: this.quests.map(q => ({ ...q })),
-      activeQuestId: this.activeQuestId,
-      dungeonEntranceId: this.dungeonEntranceId,
-      partyName: this.party.partyName,
-      silveredWeapon: this.silveredWeapon,
-      moonForgeLevel: this.moonForgeLevel,
-      moonForgeBlade: this.moonForgeBlade,
-      overworld: this.overworld ? {
-        width: this.overworld.map.width,
-        height: this.overworld.map.height,
-        tiles: this.overworld.map.tiles,
-        explored: this.overworld.map.explored,
-        towns: this.overworld.towns,
-        entrances: this.overworld.entrances,
-        spawnTownId: this.overworld.spawnTownId,
-        regions: this.worldRegions,
-      } : null,
-      wanderers: this.wanderers.map(w => ({ ...w, tile: { ...w.tile }, target: { ...w.target } })),
-      townLife: this.townLife,
-      banditCamps: this.banditCamps,
-      pois: this.pois.map(p => ({ ...p, tile: { ...p.tile } })),
-      expeditionJournal: this.expeditionJournal,
-      weather: this.weather ?? undefined,
-      clockPhase: this.clock.phase,
-      clockElapsed: this.clock.elapsed,
-      treasuresFound: this.treasuresFound,
-      // The delve mood carries real combat effects, the town is where the
-      // party is actually standing, and the floor's boss does not come back
-      // to life on reload. All three used to be dropped and re-guessed.
-      delveMood: this.delveMood,
-      currentTownId: this.currentTown?.id ?? null,
-      bossSlainThisFloor: this.bossSlainThisFloor,
-      monsterIdCounter: this.monsterIdCounter,
-      dmStance: this.dmStance,
-      dmDirection: this.dmDirection ?? null,
-      speed: 800 / this.tickInterval,
-      camera: {
-        x: this.camera.x,
-        y: this.camera.y,
-        targetX: this.camera.targetX,
-        targetY: this.camera.targetY,
-      },
-      map: {
-        width: this.map.width,
-        height: this.map.height,
-        tiles: this.map.tiles,
-        explored: this.map.explored,
-      },
-      rooms: this.mode === GameMode.Dungeon ? this.rooms : [],
-      traps: this.traps.map(t => ({ ...t, tile: { ...t.tile } })),
-      party: {
-        leaderIndex: this.party.leaderIndex,
-        formation: this.party.formation,
-        members: this.party.members.map(m => ({
-          id: m.id,
-          name: m.name,
-          classId: m.charClass.id,
-          raceId: m.race.id,
-          abilities: m.abilities,
-          level: m.level,
-          xp: m.xp,
-          hp: m.hp,
-          maxHp: m.maxHp,
-          ac: m.ac,
-          speed: m.speed,
-          tile: m.tile,
-          direction: m.direction,
-          inventory: m.inventory,
-          gold: m.gold,
-          isDead: m.isDead,
-          stabilized: m.stabilized,
-          deathSaveSuccesses: m.deathSaveSuccesses,
-          deathSaveFailures: m.deathSaveFailures,
-          exhaustion: m.exhaustion,
-          baseMaxHp: m.baseMaxHp,
-          conditions: m.conditions,
-          concentration: m.concentration ?? null,
-          maxHitDice: m.maxHitDice,
-          hitDiceRemaining: m.hitDiceRemaining,
-          maxSpellSlots: m.maxSpellSlots,
-          spellSlots: m.spellSlots,
-          knownSpells: m.knownSpells,
-          pendingConcentrationBreak: m.pendingConcentrationBreak,
-          vendettas: m.vendettas,
-          abilityUses: m.abilityUses,
-          bonusAttackBonus: m.bonusAttackBonus,
-          equipment: m.equipment,
-          personality: m.personality,
-          subclass: m.subclass,
-          deity: m.deity,
-          background: m.background,
-          alignment: m.alignment,
-        })),
-      },
-      monsters: this.monsters.map(m => ({
-        id: m.id,
-        templateId: m.template.id,
-        tile: m.tile,
-        hp: m.hp,
-        maxHp: m.maxHp,
-        isAlive: m.isAlive,
-        alertLevel: m.alertLevel,
-        patrolPoints: m.patrolPoints,
-        patrolIndex: m.patrolIndex,
-        conditions: m.conditions,
-      })),
-      combat: this.phase === GamePhase.Combat && this.combatEngine.isActive
-        ? {
-            isActive: true,
-            currentTurnIndex: this.combatEngine.currentTurnIndex,
-            partyBlessRounds: this.combatEngine.partyBlessRounds,
-            blessSourceId: this.combatEngine.blessSourceId,
-            initiative: this.combatEngine.initiativeOrder.map(e =>
-              e instanceof GameCharacter
-                ? { kind: 'char' as const, id: e.id }
-                : { kind: 'monster' as const, id: e.id }
-            ),
-            legendary: Object.fromEntries(
-              this.combatEngine.getBosses().map(b => [b.id, b.legendaryActions])
-            ),
-          }
-        : null,
-    };
+    return this.saves.capture();
   }
 
   /** Apply a saved snapshot to this running game, in place. */
   restore(save: SaveData) {
-    // v4+: the overworld, quests, and mode. Older saves stay in their dungeon
-    // (the surface world is generated lazily the first time they climb out).
-    this.overworld = null;
-    this.wanderers = [];
-    this.quests = [];
-    this.activeQuestId = null;
-    this.dungeonEntranceId = save.dungeonEntranceId ?? null;
-    this.party.partyName = save.partyName ?? 'The Unnamed Party';
-    this.currentTown = null;
-    this.townLife = null;
-    this.banditCamps = save.banditCamps ?? { camps: [], clues: [] };
-    this.pois = (save.pois ?? []).map(p => ({ ...p, tile: { ...p.tile } }));
-    this.expeditionJournal = save.expeditionJournal ?? [];
-    this.weather = (save as any).weather ?? null;
-    this.silveredWeapon = (save as any).silveredWeapon ?? false;
-    this.moonForgeLevel = (save as any).moonForgeLevel ?? 0;
-    this.moonForgeBlade = (save as any).moonForgeBlade ?? false;
-    if (typeof (save as any).clockPhase === 'number') {
-      this.clock = { ...createClock(), phase: (save as any).clockPhase, elapsed: (save as any).clockElapsed ?? (save as any).clockPhase * 180_000, timeOfDay: timeOfDayFromPhase((save as any).clockPhase), light: 0.5 - 0.55 * Math.cos((save as any).clockPhase * Math.PI * 2) };
-    } else {
-      this.clock = createClock();
-    }
-    this.treasuresFound = save.treasuresFound ?? 0;
-    // Older saves carry neither, and behave as they always did: no mood, and
-    // the floor's boss treated as still standing.
-    this.delveMood = save.delveMood ?? null;
-    this.bossSlainThisFloor = save.bossSlainThisFloor ?? false;
-    this.hud.setDelveMoodChip(this.delveMood);
-    this.lastClockStage = this.clock.timeOfDay;
-    if (save.overworld) {
-      const owMap = new TileMap(save.overworld.width, save.overworld.height);
-      owMap.tiles = save.overworld.tiles;
-      owMap.explored = save.overworld.explored;
-      this.overworld = {
-        map: owMap,
-        towns: save.overworld.towns,
-        entrances: save.overworld.entrances,
-        spawnTownId: save.overworld.spawnTownId,
-        pois: this.pois,
-        regions: save.overworld.regions ?? generateWorldRegions(owMap, save.overworld.towns, save.overworld.entrances),
-      };
-      this.worldRegions = this.overworld.regions;
-      this.map = owMap;
-      // Old saves predate the mountain ring at the world's edge — apply it so
-      // a restored party can't march into the void.
-      ringOverworld(this.map);
-      this.camera.setBounds(this.map.width, this.map.height);
-      // In-flight caravans don't survive a save (their wanderers would linger
-      // as ghosts) — town rumors and festival clocks do.
-      this.wanderers = (save.wanderers ?? [])
-        .filter(w => !isCaravanWanderer(w))
-        .map(w => ({ ...w, tile: { ...w.tile }, target: { ...w.target }, recent: w.recent ?? [] }));
-      this.townLife = sanitizeTownLife(save.townLife ?? undefined, this.overworld);
-      this.quests = (save.quests ?? []).map(q => ({ ...q }));
-      this.activeQuestId = save.activeQuestId ?? null;
-      this.mode = (save.mode as GameMode) ?? GameMode.Overworld;
-      // Saves from v10 on record where the party actually is. Older ones do
-      // not, so fall back to the old guess: the first quest giver's town.
-      const saved = save.currentTownId ? getTownById(this.overworld, save.currentTownId) : undefined;
-      const giver = this.quests[0] ? getTownById(this.overworld, this.quests[0].giverTownId) : undefined;
-      this.currentTown = saved ?? giver ?? getTownById(this.overworld, this.overworld.spawnTownId) ?? null;
-    } else {
-      this.mode = GameMode.Dungeon;
+    this.saves.apply(save);
+  }
 
-      // Map (dungeon saves only — the overworld map above wins otherwise)
-      const map = new TileMap(save.map.width, save.map.height);
-      map.tiles = save.map.tiles;
-      map.explored = save.map.explored;
-      this.map = map;
-      this.camera.setBounds(this.map.width, this.map.height);
-    }
+  // ── What a restore asks of Game ────────────────
+  //
+  // SaveSerializer moves the state. These are the effects that go with it —
+  // the ones that need Game's own machinery — each called at the point in a
+  // restore where it has always happened.
 
-    // Dungeon / world state
-    this.rooms = save.rooms;
-    // Old saves predate room features — give their rooms features too.
-    for (const room of this.rooms) {
-      if (!room.feature) assignFeature(room, save.dungeonLevel ?? 1, { force: true });
-    }
-    this.traps = (save.traps ?? []).map(t => ({ ...t, tile: { ...t.tile } }));
-    this.dungeonLevel = save.dungeonLevel;
-    this.dungeonName = save.dungeonName;
-    this.dungeonTheme = save.dungeonThemeId
-      ? (getLocation(save.dungeonThemeId) ?? getRandomElement(LOCATIONS))
-      : getRandomElement(LOCATIONS);
-    this.history = save.history
-      ? { ...save.history, killLedger: save.history.killLedger ?? {} }
-      : { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: this.dungeonLevel, killLedger: {} };
-    this.syncKnownFoes();
-    grantLuckDie(save.luckDie ?? null);
-    setDiceFloor(this.dungeonLevel);
-    this.phase = save.phase;
-    this.monsterIdCounter = save.monsterIdCounter;
-    this.dmStance = save.dmStance;
-    this.dmDirection = save.dmDirection ?? undefined;
+  /** Put the party underground: a dungeon-only save carries no surface world. */
+  enterDungeonMode(): void { this.mode = GameMode.Dungeon; }
+
+  /** Put the party on the surface — where a save that names no mode belongs. */
+  enterOverworldMode(): void { this.mode = GameMode.Overworld; }
+
+  /** True while the party is travelling the surface world. */
+  get inOverworld(): boolean { return this.mode === GameMode.Overworld; }
+
+  /** True while the party is inside a dungeon. */
+  get inDungeon(): boolean { return this.mode === GameMode.Dungeon; }
+
+  /** True while a battle is being fought out turn by turn. */
+  get inCombat(): boolean { return this.phase === GamePhase.Combat; }
+
+  /** Lift the pause and any error halt the run was carrying when it stopped. */
+  resumeRun(): void {
     this.paused = false;
     this.clearErrorHalt();
+  }
 
-    // Party (mutated in place so engine/AI references stay valid)
-    this.party.members.length = 0;
-    this.party.leaderIndex = save.party.leaderIndex;
-    // Rebuild the formation from the saved tiles so the leader anchors at
-    // (0,0) — pre-fix saves stored leader-shifted offsets that broke movement.
-    const savedLeaderTile = save.party.members[0]?.tile ?? { x: 0, y: 0 };
-    this.party.formation = save.party.members.map((s) => ({
-      x: s.tile.x - savedLeaderTile.x,
-      y: s.tile.y - savedLeaderTile.y,
-    }));
-    this.party.formation[0] = { x: 0, y: 0 };
-    for (const s of save.party.members) {
-      const charClass = CLASSES.find(c => c.id === s.classId) || CLASSES[0];
-      const race = RACES.find(r => r.id === s.raceId) || RACES[0];
-      const char = new GameCharacter(s.id, s.name, charClass, race, s.abilities);
-      char.level = s.level;
-      char.xp = s.xp;
-      char.hp = s.hp;
-      char.ac = s.ac;
-      char.speed = s.speed;
-      char.bonusAttackBonus = s.bonusAttackBonus ?? 0;
-      char.equipment = {
-        weapon: s.equipment?.weapon ? { ...s.equipment.weapon } : undefined,
-        armor: s.equipment?.armor ? { ...s.equipment.armor } : undefined,
-        shield: s.equipment?.shield ? { ...s.equipment.shield } : undefined,
-        trinket: s.equipment?.trinket ? { ...s.equipment.trinket } : undefined,
-      };
-      char.recomputeAC();
-      char.tile = { ...s.tile };
-      char.direction = s.direction as 'down' | 'left' | 'right' | 'up';
-      char.inventory = s.inventory.map(i => ({ ...i }));
-      char.gold = s.gold;
-      char.isDead = s.isDead;
-      char.stabilized = s.stabilized;
-      char.deathSaveSuccesses = s.deathSaveSuccesses;
-      char.deathSaveFailures = s.deathSaveFailures;
-      char.exhaustion = s.exhaustion;
-      char.baseMaxHp = s.baseMaxHp;
-      char.conditions = s.conditions.map(c => ({ ...c }));
-      char.concentration = s.concentration ?? undefined;
-      char.maxHitDice = s.maxHitDice;
-      char.hitDiceRemaining = s.hitDiceRemaining;
-      char.maxSpellSlots = { ...s.maxSpellSlots } as Record<number, number>;
-      char.spellSlots = { ...s.spellSlots } as Record<number, number>;
-      char.knownSpells = [...s.knownSpells];
-      char.pendingConcentrationBreak = s.pendingConcentrationBreak;
-      char.vendettas = { ...(s.vendettas ?? {}) };
-      char.abilityUses = { ...(s.abilityUses ?? {}) };
-      char.personality = { ...s.personality };
-      char.subclass = s.subclass;
-      char.deity = s.deity;
-      char.background = s.background;
-      char.alignment = s.alignment;
-      this.party.members.push(char);
-    }
+  /** Re-open the battle window for a save taken mid-fight. */
+  reopenBattleView(): void {
+    this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
+    this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
+    this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
+    this.wireBattleModeToggle();
+    this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
+    this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
+    this.hud.battleView.update({
+      round: this.combatEngine.log.round,
+      actors: this.combatEngine.initiativeOrder,
+      currentActorId: this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex]?.id ?? null,
+      messages: ['⏳ Battle restored.'],
+    });
+  }
 
-    // Monsters
-    this.monsters = [];
-    for (const s of save.monsters) {
-      const template = getMonsterTemplate(s.templateId);
-      if (!template) continue;
-      const monster = new Monster(s.id, template, s.tile);
-      monster.hp = s.hp;
-      monster.maxHp = s.maxHp;
-      monster.isAlive = s.isAlive;
-      monster.alertLevel = s.alertLevel;
-      monster.patrolPoints = s.patrolPoints.map(p => ({ ...p }));
-      monster.patrolIndex = s.patrolIndex;
-      // Never restore an invisible monster — the party must always be able
-      // to see what it fights.
-      monster.conditions = s.conditions
-        .map(c => ({ ...c }))
-        .filter(c => c.id !== 'invisible');
-      this.monsters.push(monster);
-    }
-
-    // Combat engine
-    this.combatEngine.monsters = this.monsters;
-    this.combatEngine.isActive = false;
-    this.combatEngine.log = { round: 0, messages: [], isOver: false, winner: null };
-    this.combatEngine.initiativeOrder = [];
-    this.combatEngine.currentTurnIndex = 0;
-    this.combatEngine.partyBlessRounds = 0;
-    this.combatEngine.blessSourceId = '';
-    if (save.combat && save.combat.isActive && this.phase === GamePhase.Combat) {
-      this.combatEngine.isActive = true;
-      this.combatEngine.currentTurnIndex = save.combat.currentTurnIndex;
-      this.combatEngine.partyBlessRounds = save.combat.partyBlessRounds;
-      this.combatEngine.blessSourceId = save.combat.blessSourceId;
-      if (save.combat.legendary) {
-        for (const [id, actions] of Object.entries(save.combat.legendary)) {
-          const monster = this.monsters.find(m => m.id === id);
-          if (monster) monster.legendaryActions = actions;
-        }
-      }
-      for (const entry of save.combat.initiative) {
-        if (entry.kind === 'char') {
-          const member = this.party.members.find(m => m.id === entry.id);
-          if (member) this.combatEngine.initiativeOrder.push(member);
-        } else {
-          const monster = this.monsters.find(m => m.id === entry.id);
-          if (monster) this.combatEngine.initiativeOrder.push(monster);
-        }
-      }
-      // Re-open the battle window for a restored in-combat save.
-      this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
-      this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
-      this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
-      this.wireBattleModeToggle();
-      this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
-      this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
-      this.hud.battleView.update({
-        round: this.combatEngine.log.round,
-        actors: this.combatEngine.initiativeOrder,
-        currentActorId: this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex]?.id ?? null,
-        messages: ['⏳ Battle restored.'],
-      });
-    }
-
-    // If an old save parked the party on the (now impassable) border ring,
-    // pull them back onto walkable ground before anything moves.
-    if (this.mode === GameMode.Overworld) {
-      const l = this.party.leader;
-      if (!this.map.isWalkable(l.tile.x, l.tile.y)) {
-        const safe = nearestWalkable(this.map, l.tile.x, l.tile.y);
-        this.party.setPosition(safe);
-      }
-    }
-
-    // Camera
-    this.camera.x = save.camera.x;
-    this.camera.y = save.camera.y;
-    this.camera.targetX = save.camera.targetX;
-    this.camera.targetY = save.camera.targetY;
-
-    // Speed (derives tick intervals via the HUD hook)
-    this.hud.setSpeed(save.speed as GameSpeed);
-
-    // Reset transient timers
+  /** Zero the loop timers and stuck counters a restored run would inherit. */
+  resetTransientTimers(): void {
     this.tickTimer = 0;
     this.combatTickTimer = 0;
     this.saveTimer = 0;
     this.stuckDirCount = 0;
     this.lastActionDir = '';
+  }
 
-    // Saves from before 2-wide corridors trap the formation in the first
-    // room — rebuild such floors so continued runs can navigate again.
-    this.ensureNavigableDungeon();
+  /**
+   * A dungeon save that somehow lost its layout would strand the party in a
+   * layoutless void. Regenerate the floor from the fixed-map seed — the same
+   * halls as the original delve.
+   */
+  rebuildLostDungeonFloor(): void {
+    this.hud.addCombatMessage('The dungeon reassembles itself from old stone — its halls remember you.', '#a86');
+    this.map = new TileMap();
+    this.camera.setBounds(this.map.width, this.map.height);
+    this.rooms = generateDungeon(this.map, 14 + Math.min(6, this.dungeonLevel), 4, 10, this.dungeonSeed());
+    assignFeaturesToRooms(this.rooms, this.dungeonLevel);
+    this.traps = [];
+    this.monsters = [];
+    this.monsterIdCounter = 0;
+    this.populateDungeonFloor();
+    const startRoom = this.rooms[0];
+    this.party.setPosition({ x: startRoom.cx, y: startRoom.cy }, (x, y) => this.map.isWalkable(x, y));
+    this.camera.x = startRoom.cx * TILE_SIZE - 512;
+    this.camera.y = startRoom.cy * TILE_SIZE - 384;
+    this.camera.targetX = this.camera.x;
+    this.camera.targetY = this.camera.y;
+    this.visitedRooms = new Set([0]);
+    this.phase = GamePhase.Exploration;
+    this.combatEngine.monsters = this.monsters;
+    this.combatEngine.isActive = false;
+    this.combatEngine.initiativeOrder = [];
+    this.combatEngine.currentTurnIndex = 0;
+  }
 
-    // A dungeon save that somehow lost its layout (rooms empty, or the saved
-    // map is the overworld-sized surface rather than a dungeon map) would
-    // strand the party in a layoutless void. Regenerate the floor from the
-    // fixed-map seed — same layout as the original delve.
-    if (this.mode === GameMode.Dungeon && this.rooms.length === 0) {
-      this.hud.addCombatMessage('The dungeon reassembles itself from old stone — its halls remember you.', '#a86');
-      this.map = new TileMap();
-      this.camera.setBounds(this.map.width, this.map.height);
-      this.rooms = generateDungeon(this.map, 14 + Math.min(6, this.dungeonLevel), 4, 10, this.dungeonSeed());
-      assignFeaturesToRooms(this.rooms, this.dungeonLevel);
-      this.traps = [];
-      this.monsters = [];
-      this.monsterIdCounter = 0;
-      this.populateDungeonFloor();
-      const startRoom = this.rooms[0];
-      this.party.setPosition({ x: startRoom.cx, y: startRoom.cy }, (x, y) => this.map.isWalkable(x, y));
-      this.camera.x = startRoom.cx * TILE_SIZE - 512;
-      this.camera.y = startRoom.cy * TILE_SIZE - 384;
-      this.camera.targetX = this.camera.x;
-      this.camera.targetY = this.camera.y;
-      this.visitedRooms = new Set([0]);
-      this.phase = GamePhase.Exploration;
-      this.combatEngine.monsters = this.monsters;
-      this.combatEngine.isActive = false;
-      this.combatEngine.initiativeOrder = [];
-      this.combatEngine.currentTurnIndex = 0;
-    }
-
-    // Don't re-narrate the room we stand in after a restore.
+  /** Count the room the party stands in as seen, so a restore doesn't re-narrate it. */
+  markRestoredRoomVisited(): void {
     const here = this.currentRoomIndex();
     this.visitedRooms = here === -1 ? new Set() : new Set([here]);
     this.history.roomsVisited = Math.max(this.history.roomsVisited, this.visitedRooms.size);
+  }
 
-    // HUD
-    this.hud.setDungeonLevel(this.dungeonLevel);
-    const locationName = this.mode === GameMode.Dungeon ? this.dungeonName : (this.currentTown?.name ?? 'The Wilderlands');
-    this.hud.setDungeonTitle(`${this.party.partyName} \u2014 ${locationName}`);
-    this.hud.setParty(this.party);
+  /** Forget where the party was walking to — a restored run stands still. */
+  clearTravelPlans(): void {
     this.townWaitTimer = 0;
     this.overworldDestination = null;
     this.overworldPath = [];
-    // Coming back to a town (or an old save that reaches one) opens the panel.
-    if (this.mode === GameMode.Town) this.hud.townPanel.show();
   }
-
   /**
    * Save the run, close every panel, stop the loop, and show the start
    * screen again — the world freezes behind the menu until a slot is chosen.
