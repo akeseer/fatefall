@@ -57,12 +57,17 @@ import type { SceneMood } from '../../DrawCommand';
 // ── Tunables ──
 
 /**
- * How far the world is crushed underground, where the torch is the only light.
- * 1 would be pitch black, which looks superb in a still and is unplayable in
- * motion: the player is the DM and has to be able to read the floor the party
- * is walking into. This leaves enough of the map to follow.
+ * How far the world is crushed underground.
+ *
+ * Much gentler than it looks like it should be, for two reasons. The dungeon
+ * palettes are already dark by design — a dragon graveyard's floor is #241a1a
+ * before anything is done to it — and multiplying dark art by a dark layer
+ * only ever reaches black, so the torch has nothing left to reveal. And the
+ * fog of war already does the work this number looks like it should do: a room
+ * the party has not walked into is not drawn at all. What is left for this to
+ * do is give the lit part of the floor a falling-off edge, not hide it.
  */
-const UNDERGROUND_DARKNESS = 0.78;
+const UNDERGROUND_DARKNESS = 0.45;
 
 /**
  * Radius in pixels at which the carried torch has fallen to nothing. Wide

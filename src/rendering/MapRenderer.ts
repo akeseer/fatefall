@@ -201,6 +201,147 @@ function getPalette(themeId?: string): DungeonPalette {
   return (themeId && THEME_PALETTES[themeId]) || DEFAULT_PALETTE;
 }
 
+/**
+ * ── Dungeon interiors ──
+ *
+ * The whole interior is lit from directly above and a little from the
+ * north-west — the same direction the overworld's peaks and canopies are lit
+ * from — and every shadow below follows from that one decision:
+ *
+ *   • A wall tile with open ground to its *south* is the one whose face the
+ *     player sees. It gets a lit crown along its top edge, a coursed face
+ *     beneath it, and a dark foot where the face meets the floor. Every other
+ *     wall tile is a top surface: rough rock seen from above.
+ *   • The floor takes the contact shadow. A wall to the north throws the
+ *     deepest band, one to the west a narrower one, east narrower still, and
+ *     south only a contact line. That asymmetry is what stops a room from
+ *     looking like a hole cut in paper.
+ *   • Nothing here is time of day or torchlight. The backend still lights and
+ *     grades the scene from the frame's SceneMood; this is form only.
+ *
+ * As on the overworld, every tone that varies does so at a scale smaller than
+ * a tile and off a position hash — see `mottledTile` for why a per-tile tint
+ * is the one thing guaranteed to make the ground read as a grid.
+ */
+
+/** Ground a creature can stand on, or see across. */
+function isOpenTile(t: TileType): boolean {
+  return t === TileType.Floor || t === TileType.Door || t === TileType.StairsDown
+    || t === TileType.StairsUp || t === TileType.Water || t === TileType.Lava;
+}
+
+/** Rock: a wall, or the unquarried dark behind it. */
+function isSolidTile(t: TileType): boolean {
+  return t === TileType.Wall || t === TileType.Void;
+}
+
+function tileAt(map: TileMap, x: number, y: number): TileType {
+  return map.tiles[y]?.[x] ?? TileType.Void;
+}
+
+/** One channel of a `#rrggbb`, 0..255. */
+function chan(hex: string, i: number): number {
+  return parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+}
+
+/** Blend two `#rrggbb` colours. Used to derive a theme's tones once, not per tile. */
+function mix(a: string, b: string, t: number): string {
+  let out = '#';
+  for (let i = 0; i < 3; i++) {
+    const v = Math.round(chan(a, i) * (1 - t) + chan(b, i) * t);
+    out += (v < 16 ? '0' : '') + v.toString(16);
+  }
+  return out;
+}
+const lighten = (h: string, t: number) => mix(h, '#ffffff', t);
+const darken = (h: string, t: number) => mix(h, '#000000', t);
+
+/**
+ * Every shade a dungeon theme needs, derived from its three base colours.
+ *
+ * Derived once per palette and cached: the alternative is parsing hex and
+ * blending fourteen colours for each of the six hundred-odd tiles on screen,
+ * every frame, to arrive at the same fourteen answers.
+ */
+interface DungeonTones {
+  floor: string;
+  floorPatch: string;
+  joint: string;
+  relief: string;
+  wallTop: string;
+  facetLit: string;
+  facetDark: string;
+  crown: string;
+  face: string;
+  faceLit: string;
+  mortar: string;
+  foot: string;
+  side: string;
+  water: string;
+  waterDeep: string;
+  waterLip: string;
+}
+
+const TONE_CACHE = new WeakMap<DungeonPalette, DungeonTones>();
+
+function tonesFor(pal: DungeonPalette): DungeonTones {
+  const hit = TONE_CACHE.get(pal);
+  if (hit) return hit;
+  const tones: DungeonTones = {
+    floor: pal.floor,
+    floorPatch: lighten(pal.floor, 0.07),
+    joint: darken(pal.floor, 0.45),
+    relief: lighten(pal.floor, 0.14),
+    // The top of a wall is the plane the light falls on, so it sits a shade
+    // above the palette's nominal wall colour and the face sits well below it.
+    wallTop: lighten(pal.wall, 0.08),
+    facetLit: lighten(pal.wall, 0.13),
+    facetDark: darken(pal.wall, 0.07),
+    crown: lighten(pal.wall, 0.36),
+    face: lighten(pal.wallDark, 0.04),
+    faceLit: lighten(pal.wallDark, 0.20),
+    mortar: darken(pal.wallDark, 0.42),
+    foot: darken(pal.wallDark, 0.66),
+    side: darken(pal.wall, 0.34),
+    water: mix('#2c5f92', pal.floor, 0.30),
+    waterDeep: mix('#12304e', pal.floor, 0.40),
+    waterLip: mix('#7fb4dc', pal.floor, 0.15),
+  };
+  TONE_CACHE.set(pal, tones);
+  return tones;
+}
+
+/**
+ * What a floating combat number is saying.
+ *
+ * `hit` and `hurt` are the same event seen from the two sides of the fight —
+ * the party landing a blow and the party taking one — and they are coloured
+ * apart because at a glance that is the only thing about a number that
+ * matters: whose hit points just moved.
+ */
+export type FloaterKind = 'hit' | 'crit' | 'hurt' | 'heal' | 'slain' | 'down';
+
+const FLOATER_STYLE: Record<FloaterKind, { color: string; size: number }> = {
+  hit: { color: '#ffe9a8', size: 13 },
+  crit: { color: '#ffcc3a', size: 18 },
+  hurt: { color: '#ff6252', size: 14 },
+  heal: { color: '#6dea84', size: 13 },
+  slain: { color: '#ff8a5a', size: 11 },
+  down: { color: '#e05a7a', size: 11 },
+};
+
+/** One number rising off a creature. World pixels; the camera is applied late. */
+interface Floater {
+  x: number;
+  y: number;
+  text: string;
+  kind: FloaterKind;
+  born: number;
+  /** Extra height given at birth so a flurry stacks instead of overlapping. */
+  lift: number;
+  drift: number;
+}
+
 /** Animated world-pixel position of a sprite gliding between tiles. */
 interface VisualSprite {
   x: number;
@@ -225,6 +366,15 @@ export class MapRenderer {
    * the party visibly marches instead of teleporting.
    */
   private visuals = new WeakMap<GameCharacter, VisualSprite>();
+
+  /**
+   * Numbers currently rising off creatures. Bounded twice over: each expires
+   * on its own after `FLOATER_MS`, and the list is trimmed to `FLOATER_CAP`
+   * whichever way a round goes, so a fight nobody is watching cannot pile up.
+   */
+  private floaters: Floater[] = [];
+  private static readonly FLOATER_MS = 1050;
+  private static readonly FLOATER_CAP = 24;
 
   constructor(ctx: CanvasRenderingContext2D, sprites: SpriteRenderer) {
     this.ctx = ctx;
@@ -256,281 +406,75 @@ export class MapRenderer {
     const endY = Math.min(MAP_HEIGHT, startY + Math.ceil(GAME_HEIGHT / TILE_SIZE) + 3);
 
     // Draw terrain
+    const tn = tonesFor(pal);
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const tile = map.tiles[y]?.[x] ?? TileType.Void;
         const explored = map.explored[y]?.[x] ?? false;
 
-        const sx = x * TILE_SIZE - camera.x;
-        const sy = y * TILE_SIZE - camera.y;
+        const sx = Math.floor(x * TILE_SIZE - camera.x);
+        const sy = Math.floor(y * TILE_SIZE - camera.y);
 
-        if (explored) {
-          // Draw base tile (theme-colored with subtle per-tile variation)
-          const vhash = ((x * 31 + y * 57) % 9) - 4; // -4..4 brightness jitter
-          if (tile === TileType.Floor || tile === TileType.Wall) {
-            ctx.fillStyle = tile === TileType.Wall ? pal.wall : pal.floor;
-            ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, TILE_SIZE);
-            if (vhash > 0) {
-              ctx.fillStyle = `rgba(255,255,255,${0.018 * vhash})`;
-              ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, TILE_SIZE);
-            } else if (vhash < 0) {
-              ctx.fillStyle = `rgba(0,0,0,${0.022 * -vhash})`;
-              ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, TILE_SIZE);
-            }
-          } else {
-            ctx.fillStyle = TILE_COLORS[tile] || '#000';
-            ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, TILE_SIZE);
-          }
-
-          // ── Wall: stone block pattern + moss / cracks / runes ──
-          if (tile === TileType.Wall) {
-            // Mortar lines
-            ctx.fillStyle = 'rgba(0,0,0,0.18)';
-            const blockH = Math.floor(TILE_SIZE / 3);
-            for (let row = 0; row < 3; row++) {
-              const offset = row % 2 === 0 ? 0 : Math.floor(TILE_SIZE / 2);
-              ctx.fillRect(Math.floor(sx), Math.floor(sy + row * blockH), TILE_SIZE, 1);
-              ctx.fillRect(Math.floor(sx + offset), Math.floor(sy + row * blockH), 1, blockH);
-              ctx.fillRect(Math.floor(sx + offset + Math.floor(TILE_SIZE / 2)), Math.floor(sy + row * blockH), 1, blockH);
-            }
-            // Top highlight on each block
-            ctx.fillStyle = 'rgba(255,255,255,0.07)';
-            for (let row = 0; row < 3; row++) {
-              const offset = row % 2 === 0 ? 0 : Math.floor(TILE_SIZE / 2);
-              ctx.fillRect(Math.floor(sx + offset + 2), Math.floor(sy + row * blockH + 1), Math.floor(TILE_SIZE / 2) - 4, 1);
-            }
-            // Bottom shadow on each block
-            ctx.fillStyle = 'rgba(0,0,0,0.12)';
-            for (let row = 0; row < 3; row++) {
-              ctx.fillRect(Math.floor(sx + 1), Math.floor(sy + (row + 1) * blockH - 1), TILE_SIZE - 2, 1);
-            }
-
-            // Wall dressing
-            const whash = (x * 17 + y * 29) % 24;
-            if (whash === 0) {
-              // Cracked block
-              ctx.fillStyle = 'rgba(0,0,0,0.25)';
-              ctx.fillRect(Math.floor(sx) + 12, Math.floor(sy) + 4, 8, 1);
-              ctx.fillRect(Math.floor(sx) + 16, Math.floor(sy) + 4, 1, 10);
-              ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 14, 8, 1);
-            } else if (whash === 1) {
-              // Moss / lichen patch at the base
-              ctx.fillStyle = `${pal.accent}55`;
-              ctx.fillRect(Math.floor(sx) + 3, Math.floor(sy) + TILE_SIZE - 6, 10, 4);
-              ctx.fillRect(Math.floor(sx) + 16, Math.floor(sy) + TILE_SIZE - 4, 8, 3);
-            } else if (whash === 2) {
-              // Faint glowing rune
-              const runePulse = Math.sin(this.time * 2 + x * 0.7 + y) * 0.2 + 0.5;
-              ctx.fillStyle = `${pal.glow}${Math.floor(20 + runePulse * 30).toString(16)}`;
-              ctx.fillRect(Math.floor(sx) + 12, Math.floor(sy) + 10, 8, 2);
-              ctx.fillRect(Math.floor(sx) + 15, Math.floor(sy) + 12, 2, 8);
-            } else if (whash === 3) {
-              // Wall sconce (bracket + flame)
-              ctx.fillStyle = 'rgba(60,50,30,0.8)';
-              ctx.fillRect(Math.floor(sx) + 26, Math.floor(sy) + 12, 4, 2);
-              ctx.fillRect(Math.floor(sx) + 27, Math.floor(sy) + 8, 2, 4);
-              const flame = Math.sin(this.time * 9 + x) * 0.5 + 1.5;
-              ctx.fillStyle = `rgba(255,170,60,${0.5 + Math.sin(this.time * 9 + x) * 0.2})`;
-              ctx.fillRect(Math.floor(sx) + 27, Math.floor(sy) + 6, 2, 2);
-              ctx.fillRect(Math.floor(sx) + 26, Math.floor(sy) + 5, 4, 1);
-            }
-          }
-
-          // ── Floor: cobblestone, cracks, and theme dressing ──
-          if (tile === TileType.Floor) {
-            const hash = (x * 7 + y * 13) % 80;
-            // Stone slab edges
-            ctx.fillStyle = 'rgba(255,255,255,0.03)';
-            ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, 1);
-            ctx.fillRect(Math.floor(sx), Math.floor(sy), 1, TILE_SIZE);
-            ctx.fillStyle = 'rgba(0,0,0,0.08)';
-            ctx.fillRect(Math.floor(sx) + TILE_SIZE - 1, Math.floor(sy), 1, TILE_SIZE);
-            ctx.fillRect(Math.floor(sx), Math.floor(sy) + TILE_SIZE - 1, TILE_SIZE, 1);
-
-            // Crack pattern
-            if (hash < 4) {
-              ctx.fillStyle = 'rgba(0,0,0,0.15)';
-              ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 12, 10, 1);
-              ctx.fillRect(Math.floor(sx) + 15, Math.floor(sy) + 12, 1, 8);
-            }
-            // Pebble scatter
-            if (hash >= 4 && hash < 6) {
-              ctx.fillStyle = 'rgba(180,175,165,0.14)';
-              ctx.fillRect(Math.floor(sx) + 6, Math.floor(sy) + 20, 3, 2);
-              ctx.fillRect(Math.floor(sx) + 18, Math.floor(sy) + 8, 2, 2);
-            }
-            // Scattered bones (D&D classic)
-            if (hash >= 6 && hash < 8) {
-              ctx.fillStyle = 'rgba(216,208,184,0.2)';
-              ctx.fillRect(Math.floor(sx) + 5, Math.floor(sy) + 18, 16, 2);
-              ctx.fillRect(Math.floor(sx) + 5, Math.floor(sy) + 16, 2, 6);
-              ctx.fillRect(Math.floor(sx) + 19, Math.floor(sy) + 16, 2, 6);
-              ctx.fillStyle = 'rgba(0,0,0,0.15)';
-              ctx.fillRect(Math.floor(sx) + 22, Math.floor(sy) + 14, 4, 4);
-            }
-            // Bloodstain (darker in bloody themes)
-            if (hash >= 8 && hash < 10) {
-              ctx.fillStyle = 'rgba(120,20,20,0.18)';
-              ctx.fillRect(Math.floor(sx) + 10, Math.floor(sy) + 14, 8, 6);
-              ctx.fillStyle = 'rgba(80,10,10,0.12)';
-              ctx.fillRect(Math.floor(sx) + 12, Math.floor(sy) + 18, 4, 4);
-            }
-            // Gold coin glint (sparkles in treasure themes)
-            if (hash >= 10 && hash < 12) {
-              const sparkle = Math.sin(this.time * 3 + x + y) * 0.3 + 0.5;
-              ctx.fillStyle = `${pal.glow}${Math.floor(18 + sparkle * 20).toString(16)}`;
-              ctx.fillRect(Math.floor(sx) + 14, Math.floor(sy) + 10, 3, 3);
-            }
-            // Moss tuft
-            if (hash >= 12 && hash < 14) {
-              ctx.fillStyle = `${pal.accent}44`;
-              ctx.fillRect(Math.floor(sx) + 5, Math.floor(sy) + 22, 6, 3);
-              ctx.fillRect(Math.floor(sx) + 13, Math.floor(sy) + 24, 8, 2);
-            }
-            // Glowing mushroom cluster (fey / underdark)
-            if (hash >= 14 && hash < 16) {
-              const glow = Math.sin(this.time * 2.5 + x + y) * 0.2 + 0.4;
-              ctx.fillStyle = 'rgba(160,160,170,0.4)';
-              ctx.fillRect(Math.floor(sx) + 10, Math.floor(sy) + 20, 2, 6);
-              ctx.fillRect(Math.floor(sx) + 18, Math.floor(sy) + 22, 2, 4);
-              ctx.fillStyle = `${pal.glow}${Math.floor(30 + glow * 40).toString(16)}`;
-              ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 18, 6, 3);
-              ctx.fillRect(Math.floor(sx) + 17, Math.floor(sy) + 20, 5, 3);
-            }
-            // Frost crystals (cold themes)
-            if (hash >= 16 && hash < 18) {
-              ctx.fillStyle = 'rgba(200,230,255,0.35)';
-              ctx.fillRect(Math.floor(sx) + 12, Math.floor(sy) + 14, 2, 8);
-              ctx.fillRect(Math.floor(sx) + 17, Math.floor(sy) + 16, 2, 6);
-              ctx.fillRect(Math.floor(sx) + 14, Math.floor(sy) + 12, 2, 2);
-            }
-            // Scorch mark (fiery themes)
-            if (hash >= 18 && hash < 20) {
-              ctx.fillStyle = 'rgba(20,8,4,0.5)';
-              ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 16, 16, 10);
-              ctx.fillStyle = 'rgba(120,60,20,0.3)';
-              ctx.fillRect(Math.floor(sx) + 11, Math.floor(sy) + 19, 10, 5);
-            }
-            // Puddle / water stain
-            if (hash >= 20 && hash < 22) {
-              ctx.fillStyle = 'rgba(90,140,190,0.18)';
-              ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 14, 14, 9);
-              ctx.fillStyle = 'rgba(160,200,230,0.12)';
-              ctx.fillRect(Math.floor(sx) + 10, Math.floor(sy) + 16, 6, 3);
-            }
-            // Dried blood streaks (violent themes)
-            if (hash >= 22 && hash < 24) {
-              ctx.fillStyle = 'rgba(100,16,16,0.22)';
-              ctx.fillRect(Math.floor(sx) + 6, Math.floor(sy) + 10, 3, 12);
-              ctx.fillRect(Math.floor(sx) + 20, Math.floor(sy) + 8, 2, 10);
-            }
-            // Cobweb in corner
-            if (hash >= 24 && hash < 25) {
-              ctx.fillStyle = 'rgba(200,200,210,0.08)';
-              ctx.fillRect(Math.floor(sx), Math.floor(sy), 8, 1);
-              ctx.fillRect(Math.floor(sx), Math.floor(sy), 1, 8);
-              ctx.fillRect(Math.floor(sx) + 1, Math.floor(sy) + 1, 6, 1);
-              ctx.fillRect(Math.floor(sx) + 1, Math.floor(sy) + 1, 1, 6);
-            }
-          }
-
-          // ── Door: wooden frame with iron bands ──
-          if (tile === TileType.Door) {
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.fillRect(Math.floor(sx), Math.floor(sy), 2, TILE_SIZE);
-            ctx.fillRect(Math.floor(sx) + TILE_SIZE - 2, Math.floor(sy), 2, TILE_SIZE);
-            // Wood grain
-            ctx.fillStyle = 'rgba(139,105,20,0.3)';
-            for (let i = 0; i < 4; i++) {
-              ctx.fillRect(Math.floor(sx) + 4 + i * 5, Math.floor(sy) + 3, 2, TILE_SIZE - 6);
-            }
-            // Iron bands
-            ctx.fillStyle = 'rgba(100,100,110,0.4)';
-            ctx.fillRect(Math.floor(sx) + 2, Math.floor(sy) + 4, TILE_SIZE - 4, 2);
-            ctx.fillRect(Math.floor(sx) + 2, Math.floor(sy) + TILE_SIZE - 6, TILE_SIZE - 4, 2);
-            // Handle
-            ctx.fillStyle = 'rgba(180,160,100,0.5)';
-            ctx.fillRect(Math.floor(sx) + TILE_SIZE - 8, Math.floor(sy) + Math.floor(TILE_SIZE / 2) - 2, 3, 4);
-          }
-
-          // ── Stairs: engraved steps with glow ──
-          if (tile === TileType.StairsDown || tile === TileType.StairsUp) {
-            const down = tile === TileType.StairsDown;
-            const glow = Math.sin(this.time * 2) * 0.1 + 0.4;
-            ctx.fillStyle = down ? `rgba(255,122,74,${glow * 0.3})` : `rgba(90,255,138,${glow * 0.3})`;
-            ctx.fillRect(Math.floor(sx) + 2, Math.floor(sy) + 2, TILE_SIZE - 4, TILE_SIZE - 4);
-            ctx.fillStyle = down ? '#ff7a4a' : '#5aff8a';
-            const bars = down ? [14, 10, 6] : [6, 10, 14];
-            for (let i = 0; i < bars.length; i++) {
-              ctx.fillRect(
-                Math.floor(sx) + (TILE_SIZE - bars[i]) / 2,
-                Math.floor(sy) + 6 + i * 7,
-                bars[i],
-                3
-              );
-            }
-            ctx.fillStyle = down ? '#ffa' : '#afa';
-            const ax = Math.floor(sx) + TILE_SIZE / 2;
-            const ay = down ? Math.floor(sy) + 3 : Math.floor(sy) + TILE_SIZE - 5;
-            ctx.fillRect(ax - 1, ay, 3, 2);
-            if (down) {
-              ctx.fillRect(ax - 2, ay - 1, 1, 1);
-              ctx.fillRect(ax + 2, ay - 1, 1, 1);
-            } else {
-              ctx.fillRect(ax - 2, ay + 2, 1, 1);
-              ctx.fillRect(ax + 2, ay + 2, 1, 1);
-            }
-          }
-
-          // ── Water: animated ripples and reflections ──
-          if (tile === TileType.Water) {
-            const wave1 = Math.sin(this.time * 2 + x * 0.8) * 0.15;
-            const wave2 = Math.cos(this.time * 1.5 + y * 0.6) * 0.1;
-            ctx.fillStyle = `rgba(100,160,220,${0.15 + wave1})`;
-            ctx.fillRect(Math.floor(sx) + 4, Math.floor(sy) + 10 + Math.sin(this.time + x) * 2, TILE_SIZE - 8, 2);
-            ctx.fillStyle = `rgba(140,190,240,${0.12 + wave2})`;
-            ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 20 + Math.cos(this.time + y) * 1.5, TILE_SIZE - 16, 1);
-            ctx.fillStyle = `rgba(200,220,255,${0.08 + wave1 * 0.3})`;
-            ctx.fillRect(Math.floor(sx) + 6, Math.floor(sy) + 4, 6, 1);
-          }
-
-          // ── Lava: pulsing glow, cracks, ember particles ──
-          if (tile === TileType.Lava) {
-            const pulse = Math.sin(this.time * 3 + x + y) * 0.15;
-            ctx.fillStyle = `rgba(255,175,60,${0.3 + pulse})`;
-            ctx.fillRect(Math.floor(sx) + 4, Math.floor(sy) + 4, TILE_SIZE - 8, TILE_SIZE - 8);
-            ctx.fillStyle = 'rgba(60,10,0,0.3)';
-            ctx.fillRect(Math.floor(sx) + 8, Math.floor(sy) + 12, 12, 1);
-            ctx.fillRect(Math.floor(sx) + 14, Math.floor(sy) + 8, 1, 10);
-            const ember = Math.sin(this.time * 5 + x * 3) > 0.7;
-            if (ember) {
-              ctx.fillStyle = 'rgba(255,200,50,0.5)';
-              ctx.fillRect(Math.floor(sx) + 10 + (x % 5) * 3, Math.floor(sy) + 6, 2, 2);
-            }
-          }
-        } else {
-          // Unexplored fog
+        if (!explored) {
           ctx.fillStyle = FOG_COLOR;
-          ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, TILE_SIZE);
+          ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+          continue;
+        }
+
+        switch (tile) {
+          case TileType.Wall:
+            this.dungeonWall(ctx, map, x, y, sx, sy, tn, pal);
+            break;
+          case TileType.Floor:
+            this.dungeonFloor(ctx, map, x, y, sx, sy, tn, pal);
+            break;
+          case TileType.Door:
+            this.dungeonDoor(ctx, map, x, y, sx, sy, tn);
+            break;
+          case TileType.StairsDown:
+          case TileType.StairsUp:
+            this.dungeonStairs(ctx, map, x, y, sx, sy, tn, tile === TileType.StairsDown);
+            break;
+          case TileType.Water:
+            this.dungeonWater(ctx, map, x, y, sx, sy, tn);
+            break;
+          case TileType.Lava:
+            this.dungeonLava(ctx, map, x, y, sx, sy);
+            break;
+          default:
+            ctx.fillStyle = TILE_COLORS[tile] || '#000';
+            ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+            break;
         }
       }
     }
 
-    // ── Fog of war edge gradient ──
-    // Darken tiles at the edge of explored territory
+
+    // ── The edge of what has been seen ──
+    // This used to drop a flat 30% black over any tile touching the unknown,
+    // which drew the frontier as a row of thirty-two-pixel squares. It is now
+    // banded inward from the side the dark is actually on, so the map fades
+    // into it rather than ending on a kerb.
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
-        const explored = map.explored[y]?.[x] ?? false;
-        if (!explored) continue;
-        const sx = x * TILE_SIZE - camera.x;
-        const sy = y * TILE_SIZE - camera.y;
-        // Check if any neighbor is unexplored
-        const hasUnexploredNeighbor = [
-          [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
-        ].some(([nx, ny]) => !(map.explored[ny]?.[nx] ?? false));
-        if (hasUnexploredNeighbor) {
-          ctx.fillStyle = 'rgba(0,0,0,0.3)';
-          ctx.fillRect(Math.floor(sx), Math.floor(sy), TILE_SIZE, TILE_SIZE);
+        if (!(map.explored[y]?.[x] ?? false)) continue;
+        const sx = Math.floor(x * TILE_SIZE - camera.x);
+        const sy = Math.floor(y * TILE_SIZE - camera.y);
+        let touched = false;
+        for (let d = 0; d < 4; d++) {
+          const step = EDGE_STEPS[d];
+          if (map.explored[y + step[1]]?.[x + step[0]] ?? false) continue;
+          touched = true;
+          ctx.fillStyle = 'rgba(0,0,0,0.34)';
+          this.edgeRect(ctx, sx, sy, d, 0, TILE_SIZE, 12);
+          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          this.edgeRect(ctx, sx, sy, d, 0, TILE_SIZE, 7);
+          ctx.fillStyle = 'rgba(0,0,0,0.34)';
+          this.edgeRect(ctx, sx, sy, d, 0, TILE_SIZE, 3);
+        }
+        if (touched) {
+          ctx.fillStyle = 'rgba(0,0,0,0.14)';
+          ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
         }
       }
     }
@@ -585,21 +529,10 @@ export class MapRenderer {
       }
     }
 
-    // ── Torch glow around the party leader ──
-    if (party.length > 0 && party[0].isAlive) {
-      const leader = party[0];
-      const leaderVisual = this.getVisual(leader, dt, moveMs);
-      const lx = leaderVisual.x + TILE_SIZE / 2 - camera.x;
-      const ly = leaderVisual.y + TILE_SIZE / 2 - camera.y;
-      const flicker = Math.sin(this.time * 8) * 3 + Math.sin(this.time * 13) * 2;
-      const radius = 80 + flicker;
-      const gradient = ctx.createRadialGradient(lx, ly, 0, lx, ly, radius);
-      gradient.addColorStop(0, 'rgba(255,200,100,0.08)');
-      gradient.addColorStop(0.5, 'rgba(255,160,60,0.04)');
-      gradient.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(lx - radius, ly - radius, radius * 2, radius * 2);
-    }
+    // The party's torch used to be painted here as a radial wash. It is gone
+    // for the same reason the nightfall tint is: the backend's lighting pass
+    // already puts a flickering torch on the SceneMood's focus, and two
+    // torches over one party is one torch too many.
 
     // Draw monsters (only if on explored tile)
     for (const monster of monsters) {
@@ -659,6 +592,542 @@ export class MapRenderer {
 
     // Draw party members
     this.drawPartyMembers(ctx, camera, party, dt, moveMs);
+
+    // Damage and healing, over everything they belong to.
+    this.drawFloaters(ctx, camera);
+  }
+
+  // ── Dungeon interiors ─────────────────────────────────────────────────
+  // See the note above `isOpenTile`: light from above and a shade from the
+  // north-west, wall faces to the south, and the floor carrying the shadows.
+
+  /**
+   * A wall: a rough top surface, and — where there is open ground to the
+   * south — the face the player actually sees, crowned with light and dark at
+   * the foot.
+   *
+   * What this replaces was a full mortar grid on every wall tile: three
+   * courses at fixed heights with the joints in fixed places, so a wall ten
+   * tiles long was the same block stamped ten times. The courses here are
+   * placed off `cellHash`, and only on the face, where coursing is something
+   * you could actually see.
+   *
+   * Five rectangles for a wall buried in rock, about fifteen for one facing a
+   * room — against seventeen for every wall before.
+   */
+  private dungeonWall(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+    tn: DungeonTones, pal: DungeonPalette,
+  ): void {
+    const T = TILE_SIZE;
+    const faceH = isOpenTile(tileAt(map, x, y + 1)) ? 12 : 0;
+    const topH = T - faceH;
+
+    // The top surface: flat rock, broken by two facets whose size and place
+    // come off the hash, so no two wall tops are the same and none of the
+    // variation has the tile's period.
+    ctx.fillStyle = tn.wallTop;
+    ctx.fillRect(sx, sy, T, topH);
+    const h = cellHash(x, y, 71);
+    const fw = 9 + (h % 5) * 3;
+    const fh = Math.max(3, Math.min(topH - 2, 5 + ((h >> 2) % 4) * 3));
+    ctx.fillStyle = h % 2 === 0 ? tn.facetLit : tn.facetDark;
+    ctx.fillRect(sx + (h * 5) % (T - fw), sy + (h * 3) % Math.max(1, topH - fh), fw, fh);
+    const h2 = cellHash(x, y, 37);
+    if (h2 % 3 !== 0) {
+      const gw = 6 + (h2 % 4) * 3;
+      const gh = Math.max(3, Math.min(topH - 2, 4 + ((h2 >> 3) % 3) * 3));
+      ctx.fillStyle = h2 % 2 === 0 ? tn.facetDark : tn.facetLit;
+      ctx.fillRect(sx + (h2 * 7) % (T - gw), sy + (h2 * 5) % Math.max(1, topH - gh), gw, gh);
+    }
+
+    // Thin sides where a corridor runs past: the wall block is cut, and the
+    // cut catches no light.
+    if (isOpenTile(tileAt(map, x - 1, y))) {
+      ctx.fillStyle = tn.side;
+      ctx.fillRect(sx, sy, 2, topH);
+    }
+    if (isOpenTile(tileAt(map, x + 1, y))) {
+      ctx.fillStyle = tn.side;
+      ctx.fillRect(sx + T - 2, sy, 2, topH);
+    }
+    if (isOpenTile(tileAt(map, x, y - 1))) {
+      ctx.fillStyle = tn.crown;
+      ctx.fillRect(sx, sy, T, 1);
+    }
+
+    if (faceH > 0) {
+      // The crown: the wall's top edge, nearest the light.
+      ctx.fillStyle = tn.crown;
+      ctx.fillRect(sx, sy + topH, T, 2);
+      ctx.fillStyle = tn.face;
+      ctx.fillRect(sx, sy + topH + 2, T, faceH - 2);
+      // Two courses, joints staggered by the tile's own hash so a long wall
+      // does not repeat.
+      const courseY = sy + topH + 2 + 4 + (h % 2);
+      ctx.fillStyle = tn.mortar;
+      ctx.fillRect(sx, courseY, T, 1);
+      const jA = 6 + (cellHash(x, y, 19) % 20);
+      const jB = 4 + (cellHash(x, y, 23) % 22);
+      ctx.fillRect(sx + jA, sy + topH + 2, 1, courseY - (sy + topH + 2));
+      ctx.fillRect(sx + jB, courseY + 1, 1, sy + T - courseY - 3);
+      // A lit nose on the upper course, and the dark where the wall meets the
+      // ground. Between them they are most of what reads as height.
+      ctx.fillStyle = tn.faceLit;
+      ctx.fillRect(sx + 1, sy + topH + 2, jA - 2, 1);
+      ctx.fillStyle = tn.foot;
+      ctx.fillRect(sx, sy + T - 2, T, 2);
+    }
+
+    // Wall dressing, on the face where there is one and on the top otherwise.
+    const whash = (x * 17 + y * 29) % 24;
+    const dy = faceH > 0 ? topH : 8;
+    if (whash === 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(sx + 12, sy + dy + 2, 7, 1);
+      ctx.fillRect(sx + 16, sy + dy + 2, 1, 7);
+      ctx.fillRect(sx + 8, sy + dy + 8, 7, 1);
+    } else if (whash === 1) {
+      ctx.fillStyle = `${pal.accent}55`;
+      ctx.fillRect(sx + 3, sy + T - 5, 9, 3);
+      ctx.fillRect(sx + 16, sy + T - 4, 7, 2);
+    } else if (whash === 2) {
+      const runePulse = Math.sin(this.time * 2 + x * 0.7 + y) * 0.2 + 0.5;
+      ctx.fillStyle = `${pal.glow}${Math.floor(20 + runePulse * 30).toString(16)}`;
+      ctx.fillRect(sx + 12, sy + dy + 1, 8, 2);
+      ctx.fillRect(sx + 15, sy + dy + 3, 2, 6);
+    } else if (whash === 3 && faceH > 0) {
+      // A sconce only ever hangs on a face — a torch on top of a wall, seen
+      // from above, was one of the odder things in the old dungeon.
+      ctx.fillStyle = 'rgba(50,42,26,0.9)';
+      ctx.fillRect(sx + 25, sy + topH + 4, 4, 2);
+      ctx.fillRect(sx + 26, sy + topH + 1, 2, 4);
+      ctx.fillStyle = `rgba(255,170,60,${0.55 + Math.sin(this.time * 9 + x) * 0.2})`;
+      ctx.fillRect(sx + 26, sy + topH - 2, 2, 3);
+      ctx.fillStyle = `rgba(255,225,150,${0.4 + Math.sin(this.time * 13 + x) * 0.2})`;
+      ctx.fillRect(sx + 26, sy + topH - 3, 2, 1);
+    }
+  }
+
+  /**
+   * The shadow a wall throws on the ground beside it.
+   *
+   * All four sides are shaded, but not equally: the light is above and to the
+   * north-west, so a wall to the north stands between the floor and the light
+   * and casts the deep band, the west casts a narrower one, and the east and
+   * south get little more than a contact line. Getting that asymmetry right is
+   * most of what makes a room read as a room rather than as a hole in paper.
+   *
+   * Depth is jittered a pixel off the hash so the band is not a ruled line.
+   */
+  private wallShadow(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+  ): void {
+    const j = cellHash(x, y, 61) % 2;
+    if (isSolidTile(tileAt(map, x, y - 1))) {
+      ctx.fillStyle = 'rgba(0,0,0,0.42)';
+      ctx.fillRect(sx, sy, TILE_SIZE, 3 + j);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(sx, sy + 3 + j, TILE_SIZE, 3);
+      ctx.fillStyle = 'rgba(0,0,0,0.10)';
+      ctx.fillRect(sx, sy + 6 + j, TILE_SIZE, 4);
+    }
+    if (isSolidTile(tileAt(map, x - 1, y))) {
+      ctx.fillStyle = 'rgba(0,0,0,0.26)';
+      ctx.fillRect(sx, sy, 3, TILE_SIZE);
+      ctx.fillStyle = 'rgba(0,0,0,0.11)';
+      ctx.fillRect(sx + 3, sy, 3 - j, TILE_SIZE);
+    }
+    if (isSolidTile(tileAt(map, x + 1, y))) {
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(sx + TILE_SIZE - 3, sy, 3, TILE_SIZE);
+    }
+    if (isSolidTile(tileAt(map, x, y + 1))) {
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.fillRect(sx, sy + TILE_SIZE - 3, TILE_SIZE, 3);
+    }
+    // An outside corner, where the two edges beside it are open: without this
+    // the diagonal reads as a notch of bare floor.
+    for (const [dx, dy, cx, cy] of CORNER_STEPS) {
+      if (!isSolidTile(tileAt(map, x + dx, y + dy))) continue;
+      if (isSolidTile(tileAt(map, x + dx, y)) || isSolidTile(tileAt(map, x, y + dy))) continue;
+      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.fillRect(cx === 0 ? sx : sx + TILE_SIZE - 5, cy === 0 ? sy : sy + TILE_SIZE - 5, 5, 5);
+    }
+  }
+
+  /**
+   * A floor tile: flagstone, its joints, the dressing that has collected on
+   * it, and whatever the walls around it are keeping the light off.
+   *
+   * The old floor drew a light line down its north and west edges and a dark
+   * one down its south and east, on every tile — a thirty-two pixel lattice
+   * ruled over the whole dungeon. The joints here are placed off the hash
+   * instead, so no two tiles break in the same place and the flags read as
+   * flags rather than as a grid.
+   */
+  private dungeonFloor(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+    tn: DungeonTones, pal: DungeonPalette,
+  ): void {
+    const T = TILE_SIZE;
+    ctx.fillStyle = tn.floor;
+    ctx.fillRect(sx, sy, T, T);
+
+    // One sub-tile patch of tone on roughly a third of tiles — the same trick
+    // and the same reasoning as `mottledTile` on the surface.
+    const h = cellHash(x, y, 67);
+    if (h % 3 === 0) {
+      const w = 10 + (h % 4) * 4;
+      const ht = 8 + ((h >> 2) % 4) * 3;
+      ctx.fillStyle = tn.floorPatch;
+      ctx.fillRect(sx + (h * 5) % (T - w), sy + (h * 11) % (T - ht), w, ht);
+    }
+
+    // Flagstone joints. They stop short of the tile's edges on purpose: a
+    // joint that ran the full width would meet its neighbour's and the floor
+    // would course like brickwork, which is what a floor must not look like.
+    const hj = cellHash(x, y, 11);
+    const jy = 8 + (hj % 16);
+    const jx = 8 + (cellHash(x, y, 17) % 15);
+    const jw = 12 + (hj % 12);
+    ctx.fillStyle = tn.joint;
+    ctx.fillRect(sx + (hj * 3) % (T - jw), sy + jy, jw, 1);
+    ctx.fillRect(sx + jx, sy + jy + 1, 1, 6 + (hj % 9));
+    ctx.fillStyle = tn.relief;
+    ctx.fillRect(sx + (hj * 3) % (T - jw), sy + jy + 1, jw, 1);
+
+    // Floor dressing — bones, blood, mushrooms, frost. Cheap and thematic;
+    // the hash bands are unchanged from before.
+    const hash = (x * 7 + y * 13) % 80;
+    if (hash < 4) {
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.fillRect(sx + 8, sy + 12, 10, 1);
+      ctx.fillRect(sx + 15, sy + 12, 1, 8);
+    } else if (hash < 6) {
+      ctx.fillStyle = 'rgba(180,175,165,0.14)';
+      ctx.fillRect(sx + 6, sy + 20, 3, 2);
+      ctx.fillRect(sx + 18, sy + 8, 2, 2);
+    } else if (hash < 8) {
+      ctx.fillStyle = 'rgba(216,208,184,0.22)';
+      ctx.fillRect(sx + 5, sy + 18, 16, 2);
+      ctx.fillRect(sx + 5, sy + 16, 2, 6);
+      ctx.fillRect(sx + 19, sy + 16, 2, 6);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(sx + 5, sy + 20, 16, 1);
+    } else if (hash < 10) {
+      ctx.fillStyle = 'rgba(120,20,20,0.18)';
+      ctx.fillRect(sx + 10, sy + 14, 8, 6);
+      ctx.fillStyle = 'rgba(80,10,10,0.12)';
+      ctx.fillRect(sx + 12, sy + 18, 4, 4);
+    } else if (hash < 12) {
+      const sparkle = Math.sin(this.time * 3 + x + y) * 0.3 + 0.5;
+      ctx.fillStyle = `${pal.glow}${Math.floor(18 + sparkle * 20).toString(16)}`;
+      ctx.fillRect(sx + 14, sy + 10, 3, 3);
+    } else if (hash < 14) {
+      ctx.fillStyle = `${pal.accent}44`;
+      ctx.fillRect(sx + 5, sy + 22, 6, 3);
+      ctx.fillRect(sx + 13, sy + 24, 8, 2);
+    } else if (hash < 16) {
+      const glow = Math.sin(this.time * 2.5 + x + y) * 0.2 + 0.4;
+      ctx.fillStyle = 'rgba(160,160,170,0.4)';
+      ctx.fillRect(sx + 10, sy + 20, 2, 6);
+      ctx.fillRect(sx + 18, sy + 22, 2, 4);
+      ctx.fillStyle = `${pal.glow}${Math.floor(30 + glow * 40).toString(16)}`;
+      ctx.fillRect(sx + 8, sy + 18, 6, 3);
+      ctx.fillRect(sx + 17, sy + 20, 5, 3);
+    } else if (hash < 18) {
+      ctx.fillStyle = 'rgba(200,230,255,0.35)';
+      ctx.fillRect(sx + 12, sy + 14, 2, 8);
+      ctx.fillRect(sx + 17, sy + 16, 2, 6);
+      ctx.fillRect(sx + 14, sy + 12, 2, 2);
+    } else if (hash < 20) {
+      ctx.fillStyle = 'rgba(20,8,4,0.5)';
+      ctx.fillRect(sx + 8, sy + 16, 16, 10);
+      ctx.fillStyle = 'rgba(120,60,20,0.3)';
+      ctx.fillRect(sx + 11, sy + 19, 10, 5);
+    } else if (hash < 22) {
+      ctx.fillStyle = 'rgba(90,140,190,0.18)';
+      ctx.fillRect(sx + 8, sy + 14, 14, 9);
+      ctx.fillStyle = 'rgba(160,200,230,0.12)';
+      ctx.fillRect(sx + 10, sy + 16, 6, 3);
+    } else if (hash < 24) {
+      ctx.fillStyle = 'rgba(100,16,16,0.22)';
+      ctx.fillRect(sx + 6, sy + 10, 3, 12);
+      ctx.fillRect(sx + 20, sy + 8, 2, 10);
+    }
+
+    // Damp where the floor runs down to standing water.
+    for (let d = 0; d < 4; d++) {
+      const step = EDGE_STEPS[d];
+      if (tileAt(map, x + step[0], y + step[1]) !== TileType.Water) continue;
+      ctx.fillStyle = 'rgba(30,54,80,0.35)';
+      this.edgeRect(ctx, sx, sy, d, 0, T, 4);
+    }
+
+    this.wallShadow(ctx, map, x, y, sx, sy);
+  }
+
+  /**
+   * A door, hung in whichever way the wall it interrupts runs.
+   *
+   * The old one was a plank rectangle filling the tile in the same orientation
+   * wherever it stood, which meant half of them lay flat across the corridor
+   * they were supposed to close.
+   */
+  private dungeonDoor(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+    tn: DungeonTones,
+  ): void {
+    const T = TILE_SIZE;
+    // The wall run is whichever axis has rock on it; the leaf spans that run.
+    const acrossX = isSolidTile(tileAt(map, x - 1, y)) || isSolidTile(tileAt(map, x + 1, y));
+
+    ctx.fillStyle = tn.floor;
+    ctx.fillRect(sx, sy, T, T);
+    // Jambs of cut stone at the two ends of the run.
+    ctx.fillStyle = tn.wallTop;
+    if (acrossX) {
+      ctx.fillRect(sx, sy, 4, T);
+      ctx.fillRect(sx + T - 4, sy, 4, T);
+      ctx.fillStyle = tn.foot;
+      ctx.fillRect(sx + 4, sy + T - 3, T - 8, 3);
+    } else {
+      ctx.fillRect(sx, sy, T, 4);
+      ctx.fillRect(sx, sy + T - 4, T, 4);
+      ctx.fillStyle = tn.foot;
+      ctx.fillRect(sx, sy + 4, 3, T - 8);
+    }
+
+    // The leaf: planks running with the door, iron bands across them.
+    const lx = acrossX ? sx + 5 : sx + 3;
+    const ly = acrossX ? sy + 3 : sy + 5;
+    const lw = acrossX ? T - 10 : T - 6;
+    const lh = acrossX ? T - 6 : T - 10;
+    ctx.fillStyle = '#4a3517';
+    ctx.fillRect(lx, ly, lw, lh);
+    ctx.fillStyle = '#6b4d1e';
+    for (let i = 0; i < 4; i++) {
+      if (acrossX) ctx.fillRect(lx + 1 + i * 6, ly + 1, 4, lh - 3);
+      else ctx.fillRect(lx + 1, ly + 1 + i * 6, lw - 3, 4);
+    }
+    ctx.fillStyle = '#8b6914';
+    if (acrossX) ctx.fillRect(lx, ly, lw, 1);
+    else ctx.fillRect(lx, ly, 1, lh);
+    ctx.fillStyle = 'rgba(120,124,136,0.75)';
+    if (acrossX) {
+      ctx.fillRect(lx, ly + 4, lw, 2);
+      ctx.fillRect(lx, ly + lh - 7, lw, 2);
+    } else {
+      ctx.fillRect(lx + 4, ly, 2, lh);
+      ctx.fillRect(lx + lw - 7, ly, 2, lh);
+    }
+    // Ring handle, catching what light there is.
+    ctx.fillStyle = '#c8ab5e';
+    ctx.fillRect(sx + T / 2 - 2, sy + T / 2 - 2, 4, 4);
+    ctx.fillStyle = '#5a4620';
+    ctx.fillRect(sx + T / 2 - 1, sy + T / 2 - 1, 2, 2);
+
+    this.wallShadow(ctx, map, x, y, sx, sy);
+  }
+
+  /**
+   * A stairwell, cut into the floor rather than painted on it.
+   *
+   * Four treads recede toward the dark (down) or the light (up), each with a
+   * lit nose and a shadowed riser, inside a frame of cut stone. The old stairs
+   * were three coloured bars and an arrow; the colour is kept — the party has
+   * to be able to spot the way down across a room — but it now sits on
+   * something with a shape.
+   */
+  private dungeonStairs(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+    tn: DungeonTones, down: boolean,
+  ): void {
+    const T = TILE_SIZE;
+    ctx.fillStyle = tn.floor;
+    ctx.fillRect(sx, sy, T, T);
+    // The cut: a frame of dressed stone around a shaft.
+    ctx.fillStyle = tn.wallTop;
+    ctx.fillRect(sx + 1, sy + 1, T - 2, T - 2);
+    ctx.fillStyle = '#08080c';
+    ctx.fillRect(sx + 3, sy + 3, T - 6, T - 6);
+
+    // Treads. Going down they narrow into the shaft and darken; going up they
+    // widen toward the light and brighten.
+    for (let i = 0; i < 4; i++) {
+      const k = down ? i : 3 - i;
+      const inset = 3 + k * 2;
+      const ty = sy + 4 + i * 6;
+      const shade = down ? 0.62 - i * 0.13 : 0.24 + i * 0.13;
+      ctx.fillStyle = mix('#101018', tn.wallTop, shade);
+      ctx.fillRect(sx + inset, ty, T - inset * 2, 5);
+      ctx.fillStyle = mix('#101018', tn.crown, Math.min(1, shade + 0.28));
+      ctx.fillRect(sx + inset, ty, T - inset * 2, 1);
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(sx + inset, ty + 5, T - inset * 2, 1);
+    }
+
+    // The way on, glowing faintly out of the stone.
+    const glow = Math.sin(this.time * 2) * 0.12 + 0.34;
+    ctx.fillStyle = down ? `rgba(255,110,70,${glow})` : `rgba(110,255,150,${glow})`;
+    ctx.fillRect(sx + 3, down ? sy + T - 6 : sy + 3, T - 6, 3);
+    ctx.fillStyle = down ? '#ff9a6a' : '#7affa0';
+    const ax = sx + T / 2;
+    const ay = down ? sy + T - 9 : sy + 8;
+    ctx.fillRect(ax - 3, down ? ay : ay + 2, 6, 2);
+    ctx.fillRect(ax - 1, down ? ay + 2 : ay, 2, 2);
+
+    this.wallShadow(ctx, map, x, y, sx, sy);
+  }
+
+  /** Standing water: dark in the middle, lipped in stone where it meets the floor. */
+  private dungeonWater(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+    tn: DungeonTones,
+  ): void {
+    const T = TILE_SIZE;
+    ctx.fillStyle = tn.waterDeep;
+    ctx.fillRect(sx, sy, T, T);
+    // A pool is shallower at its rim, so the deep tone is only the middle of
+    // a tile with water on every side.
+    const h = cellHash(x, y, 83);
+    ctx.fillStyle = tn.water;
+    ctx.fillRect(sx + (h % 3), sy + 2 + (h % 4), T - (h % 3) * 2, T - 6);
+
+    // Where the floor comes down to the water it throws a shadow onto it, and
+    // the waterline itself catches a pale lip. Each half is drawn by the tile
+    // it belongs to, exactly as a coast is on the surface.
+    for (let d = 0; d < 4; d++) {
+      const step = EDGE_STEPS[d];
+      if (tileAt(map, x + step[0], y + step[1]) === TileType.Water) continue;
+      ctx.fillStyle = 'rgba(0,0,0,0.34)';
+      this.edgeRect(ctx, sx, sy, d, 0, T, 3);
+      ctx.fillStyle = tn.waterLip;
+      for (let i = 0; i < 4; i++) {
+        const c = cellHash(x, y, 90 + d * 5 + i);
+        if (c % 3 === 0) continue;
+        this.edgeRect(ctx, sx, sy, d, i * 8 + (c % 3), 7 - (c % 3), 3 + (c % 2));
+      }
+    }
+
+    // Two slow highlights riding the surface.
+    const wave = Math.sin(this.time * 1.6 + x * 0.7 + y * 0.4);
+    ctx.fillStyle = `rgba(190,222,255,${0.10 + wave * 0.06})`;
+    ctx.fillRect(sx + 5, sy + 11 + Math.round(wave * 2), T - 12, 1);
+    ctx.fillStyle = `rgba(160,200,240,${0.09 - wave * 0.05})`;
+    ctx.fillRect(sx + 10, sy + 22 - Math.round(wave * 2), T - 18, 1);
+  }
+
+  /** Lava: a cooled crust with the heat showing through its cracks. */
+  private dungeonLava(
+    ctx: CanvasRenderingContext2D, map: TileMap,
+    x: number, y: number, sx: number, sy: number,
+  ): void {
+    const T = TILE_SIZE;
+    ctx.fillStyle = '#2a1208';
+    ctx.fillRect(sx, sy, T, T);
+    const h = cellHash(x, y, 87);
+    ctx.fillStyle = '#3d1c0c';
+    ctx.fillRect(sx + (h % 4), sy + (h % 5), T - 8, T - 10);
+    // Cracks, placed off the hash, pulsing with the heat below.
+    const pulse = Math.sin(this.time * 2.6 + x + y) * 0.2 + 0.6;
+    ctx.fillStyle = `rgba(255,120,30,${pulse})`;
+    ctx.fillRect(sx + 3, sy + 6 + (h % 6), T - 8, 2);
+    ctx.fillRect(sx + 9 + (h % 8), sy + 6, 2, T - 12);
+    ctx.fillStyle = `rgba(255,224,120,${pulse * 0.7})`;
+    ctx.fillRect(sx + 5, sy + 7 + (h % 6), 8, 1);
+    // The floor around a lava pool is scorched and lit from below.
+    for (let d = 0; d < 4; d++) {
+      const step = EDGE_STEPS[d];
+      if (tileAt(map, x + step[0], y + step[1]) === TileType.Lava) continue;
+      ctx.fillStyle = `rgba(255,140,40,${0.20 + pulse * 0.18})`;
+      this.edgeRect(ctx, sx, sy, d, 0, T, 2);
+    }
+  }
+
+  // ── Floating combat numbers ───────────────────────────────────────────
+
+  /**
+   * Push a number over a creature. `wx`/`wy` are the top-left of its tile in
+   * world pixels; the camera is applied when it is drawn, so the number stays
+   * put on the ground while the view moves.
+   *
+   * Several numbers landing on one creature in a round are stacked upward as
+   * they arrive rather than drawn on top of each other, which is the whole
+   * point of a multiattack being visible.
+   */
+  popNumber(wx: number, wy: number, text: string, kind: FloaterKind): void {
+    let lift = 0;
+    for (const f of this.floaters) {
+      if (this.renderTime - f.born > 420) continue;
+      if (Math.abs(f.x - wx) > 24 || Math.abs(f.y - wy) > 24) continue;
+      lift = Math.min(lift - 11, f.lift - 11);
+    }
+    this.floaters.push({
+      x: wx + TILE_SIZE / 2,
+      y: wy,
+      text,
+      kind,
+      born: this.renderTime,
+      lift,
+      drift: ((this.floaters.length * 37) % 7) - 3,
+    });
+    // Anything past the cap is older than everything kept, so the oldest go.
+    if (this.floaters.length > MapRenderer.FLOATER_CAP) {
+      this.floaters.splice(0, this.floaters.length - MapRenderer.FLOATER_CAP);
+    }
+  }
+
+  /** Forget every number in flight — combat over, floor changed, run reloaded. */
+  clearNumbers(): void {
+    this.floaters.length = 0;
+  }
+
+  /**
+   * Draw and expire the numbers in flight.
+   *
+   * There is no strokeText on a RecordingContext, so the outline that keeps a
+   * number legible over a lit sprite is four offset copies of the text in
+   * black. That is five text commands each, which is why the cap is small.
+   */
+  private drawFloaters(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    if (this.floaters.length === 0) return;
+    let live = 0;
+    for (const f of this.floaters) {
+      const age = this.renderTime - f.born;
+      if (age >= MapRenderer.FLOATER_MS) continue;
+      this.floaters[live++] = f;
+      const t = age / MapRenderer.FLOATER_MS;
+      // Out fast, then hanging: a number that rises linearly reads as a
+      // balloon, one that decelerates reads as a hit.
+      const rise = 30 * (1 - (1 - t) * (1 - t));
+      const alpha = t < 0.65 ? 1 : (1 - t) / 0.35;
+      const sx = Math.round(f.x - camera.x + f.drift * t * 3);
+      const sy = Math.round(f.y - camera.y + 4 + f.lift - rise);
+      if (sx < -40 || sy < -20 || sx > GAME_WIDTH + 40 || sy > GAME_HEIGHT + 20) continue;
+      const style = FLOATER_STYLE[f.kind];
+      // A crit also lands: it starts a little larger and settles back.
+      const grow = f.kind === 'crit' ? Math.round(4 * Math.max(0, 1 - t * 4)) : 0;
+      ctx.font = `bold ${style.size + grow}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(0,0,0,${(alpha * 0.8).toFixed(3)})`;
+      ctx.fillText(f.text, sx - 1, sy);
+      ctx.fillText(f.text, sx + 1, sy);
+      ctx.fillText(f.text, sx, sy - 1);
+      ctx.fillText(f.text, sx, sy + 1);
+      ctx.fillStyle = alpha >= 1 ? style.color : `${style.color}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.fillText(f.text, sx, sy);
+    }
+    this.floaters.length = live;
+    ctx.textAlign = 'left';
+    ctx.font = '10px monospace';
   }
 
   /**
@@ -1439,6 +1908,9 @@ export class MapRenderer {
 
     // The party
     this.drawPartyMembers(ctx, camera, party, dt, moveMs);
+
+    // Damage and healing from a roadside ambush, over the creature it hit.
+    this.drawFloaters(ctx, camera);
 
     // Off-screen quest indicator: an arrow clamped to the screen edge, always
     // pointing at the active quest's destination so the party's goal is

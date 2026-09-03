@@ -36,6 +36,7 @@ import { BulletinTask, bulletinIcon, bulletinProgress, bulletinObjective, bullet
 import { Monster, MonsterTemplate, getMonsterTemplate, getRandomMonster, MONSTER_TEMPLATES, THEME_MONSTERS, isUnseeableMonster } from './entities/Monster';
 import { SpriteRenderer } from './entities/Sprites';
 import { MapRenderer } from './rendering/MapRenderer';
+import type { FloaterKind } from './rendering/MapRenderer';
 import { CombatEngine } from './combat/CombatEngine';
 import type { PartyCommand } from './combat/CombatEngine';
 import type { MenuConsumable } from './ui/BattleView';
@@ -805,6 +806,9 @@ class Game {
     }
     this.visitedRooms = this.rooms.length > 0 ? new Set([0]) : new Set();
     this.blockedChests.clear();
+    // Numbers expire in about a second on their own, but a floor change is
+    // instant — without this a hit from the last room follows the party down.
+    this.mapRenderer.clearNumbers();
     this.history.roomsVisited = this.visitedRooms.size;
     this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
     this.hud.addCombatMessage(this.describeParty(), '#ccc');
@@ -1713,6 +1717,7 @@ class Game {
       const log = this.combatEngine.step();
       this.hud.addCombatLogBatch(log);
       this.kickCameraFor(log.messages);
+      this.popCombatNumbers(log.messages);
       this.hud.setParty(this.party);
       this.refreshBossBar();
       // Keep the FF-style battle window in sync with each combat tick.
@@ -2009,6 +2014,48 @@ class Game {
    * shake is a matter of presentation: if the log is right about the round,
    * the picture is right about it too.
    */
+  /**
+   * Put a round's numbers over the creatures they happened to.
+   *
+   * Like the camera kick above, this reads the log's text, because CombatLog
+   * carries messages and nothing structured. Rather than pick names out with a
+   * regex — the lines carry prefixes and punctuation that make that brittle —
+   * every creature on the field is asked whether a line is about it, which
+   * also hands back the tile to put the number on.
+   *
+   * Where several identical monsters are in the fight the log cannot say which
+   * bandit was hit, so the number goes to the first living one of that name.
+   * It can land on a sibling; the alternative is threading the target through
+   * CombatEngine, which is a real change to a DOM-free module for a cosmetic
+   * gain, and this is close enough to read correctly in play.
+   */
+  private popCombatNumbers(messages: string[]): void {
+    if (messages.length === 0) return;
+    const pop = (tile: Vector2, text: string, kind: FloaterKind) =>
+      this.mapRenderer.popNumber(tile.x * TILE_SIZE, tile.y * TILE_SIZE, text, kind);
+
+    for (const line of messages) {
+      const crit = line.includes('CRITICAL');
+      let placed = false;
+
+      for (const m of this.monsters) {
+        const name = m.template.name;
+        if (line.includes(name + ' is slain')) { pop(m.tile, 'slain', 'slain'); placed = true; break; }
+        const dealt = m.isAlive ? amountAfter(line, name + ' takes ') : null;
+        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); placed = true; break; }
+      }
+      if (placed) continue;
+
+      for (const c of this.party.members) {
+        if (line.includes(c.name + ' is down')) { pop(c.tile, 'down', 'down'); break; }
+        const taken = amountAfter(line, c.name + ' takes ');
+        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : 'hurt'); break; }
+        const healed = amountAfter(line, c.name + ' heals ');
+        if (healed !== null) { pop(c.tile, '+' + healed, 'heal'); break; }
+      }
+    }
+  }
+
   private kickCameraFor(messages: string[]): void {
     let amplitude = 0;
     for (const m of messages) {
@@ -2183,6 +2230,7 @@ class Game {
     const log = this.combatEngine.step();
     this.hud.addCombatLogBatch(log);
     this.kickCameraFor(log.messages);
+    this.popCombatNumbers(log.messages);
     this.hud.setParty(this.party);
     this.refreshBossBar();
     this.hud.battleView.update({
@@ -5334,6 +5382,20 @@ function pickBackend(): RenderBackendId {
     /* private mode: fall through to the default */
   }
   return 'pixi';
+}
+
+/**
+ * The number written straight after `marker` in a log line, or null.
+ *
+ * Used to lift damage and healing out of the combat log for the floating
+ * numbers. Substring-and-digits rather than a regex, because creature names
+ * are data and would have to be escaped before they could be a pattern.
+ */
+function amountAfter(line: string, marker: string): string | null {
+  const at = line.indexOf(marker);
+  if (at < 0) return null;
+  const digits = /^\d+/.exec(line.slice(at + marker.length));
+  return digits ? digits[0] : null;
 }
 
 /** Parse '2d4+2' style healing dice out of an item description. */
