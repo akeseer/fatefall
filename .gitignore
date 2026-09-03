@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# Preview builds used to look at the game without the dev server's HMR
+# reloading the page mid-inspection.
+dist-*/
 tools/train/data/
 tools/train/runs/
 *.log
