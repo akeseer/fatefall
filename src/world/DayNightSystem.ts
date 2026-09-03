@@ -34,11 +34,19 @@ export function timeOfDayFromPhase(phase: number): TimeOfDay {
   return 'night';
 }
 
-/** Light level (0..1) from phase — brightest at noon, darkest at midnight. */
+/**
+ * Light level (0..1) from phase — brightest at noon, darkest at midnight.
+ *
+ * Phase runs 0 = dawn, 0.25 = noon, 0.5 = dusk, 0.75 = midnight, so the curve
+ * has to peak a quarter of the way in. `-cos` peaks at phase 0 instead, which
+ * put the whole day a quarter-turn out: dawn and morning were pitch black,
+ * noon sat at half light, and dusk was the brightest hour of the day — with
+ * midnight brighter than noon. `+sin` is the same curve, turned the right way
+ * up.
+ */
 export function lightFromPhase(phase: number): number {
   const p = ((phase % 1) + 1) % 1;
-  // Cosine-ish ramp peaking at 0.25 (noon).
-  return Math.max(0.08, Math.min(1, 0.5 - 0.55 * Math.cos(p * Math.PI * 2)));
+  return Math.max(0.08, Math.min(1, 0.5 + 0.55 * Math.sin(p * Math.PI * 2)));
 }
 
 /** Build a clock for the start of a run. */
