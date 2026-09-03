@@ -340,6 +340,19 @@ const EFFECT_STYLE: Record<EffectKind, { core: string; edge: string; ms: number;
   heal: { core: '#e8ffe8', edge: '#4bd479', ms: 660, reach: 16, spokes: 5 },
 };
 
+/** How long a bolt takes to cross, whatever the distance. A spell that crawls over a long room reads as a thrown rock. */
+const BOLT_MS = 200;
+
+/** A spell in flight, from the caster to whatever it is about to hit. */
+interface Bolt {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  kind: EffectKind;
+  born: number;
+}
+
 /** How long a body takes to go. Long enough to see, short enough not to litter a fight. */
 const CORPSE_MS = 620;
 
@@ -416,6 +429,8 @@ export class MapRenderer {
   private floaters: Floater[] = [];
   private effects: Effect[] = [];
   private corpses: Corpse[] = [];
+  private bolts: Bolt[] = [];
+  private static readonly BOLT_CAP = 10;
   private static readonly CORPSE_CAP = 12;
   private static readonly EFFECT_CAP = 16;
   private effectSeed = 0;
@@ -642,6 +657,7 @@ export class MapRenderer {
     this.drawPartyMembers(ctx, camera, party, dt, moveMs);
 
     // Damage and healing, over everything they belong to.
+    this.drawBolts(ctx, camera);
     this.drawEffects(ctx, camera);
     this.drawFloaters(ctx, camera);
   }
@@ -1156,6 +1172,58 @@ export class MapRenderer {
   }
 
   /**
+   * Send a spell across the room. Coordinates are tile top-left in world pixels.
+   *
+   * Only magic flies — a sword swing gets the burst at the far end and nothing
+   * in between, because a streak of light crossing the floor to represent a
+   * man stepping forward and hitting someone reads as nonsense.
+   */
+  popBolt(fromX: number, fromY: number, toX: number, toY: number, kind: EffectKind): void {
+    const half = TILE_SIZE / 2;
+    this.bolts.push({
+      x0: fromX + half, y0: fromY + half,
+      x1: toX + half, y1: toY + half,
+      kind, born: this.renderTime,
+    });
+    if (this.bolts.length > MapRenderer.BOLT_CAP) {
+      this.bolts.splice(0, this.bolts.length - MapRenderer.BOLT_CAP);
+    }
+  }
+
+  /**
+   * Draw and expire the spells in flight.
+   *
+   * A bright head with a short tail behind it, the tail drawn as a few
+   * squares along the path it has already covered rather than as a line, so it
+   * stays pixel art. Fixed duration rather than fixed speed: across a whole
+   * room a constant-speed bolt is slow enough to look thrown.
+   */
+  private drawBolts(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    if (this.bolts.length === 0) return;
+    let live = 0;
+    for (const b of this.bolts) {
+      const age = this.renderTime - b.born;
+      if (age >= BOLT_MS) continue;
+      this.bolts[live++] = b;
+      const style = EFFECT_STYLE[b.kind];
+      const t = age / BOLT_MS;
+
+      const TAIL = 5;
+      for (let i = 0; i < TAIL; i++) {
+        const at = Math.max(0, t - i * 0.055);
+        const x = Math.round(b.x0 + (b.x1 - b.x0) * at - camera.x);
+        const y = Math.round(b.y0 + (b.y1 - b.y0) * at - camera.y);
+        if (x < -20 || y < -20 || x > GAME_WIDTH + 20 || y > GAME_HEIGHT + 20) continue;
+        const near = 1 - i / TAIL;
+        const size = Math.max(1, Math.round(5 * near));
+        ctx.fillStyle = withAlpha(i === 0 ? style.core : style.edge, near * (1 - t * 0.35));
+        ctx.fillRect(x - (size >> 1), y - (size >> 1), size, size);
+      }
+    }
+    this.bolts.length = live;
+  }
+
+  /**
    * Lay a body down. `wx`/`wy` are the top-left of its tile in world pixels.
    *
    * A monster used to be there and then simply not be there: it was drawn
@@ -1212,6 +1280,7 @@ export class MapRenderer {
     this.floaters.length = 0;
     this.effects.length = 0;
     this.corpses.length = 0;
+    this.bolts.length = 0;
   }
 
   /**
@@ -2097,6 +2166,7 @@ export class MapRenderer {
     this.drawPartyMembers(ctx, camera, party, dt, moveMs);
 
     // Damage and healing from a roadside ambush, over the creature it hit.
+    this.drawBolts(ctx, camera);
     this.drawEffects(ctx, camera);
     this.drawFloaters(ctx, camera);
 

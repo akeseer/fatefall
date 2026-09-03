@@ -1714,10 +1714,11 @@ class Game {
     if (this.combatTickTimer >= this.combatTickInterval) {
       this.combatTickTimer = 0;
 
+      const actor = this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex] ?? null;
       const log = this.combatEngine.step();
       this.hud.addCombatLogBatch(log);
       this.kickCameraFor(log.messages);
-      this.popCombatNumbers(log.messages);
+      this.popCombatNumbers(log.messages, actor);
       this.hud.setParty(this.party);
       this.refreshBossBar();
       // Keep the FF-style battle window in sync with each combat tick.
@@ -2029,12 +2030,22 @@ class Game {
    * CombatEngine, which is a real change to a DOM-free module for a cosmetic
    * gain, and this is close enough to read correctly in play.
    */
-  private popCombatNumbers(messages: string[]): void {
+  private popCombatNumbers(messages: string[], actor: GameCharacter | Monster | null = null): void {
     if (messages.length === 0) return;
+    // Whoever's turn it was, captured before the step consumed it. A spell is
+    // only worth drawing in flight if we know where it came from.
+    const origin = actor && actor.tile ? actor.tile : null;
     const pop = (tile: Vector2, text: string, kind: FloaterKind) =>
       this.mapRenderer.popNumber(tile.x * TILE_SIZE, tile.y * TILE_SIZE, text, kind);
-    const burst = (tile: Vector2, line: string, healing = false) =>
-      this.mapRenderer.popEffect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, healing ? 'heal' : effectFor(line));
+    const burst = (tile: Vector2, line: string, healing = false) => {
+      const kind = healing ? 'heal' : effectFor(line);
+      // Magic crosses the room; a weapon does not. Drawing a streak of light
+      // for a man stepping forward and swinging reads as nonsense.
+      if (origin && kind !== 'strike' && (origin.x !== tile.x || origin.y !== tile.y)) {
+        this.mapRenderer.popBolt(origin.x * TILE_SIZE, origin.y * TILE_SIZE, tile.x * TILE_SIZE, tile.y * TILE_SIZE, kind);
+      }
+      this.mapRenderer.popEffect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, kind);
+    };
 
     for (const line of messages) {
       const crit = line.includes('CRITICAL');
@@ -2234,10 +2245,11 @@ class Game {
    * Returns true if a hero's turn is now paused awaiting a decision.
    */
   private stepCombatOnce(): boolean {
+    const actor = this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex] ?? null;
     const log = this.combatEngine.step();
     this.hud.addCombatLogBatch(log);
     this.kickCameraFor(log.messages);
-    this.popCombatNumbers(log.messages);
+    this.popCombatNumbers(log.messages, actor);
     this.hud.setParty(this.party);
     this.refreshBossBar();
     this.hud.battleView.update({
