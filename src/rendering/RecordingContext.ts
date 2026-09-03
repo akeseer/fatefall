@@ -2,9 +2,10 @@
  * A canvas that writes down what it was asked to draw.
  *
  * It implements the slice of CanvasRenderingContext2D the game actually uses,
- * which the renderer and the sprite functions between them exercise about
- * eleven thousand times a frame. Nothing here draws; each call appends to a
- * command list that a backend replays.
+ * which the renderer and the sprite functions between them exercise a few
+ * thousand times a frame — measured at 2,254 inside a dungeon and 3,829 on
+ * the overworld. Nothing here draws; each call appends to a command list that
+ * a backend replays.
  *
  * Being duck-typed rather than a subclass is deliberate: `MapRenderer` and the
  * sprite functions take a `CanvasRenderingContext2D` and are handed one of

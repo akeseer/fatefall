@@ -284,6 +284,12 @@ interface DungeonTones {
 
 const TONE_CACHE = new WeakMap<DungeonPalette, DungeonTones>();
 
+/** A hex colour at a given opacity, for the burst passes. */
+function withAlpha(hex: string, a: number): string {
+  const v = Math.max(0, Math.min(1, a));
+  return `rgba(${chan(hex, 0)},${chan(hex, 1)},${chan(hex, 2)},${v.toFixed(3)})`;
+}
+
 function tonesFor(pal: DungeonPalette): DungeonTones {
   const hit = TONE_CACHE.get(pal);
   if (hit) return hit;
@@ -319,6 +325,30 @@ function tonesFor(pal: DungeonPalette): DungeonTones {
  * apart because at a glance that is the only thing about a number that
  * matters: whose hit points just moved.
  */
+export type EffectKind = 'strike' | 'fire' | 'shock' | 'arcane' | 'heal';
+
+/**
+ * A burst on a creature. Colours are given as a lit core and a cooler edge,
+ * because a spell that is one flat colour reads as a decal; every real flash
+ * is brightest at its heart and cools outward.
+ */
+const EFFECT_STYLE: Record<EffectKind, { core: string; edge: string; ms: number; reach: number; spokes: number }> = {
+  strike: { core: '#fff6d8', edge: '#e0a850', ms: 260, reach: 15, spokes: 5 },
+  fire: { core: '#fff0b0', edge: '#e0521c', ms: 520, reach: 24, spokes: 7 },
+  shock: { core: '#ffffff', edge: '#7fc8ff', ms: 300, reach: 26, spokes: 4 },
+  arcane: { core: '#f0e0ff', edge: '#9a5ce0', ms: 460, reach: 20, spokes: 6 },
+  heal: { core: '#e8ffe8', edge: '#4bd479', ms: 660, reach: 16, spokes: 5 },
+};
+
+/** One burst. World pixels, like the floaters; the camera is applied late. */
+interface Effect {
+  x: number;
+  y: number;
+  kind: EffectKind;
+  born: number;
+  seed: number;
+}
+
 export type FloaterKind = 'hit' | 'crit' | 'hurt' | 'heal' | 'slain' | 'down';
 
 const FLOATER_STYLE: Record<FloaterKind, { color: string; size: number }> = {
@@ -373,6 +403,9 @@ export class MapRenderer {
    * whichever way a round goes, so a fight nobody is watching cannot pile up.
    */
   private floaters: Floater[] = [];
+  private effects: Effect[] = [];
+  private static readonly EFFECT_CAP = 16;
+  private effectSeed = 0;
   private static readonly FLOATER_MS = 1050;
   private static readonly FLOATER_CAP = 24;
 
@@ -594,6 +627,7 @@ export class MapRenderer {
     this.drawPartyMembers(ctx, camera, party, dt, moveMs);
 
     // Damage and healing, over everything they belong to.
+    this.drawEffects(ctx, camera);
     this.drawFloaters(ctx, camera);
   }
 
@@ -1085,9 +1119,92 @@ export class MapRenderer {
     }
   }
 
+  /**
+   * Burst on a creature. `wx`/`wy` are the top-left of its tile in world
+   * pixels, as with `popNumber`.
+   *
+   * A spell used to be a line in the log and nothing else: the party threw
+   * fire at something and the screen did not change. This is what the fire
+   * looks like.
+   */
+  popEffect(wx: number, wy: number, kind: EffectKind): void {
+    this.effects.push({
+      x: wx + TILE_SIZE / 2,
+      y: wy + TILE_SIZE / 2,
+      kind,
+      born: this.renderTime,
+      seed: this.effectSeed++,
+    });
+    if (this.effects.length > MapRenderer.EFFECT_CAP) {
+      this.effects.splice(0, this.effects.length - MapRenderer.EFFECT_CAP);
+    }
+  }
+
   /** Forget every number in flight — combat over, floor changed, run reloaded. */
   clearNumbers(): void {
     this.floaters.length = 0;
+    this.effects.length = 0;
+  }
+
+  /**
+   * Draw and expire the bursts in flight.
+   *
+   * Each is a ring that opens and fades, a core that flares and dies first,
+   * and a handful of shards thrown outward along fixed bearings. The bearings
+   * come from the effect's own seed rather than a clock, so a burst is the
+   * same shape every frame of its life and only its size and alpha move —
+   * anything else reads as static rather than as a flash.
+   */
+  private drawEffects(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    if (this.effects.length === 0) return;
+    let live = 0;
+    for (const e of this.effects) {
+      const style = EFFECT_STYLE[e.kind];
+      const age = this.renderTime - e.born;
+      if (age >= style.ms) continue;
+      this.effects[live++] = e;
+
+      const t = age / style.ms;
+      const sx = Math.round(e.x - camera.x);
+      const sy = Math.round(e.y - camera.y);
+      if (sx < -60 || sy < -60 || sx > GAME_WIDTH + 60 || sy > GAME_HEIGHT + 60) continue;
+
+      // Out fast then easing, so the flash has a snap to it.
+      const spread = style.reach * (1 - (1 - t) * (1 - t) * (1 - t));
+      const fade = 1 - t;
+
+      // Shards, thrown along bearings fixed by the seed.
+      ctx.fillStyle = withAlpha(style.edge, fade * 0.9);
+      for (let i = 0; i < style.spokes; i++) {
+        const a = ((e.seed * 37 + i * 97) % 360) * (Math.PI / 180);
+        // Healing rises rather than scattering: the same machinery, biased up.
+        const lift = e.kind === 'heal' ? -spread * 1.4 : 0;
+        const px = Math.round(sx + Math.cos(a) * spread);
+        const py = Math.round(sy + Math.sin(a) * spread * (e.kind === 'heal' ? 0.35 : 1) + lift);
+        const size = Math.max(1, Math.round(3 * fade) + 1);
+        ctx.fillRect(px - (size >> 1), py - (size >> 1), size, size);
+      }
+
+      // The ring: opening and thinning.
+      if (t < 0.85 && e.kind !== 'heal') {
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(1, spread), 0, Math.PI * 2);
+        ctx.strokeStyle = withAlpha(style.edge, fade * 0.75);
+        ctx.lineWidth = Math.max(1, Math.round(3 * fade));
+        ctx.stroke();
+      }
+
+      // The core, gone before the rest so the flash has a hot centre.
+      if (t < 0.45) {
+        const heat = 1 - t / 0.45;
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(1, Math.round(7 * heat)), 0, Math.PI * 2);
+        ctx.fillStyle = withAlpha(style.core, heat);
+        ctx.fill();
+      }
+    }
+    this.effects.length = live;
+    ctx.lineWidth = 1;
   }
 
   /**
@@ -1910,6 +2027,7 @@ export class MapRenderer {
     this.drawPartyMembers(ctx, camera, party, dt, moveMs);
 
     // Damage and healing from a roadside ambush, over the creature it hit.
+    this.drawEffects(ctx, camera);
     this.drawFloaters(ctx, camera);
 
     // Off-screen quest indicator: an arrow clamped to the screen edge, always

@@ -36,7 +36,7 @@ import { BulletinTask, bulletinIcon, bulletinProgress, bulletinObjective, bullet
 import { Monster, MonsterTemplate, getMonsterTemplate, getRandomMonster, MONSTER_TEMPLATES, THEME_MONSTERS, isUnseeableMonster } from './entities/Monster';
 import { SpriteRenderer } from './entities/Sprites';
 import { MapRenderer } from './rendering/MapRenderer';
-import type { FloaterKind } from './rendering/MapRenderer';
+import type { FloaterKind, EffectKind } from './rendering/MapRenderer';
 import { CombatEngine } from './combat/CombatEngine';
 import type { PartyCommand } from './combat/CombatEngine';
 import type { MenuConsumable } from './ui/BattleView';
@@ -2033,6 +2033,8 @@ class Game {
     if (messages.length === 0) return;
     const pop = (tile: Vector2, text: string, kind: FloaterKind) =>
       this.mapRenderer.popNumber(tile.x * TILE_SIZE, tile.y * TILE_SIZE, text, kind);
+    const burst = (tile: Vector2, line: string, healing = false) =>
+      this.mapRenderer.popEffect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, healing ? 'heal' : effectFor(line));
 
     for (const line of messages) {
       const crit = line.includes('CRITICAL');
@@ -2042,16 +2044,16 @@ class Game {
         const name = m.template.name;
         if (line.includes(name + ' is slain')) { pop(m.tile, 'slain', 'slain'); placed = true; break; }
         const dealt = m.isAlive ? amountAfter(line, name + ' takes ') : null;
-        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); placed = true; break; }
+        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); burst(m.tile, line); placed = true; break; }
       }
       if (placed) continue;
 
       for (const c of this.party.members) {
         if (line.includes(c.name + ' is down')) { pop(c.tile, 'down', 'down'); break; }
         const taken = amountAfter(line, c.name + ' takes ');
-        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : 'hurt'); break; }
+        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : 'hurt'); burst(c.tile, line); break; }
         const healed = amountAfter(line, c.name + ' heals ');
-        if (healed !== null) { pop(c.tile, '+' + healed, 'heal'); break; }
+        if (healed !== null) { pop(c.tile, '+' + healed, 'heal'); burst(c.tile, line, true); break; }
       }
     }
   }
@@ -5382,6 +5384,21 @@ function pickBackend(): RenderBackendId {
     /* private mode: fall through to the default */
   }
   return 'pixi';
+}
+
+/**
+ * What a blow looked like, from how the log describes it.
+ *
+ * The party's spells reach the screen the same way their damage does — through
+ * the text — so the flash is chosen from the words the narration already uses.
+ * Anything unrecognised is a weapon, which is the common case and the right
+ * default: a sword hit gets a spark rather than nothing.
+ */
+function effectFor(line: string): EffectKind {
+  if (/fire|flame|burn|scorch|ember|searing|inferno/i.test(line)) return 'fire';
+  if (/lightning|shock|thunder|electric|storm|arc/i.test(line)) return 'shock';
+  if (/magic missile|arcane|eldritch|force|psychic|necrotic|radiant|witch bolt/i.test(line)) return 'arcane';
+  return 'strike';
 }
 
 /**

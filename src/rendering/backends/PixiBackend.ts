@@ -1,18 +1,19 @@
 /**
  * The PixiJS backend: the recorded frame replayed through a WebGL scene graph.
  *
- * The shape of a frame drives every decision here. Eleven thousand commands
- * arrive per frame and over ninety-five percent of them are `rect`, so the one
- * thing that must not happen is a display object per command: eleven thousand
- * Sprites would spend the whole frame budget in transform and bounds updates
- * before a single triangle reached the GPU.
+ * The shape of a frame drives every decision here. A few thousand commands
+ * arrive per frame — 2,254 measured in a dungeon, 3,829 on the overworld —
+ * and over ninety-five percent of them are `rect`, so the one thing that must
+ * not happen is a display object per command: thousands of Sprites would spend
+ * the frame budget in transform and bounds updates before a single triangle
+ * reached the GPU.
  *
  * The strategy is therefore a small, stable display list of pooled objects that
  * is rebuilt each frame from the command stream:
  *
  *  - Rectangles, strokes, paths, circles and images all go into one `Graphics`.
  *    Pixi's `GraphicsContext` is a retained command buffer of its own, so this
- *    turns eleven thousand game commands into one display object whose geometry
+ *    turns thousands of game commands into one display object whose geometry
  *    Pixi batches into a handful of draw calls.
  *  - Consecutive rectangles sharing a colour and an alpha are accumulated into a
  *    single path and closed with one `fill()`. Each `fill()` clones the active
