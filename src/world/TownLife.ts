@@ -693,6 +693,12 @@ export function townPriceModifier(
   if (entry.festival && now <= entry.festival.until) mod *= 0.9;
   // Caravan discount: 5% off when a caravan is in town.
   if (tl.caravans.some(c => c.toTownId === townId && c.state === 'resting' && now <= c.restUntil)) mod *= 0.95;
+  // A town event that promises a discount has to give one. The panel prints
+  // the event's own description to the player — "all prices 30% off while the
+  // caravan is in town" — and nothing here was reading it, so the shop quietly
+  // charged full price and the notice was a lie.
+  const event = eventFor(tl, townId, now);
+  if (event && event.effect.type === 'price_change') mod *= event.effect.value;
   return Math.round(mod * 100) / 100;
 }
 

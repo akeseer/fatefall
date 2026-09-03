@@ -4331,8 +4331,15 @@ class Game {
             this.hud.addCombatMessage(`💰 +${evt.effect.value} gp from the event!`, '#ffd700');
             break;
           case 'xp_bonus':
-            for (const m of this.party.members) m.xp += evt.effect.value;
+            // addXp, not a raw bump: a level earned at a town festival should
+            // fire like any other, and a raw `xp +=` skips the level-up
+            // entirely — the same bug the bulletin board's rewards once had.
             this.hud.addCombatMessage(`⬆️ +${evt.effect.value} XP per member from the event!`, '#8cf');
+            for (const m of this.party.members) {
+              if (m.addXp(evt.effect.value)) {
+                this.hud.addCombatMessage(`⬆ ${m.name} reaches level ${m.level}!`, '#7c7');
+              }
+            }
             break;
           case 'free_rest':
             for (const msg of this.party.longRest()) this.hud.addCombatMessage(msg, '#7c7');
