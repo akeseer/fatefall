@@ -183,6 +183,13 @@ export class CanvasBackend implements RenderBackend {
    * backend the player is on.
    */
   private applyTransition(ctx: CanvasRenderingContext2D, mood: SceneMood): void {
+    const flash = mood.flash ?? 0;
+    if (flash > 0.005) {
+      ctx.globalAlpha = flash;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.globalAlpha = 1;
+    }
     const t = mood.transition;
     if (!t) return;
     const { closed, black } = transitionShape(t.kind, t.progress);

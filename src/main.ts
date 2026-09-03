@@ -2087,7 +2087,7 @@ class Game {
   private kickCameraFor(messages: string[]): void {
     let amplitude = 0;
     for (const m of messages) {
-      if (m.includes('CRIT')) amplitude = Math.max(amplitude, 7);
+      if (m.includes('CRIT')) { amplitude = Math.max(amplitude, 7); this.flash = Math.max(this.flash, 0.55); }
       else if (m.includes('goes down') || m.includes('falls')) amplitude = Math.max(amplitude, 5);
     }
     if (amplitude > 0) this.camera.shake(amplitude, 260);
@@ -2098,6 +2098,9 @@ class Game {
   private static readonly BLINDS_MS = 700;
   /** How long the blinds have the map before the battle window covers it. */
   private static readonly BATTLE_WINDOW_DELAY_MS = 380;
+
+  /** The white hit of a critical, 0..1, gone in about a seventh of a second. */
+  private flash = 0;
 
   /** The transition in flight. Advanced in render(), since it is a property of the picture. */
   private transition: { kind: 'fade' | 'blinds'; ms: number; total: number } | null = null;
@@ -2126,6 +2129,7 @@ class Game {
       daylight: this.clock.light,
       underground: this.mode === GameMode.Dungeon,
       themeId: this.mode === GameMode.Dungeon ? (this.dungeonTheme?.id ?? null) : null,
+      flash: this.flash,
       weather: this.weather?.type ?? null,
       focus,
       inCombat: this.phase === GamePhase.Combat,
@@ -2141,6 +2145,9 @@ class Game {
     // moved at 30 Hz while the sprites it was following interpolated at full
     // frame rate, and the party visibly slid against the ground.
     this.camera.update(this.lastDt);
+    // The flash is a hit, not a fade: it lands at full and is gone almost at
+    // once, which is what makes it read as impact rather than as a light.
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - this.lastDt / 140);
     if (this.transition) {
       this.transition.ms += this.lastDt;
       if (this.transition.ms >= this.transition.total) this.transition = null;

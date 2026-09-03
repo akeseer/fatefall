@@ -37,6 +37,8 @@ export class Transition {
   readonly layer: Container;
   private readonly blinds: Sprite[] = [];
   private readonly black: Sprite;
+  /** The white hit of a critical, over everything including a transition. */
+  private readonly white: Sprite;
   private readonly width: number;
   private readonly height: number;
 
@@ -64,12 +66,23 @@ export class Transition {
     this.black.height = height;
     this.black.visible = false;
     this.layer.addChild(this.black);
+
+    this.white = new Sprite(Texture.WHITE);
+    this.white.width = width;
+    this.white.height = height;
+    this.white.visible = false;
+    this.layer.addChild(this.white);
   }
 
   update(mood: SceneMood): void {
     const t = mood.transition;
+    const flash = mood.flash ?? 0;
+    this.white.visible = flash > 0.005;
+    this.white.alpha = flash;
     if (!t) {
-      this.layer.visible = false;
+      for (const b of this.blinds) b.visible = false;
+      this.black.visible = false;
+      this.layer.visible = this.white.visible;
       return;
     }
     this.layer.visible = true;
