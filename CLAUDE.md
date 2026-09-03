@@ -26,8 +26,9 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   timer. `update(dt)` branches on `GameMode` (Overworld / Town / Dungeon) and
   `GamePhase` (Exploration / Combat). Three consecutive thrown errors halt the sim
   and show a HUD banner (`handleStepError`); UI callbacks are wrapped with `guard()`.
-- **DM orders**: `handleDMCommand` → `understand()` → `dispatchDMCommand`. Intent
-  types live in `src/ai/DMCommand.ts`, the pure regex parser in
+- **DM orders**: `handleDMCommand` → `understand()` → `DMCommandDispatcher`
+  (`src/game/DMCommandDispatcher.ts`, one arm per intent behind `DMCommandHost`).
+  Intent types live in `src/ai/DMCommand.ts`, the pure regex parser in
   `src/ai/DMCommandParser.ts`, and the trained classifier in `src/ai/IntentModel.ts`
   (weights in `public/models/`, pipeline in `tools/train/` — read its README before
   touching either). `understand()` prefers the regex for orders whose arguments are
@@ -64,7 +65,8 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   `RoomFeatures.ts`, and `RoomFeatureController.HINT`. `drawFeature` in `MapRenderer.ts` has a
   default arm, so a new kind renders as a generic marker until you give it a case.
   A feature that the DM can act on also needs an intent in `DMCommand.ts`, a branch in
-  `parseFeatureIntent`, a case in `Game.performFeatureIntent`, and a retrain.
+  `parseFeatureIntent`, a case in `RoomFeatureController.perform`, a case label on the
+  feature arm of `DMCommandDispatcher`, and a retrain.
 - **Bulletin tasks** only make progress once accepted. Slay progress is read from the
   kill ledger against a baseline taken on accept, so targets must be real template ids.
   `refreshBulletinBoard` keeps accepted and finished work and replaces only the rest.

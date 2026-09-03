@@ -11,13 +11,14 @@ import type { RenderBackend, SceneMood } from './rendering/DrawCommand';
 import { BulletinBoardController } from './game/BulletinBoardController';
 import { MarketController } from './game/MarketController';
 import { SaveSerializer } from './game/SaveSerializer';
+import { DMCommandDispatcher, DM_DIR_NAMES } from './game/DMCommandDispatcher';
 import { DMCommand, DMContext, DMIntent, FEATURE_INTENT_KIND } from './ai/DMCommand';
 import { understand, IntentPredictor } from './ai/DMCommandParser';
 import { IntentModel, loadIntentModel, intentModelEnabled, setIntentModelEnabled } from './ai/IntentModel';
 import { Overworld, OverworldEntrance, OverworldTown, entranceAt, generateOverworld, getEntranceById, getTownById, townAt } from './world/Overworld';
 import { OverworldPOI, createMoonForgePOI, discoverNearbyPOIs, poiIcon } from './world/OverworldPOI';
 import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
-import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, createClock, dayChangeNarration, tickClock, timeOfDayFromPhase } from './world/DayNightSystem';
+import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, createClock, dayChangeNarration, tickClock } from './world/DayNightSystem';
 import { CalendarDay, calendarFromElapsed } from './world/CalendarSystem';
 import { BIOME_EVENTS, Wanderer, isWildlife, randomTravelEvent, scatterWildlife, spawnOverworldLife, stepWanderers } from './world/OverworldLife';
 import { astarPath } from './world/Pathfinding';
@@ -30,7 +31,7 @@ import { QuestGiver, getReputationTier, getDialogue, getQuestDialogue, awardRepu
 import { BanditCampState, BanditClue, rollBanditClue, raidCamp, reportCamp } from './quests/BanditCamps';
 import { MARKET_POTIONS, MARKET_SCROLLS } from './loot/LootTables';
 import { Party } from './entities/Party';
-import { GameCharacter, InventoryItem, EquipSlot, slotForItem, magicBonusOf, isCursed, curseTelltale } from './entities/Character';
+import { GameCharacter, InventoryItem, EquipSlot, slotForItem, magicBonusOf, isCursed } from './entities/Character';
 import { BulletinTask, bulletinIcon, bulletinProgress, bulletinObjective, bulletinObjectiveMet } from './quests/BulletinBoard';
 import { Monster, MonsterTemplate, getMonsterTemplate, getRandomMonster, MONSTER_TEMPLATES, THEME_MONSTERS, isUnseeableMonster } from './entities/Monster';
 import { SpriteRenderer } from './entities/Sprites';
@@ -45,17 +46,15 @@ import { Direction, GAME_HEIGHT, GAME_WIDTH, TILE_SIZE, Vector2, manhattan, vec2
 import { TileType } from './world/TileMap';
 import { rollDice, abilityModifier, getSpellById, isCaster, ordinal, CLASSES, RACES, SPELLS } from './data/gameData';
 import { CompendiumEntry } from './ui/DnDCompendium';
-import { CONDITION_META, rollD20, savingThrow } from './rules/Rules';
+import { rollD20, savingThrow } from './rules/Rules';
 import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules/DiceEvents';
-import { grantLuckDie, getLuckDie, onLuckDieSpent } from './rules/LuckDie';
+import { grantLuckDie, onLuckDieSpent } from './rules/LuckDie';
 import { SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
 import { rollCombatLoot, LootSource, LootResult, EMPTY_PURSE } from './loot/LootTables';
 import { rollTieredGear } from './loot/TieredGear';
 import {
-  PlacedTrap, getTrapKind, placeTraps, rollDisarm, rollPerception, sweepDetection, triggerTrap,
+  PlacedTrap, getTrapKind, placeTraps, rollDisarm, sweepDetection, triggerTrap,
 } from './traps/Traps';
-
-const DM_DIR_NAMES: Record<Direction, string> = { up: 'north', down: 'south', left: 'west', right: 'east' };
 
 import {
   generateRoomDescription,
@@ -71,7 +70,6 @@ import {
   knownFoeBonusForKills,
   generateLocationDescription,
   generateAtmosphericRoomDescription,
-  getMonsterBestiaryEntry,
   PartyHistory,
 } from './ai/LoreGenerator';
 import { LOCATIONS, getRandomElement, LocationTemplate, getLocation, MAGIC_ITEMS } from './ai/DnDKnowledge';
@@ -2180,7 +2178,10 @@ class Game {
     return this.combatEngine.decisionActor != null;
   }
 
-  private togglePause() {
+  /** True while the world is held still, by the player or by an error halt. */
+  get isPaused(): boolean { return this.paused; }
+
+  togglePause() {
     this.paused = !this.paused;
     this.hud.setPausedIndicator(this.paused);
     if (!this.paused) this.clearErrorHalt();
@@ -2196,7 +2197,7 @@ class Game {
   }
 
   /** Narrate the surface around the leader (towns, entrances, biomes). */
-  private describeOverworldHere(): string {
+  describeOverworldHere(): string {
     if (!this.overworld) return 'The open road stretches in every direction.';
     const t = this.map.getTile(this.party.leader.tile.x, this.party.leader.tile.y);
     const town = townAt(this.overworld, this.party.leader.tile.x, this.party.leader.tile.y);
@@ -2262,7 +2263,7 @@ class Game {
    * A paragraph describing the room the party stands in, woven from the
    * dungeon's theme, the monsters present, and the party's history.
    */
-  private describeCurrentRoom(): string {
+  describeCurrentRoom(): string {
     if (!this.dungeonTheme) return generateRoomDescription(this.dungeonLevel);
 
     const monsters = this.monstersInCurrentRoom().map(m => ({
@@ -2318,7 +2319,7 @@ class Game {
   /** Everything that happens when the party uses a room's feature. */
   private readonly roomFeatures = new RoomFeatureController(this);
 
-  private performFeatureIntent(intent: DMIntent): boolean {
+  performFeatureIntent(intent: DMIntent): boolean {
     return this.roomFeatures.perform(intent);
   }
 
@@ -2352,7 +2353,7 @@ class Game {
    * A detected trap within reach is disarmed by the best-suited hand.
    * Returns true if a disarm (or fumble) actually happened.
    */
-  private checkTrapDisarm(maxDist: number = 1): boolean {
+  checkTrapDisarm(maxDist: number = 1): boolean {
     if (this.phase !== GamePhase.Exploration) return false;
     const leader = this.party.leader;
     const target = this.traps
@@ -2439,6 +2440,13 @@ class Game {
   /** True while a battle is being fought out turn by turn. */
   get inCombat(): boolean { return this.phase === GamePhase.Combat; }
 
+  /**
+   * True from the moment initiative is rolled until the last blow has finished
+   * landing — `inCombat` plus its animating tail. This, not `inCombat`, is what
+   * a DM order asks before refusing to march, rest or descend.
+   */
+  get inBattle(): boolean { return this.phase !== GamePhase.Exploration; }
+
   /** Lift the pause and any error halt the run was carrying when it stopped. */
   resumeRun(): void {
     this.paused = false;
@@ -2512,6 +2520,28 @@ class Game {
     this.overworldDestination = null;
     this.overworldPath = [];
   }
+
+  /**
+   * Point the surface march at a town or a dungeon mouth. Any route already
+   * plotted is dropped, so the next tick paths afresh to the new goal.
+   */
+  travelTo(kind: 'town' | 'entrance', id: string): void {
+    this.overworldDestination = { kind, id };
+    this.overworldPath = [];
+  }
+
+  /** True while a descent is already queued, so a second order is a no-op. */
+  get isDescending(): boolean { return this.descending; }
+
+  /**
+   * Send the party looking for the stairwell down. The floor is not built
+   * until the search has had a moment to look like a search.
+   */
+  beginDescent(): void {
+    this.descending = true;
+    setTimeout(() => this.generateNewDungeon(), 400);
+  }
+
   /**
    * Save the run, close every panel, stop the loop, and show the start
    * screen again — the world freezes behind the menu until a slot is chosen.
@@ -2592,7 +2622,7 @@ class Game {
   }
 
   /** DM "roll <expr>" — parse and roll dice for the party, feeding the dice tray. */
-  private rollDiceForParty(expr: string): void {
+  rollDiceForParty(expr: string): void {
     const m = expr.match(/^(\d*)d(\d+)([+-]\d+)?(?:\s+(adv|advantage|dis|disadvantage))?$/i);
     if (!m) {
       this.hud.addCombatMessage('Try "roll d20", "roll 2d6+3", or "roll d20 advantage".', '#888');
@@ -2827,7 +2857,7 @@ class Game {
    * DM order: drink a looted potion or read a looted scroll. Works mid-combat
    * — the acting member spends their next turn on it.
    */
-  private handleLootedItemUse(raw: string): void {
+  handleLootedItemUse(raw: string): void {
     let query = raw.trim();
     let targetName: string | null = null;
     const onMatch = query.match(/\s+on\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)$/);
@@ -2981,7 +3011,7 @@ class Game {
 
   /** The conscious member with the lowest HP ratio (most in need of a potion). */
   /** Find which party member carries an item by (fuzzy) name. */
-  private findItemOwner(nameQuery: string): GameCharacter | null {
+  findItemOwner(nameQuery: string): GameCharacter | null {
     const q = nameQuery.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     if (!q) return null;
     for (const m of this.party.members) {
@@ -2997,7 +3027,7 @@ class Game {
   }
 
   /** Wipe the active slot and start over: fresh party, fresh floor 1. */
-  private startFreshRun(): void {
+  startFreshRun(): void {
     clearSlot(this.activeSlot);
     this.dungeonLevel = 0;
     this.history = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
@@ -3031,7 +3061,7 @@ class Game {
 
   // ── Overworld, towns, quests & commerce ─────────
 
-  private activeQuest(): Quest | undefined {
+  activeQuest(): Quest | undefined {
     return this.activeQuestId ? this.quests.find(q => q.id === this.activeQuestId) : undefined;
   }
 
@@ -3635,7 +3665,7 @@ class Game {
   }
 
   /** A short human line describing today's calendar significance. */
-  private calendarDesc(): string {
+  calendarDesc(): string {
     const c = this.calendar;
     const moonLabel = c.moonPhase.replace(/_/g, ' ');
     const tags: string[] = [];
@@ -4643,7 +4673,7 @@ class Game {
     }
   }
 
-  private departTown(): void {
+  departTown(): void {
     if (this.mode !== GameMode.Town) {
       this.hud.addCombatMessage('The party is not in town right now.', '#886');
       return;
@@ -4668,7 +4698,7 @@ class Game {
     this.townWaitTimer = 0;
   }
 
-  private acceptQuest(q: Quest): void {
+  acceptQuest(q: Quest): void {
     if (q.accepted) return;
     q.accepted = true;
     if (q.kind === 'collect_item') q.baselineTreasures = this.treasuresFound;
@@ -4679,7 +4709,7 @@ class Game {
     this.departTown();
   }
 
-  private reportQuest(q: Quest): void {
+  reportQuest(q: Quest): void {
     if (q.turnedIn) return;
     q.turnedIn = true;
     if (this.activeQuestId === q.id) this.activeQuestId = null;
@@ -4713,7 +4743,7 @@ class Game {
     this.hud.townPanel.refresh();
   }
 
-  private listQuests(): void {
+  listQuests(): void {
     if (this.quests.length === 0) {
       this.hud.addCombatMessage('No quests are posted — reach a town to find work.', '#888');
       return;
@@ -4738,7 +4768,7 @@ class Game {
     }
   }
 
-  private enterDungeonFromEntrance(e: OverworldEntrance): void {
+  enterDungeonFromEntrance(e: OverworldEntrance): void {
     this.dungeonEntranceId = e.id;
     this.mode = GameMode.Dungeon;
     this.dungeonLevel = 1;
@@ -4769,7 +4799,7 @@ class Game {
   }
 
   /** Leave the dungeon for the surface — quest complete or by order. */
-  private exitDungeonToOverworld(): void {
+  exitDungeonToOverworld(): void {
     this.descending = true;
     const entranceId = this.dungeonEntranceId;
     // Old saves may not have an overworld yet — build one on first exit.
@@ -4880,11 +4910,11 @@ class Game {
   /** The shop: stock, prices, and goods changing hands. */
   private readonly market = new MarketController(this);
 
-  private partyInventory(): InventoryItem[] { return this.market.partyInventory(); }
+  partyInventory(): InventoryItem[] { return this.market.partyInventory(); }
   private addItemToParty(item: InventoryItem): void { this.market.addItemToParty(item); }
-  private marketStock(): InventoryItem[] { return this.market.marketStock(); }
-  private buyItem(item: InventoryItem): void { this.market.buyItem(item); }
-  private sellItem(item: InventoryItem): void { this.market.sellItem(item); }
+  marketStock(): InventoryItem[] { return this.market.marketStock(); }
+  buyItem(item: InventoryItem): void { this.market.buyItem(item); }
+  sellItem(item: InventoryItem): void { this.market.sellItem(item); }
   private buyRepItem(repItem: ReputationShopItem): void { this.market.buyRepItem(repItem); }
 
   // ── Bulletin board tasks ──────────────────────────────────
@@ -4892,9 +4922,10 @@ class Game {
   /** The town's small jobs: taking them on, tracking them, paying them out. */
   private readonly bulletin = new BulletinBoardController(this);
 
-  private acceptBulletinTask(task: BulletinTask): void { this.bulletin.acceptBulletinTask(task); }
+  acceptBulletinTask(task: BulletinTask): void { this.bulletin.acceptBulletinTask(task); }
+  boardForTown(townId: string): BulletinTask[] { return this.bulletin.boardForTown(townId); }
   private completeBulletinTask(task: BulletinTask): void { this.bulletin.completeBulletinTask(task); }
-  private listBulletinTasks(): void { this.bulletin.listBulletinTasks(); }
+  listBulletinTasks(): void { this.bulletin.listBulletinTasks(); }
   private bulletinSlayProgress(): void { this.bulletin.bulletinSlayProgress(); }
   private bulletinCollectProgress(found: number): void { this.bulletin.bulletinCollectProgress(found); }
   private bulletinScoutProgress(rooms: number): void { this.bulletin.bulletinScoutProgress(rooms); }
@@ -5023,7 +5054,7 @@ class Game {
     }
   }
 
-  private proclaim(message: string): void {
+  proclaim(message: string): void {
     this.hud.addCombatMessage(`\ud83d\udcd6 ${message}`, '#c9b8ff');
   }
 
@@ -5065,7 +5096,7 @@ class Game {
   // ── DM command panel ────────────────────────────
 
   /** Browsable expedition codex — 'journal', 'journal moon', 'journal 2', etc. */
-  private journalCodex(raw: string): void {
+  journalCodex(raw: string): void {
     const text = raw.toLowerCase();
     // Optional page: a trailing number or the word "page N".
     let page = 1;
@@ -5129,696 +5160,11 @@ class Game {
     this.dispatchDMCommand(result.cmd, text);
   }
 
-  private confusedGlances(): void {
-    this.hud.addCombatMessage('The party exchanges confused glances. Type "help" for orders they understand.', '#888');
-  }
+  /** Every typed order, once understood, is acted on here. */
+  private readonly dmCommands = new DMCommandDispatcher(this);
 
-  /** Act on one understood order. Bodies are the original command handlers, keyed by intent. */
   private dispatchDMCommand(cmd: DMCommand, text: string): void {
-    const leader = this.party.leader;
-    const inCombat = this.phase !== GamePhase.Exploration;
-
-    switch (cmd.intent) {
-      case 'help': {
-        for (const line of [
-          '\u2022 go / head + north, south, east, west \u2014 march that way',
-          '\u2022 attack / charge \u2014 hunt nearby foes   |   flee / cautious \u2014 avoid fights',
-          '\u2022 "as you were" \u2014 resume normal exploring',
-          '\u2022 rest (short) or camp / long rest   |   descend / deeper \u2014 next floor',
-          '\u2022 wait until dawn / night \u2014 bide your time and let the sky turn',
-          '\u2022 calendar / what day is it \u2014 the weekday, moon, and today\u2019s festivals',
-          '\u2022 journal / chronicle \u2014 read the party\u2019s deeds back',
-          '\u2022 summon <monster> e.g. "summon owlbear"   |   report \u2014 party status',
-          '\u2022 roll d20 / 2d6+3 / "roll d20 adv" \u2014 roll the dice (d20 banks a fated Luck die)',
-          '\u2022 look / examine / describe \u2014 narrate the room around you',
-          '\u2022 talk to <npc> / list npcs \u2014 visit townsfolk for quests and gossip',
-          '\u2022 raid camp / report camp / list clues \u2014 deal with bandit hideouts',
-          '\u2022 pray at the altar / search the vault / free prisoners / barricade \u2014 use the room\u2019s feature',
-          '\u2022 search for traps / disarm trap \u2014 find and defuse dungeon hazards',
-          '\u2022 loot / inventory / pack \u2014 show what the party is carrying',
-          '\u2022 equip <item> / unequip <item> / gear \u2014 manage weapons and armor',
-          '\u2022 upcast always / never / auto \u2014 how aggressively casters spend higher slots',
-          '\u2022 save \u2014 persist to the active slot | "save to slot 1/2/3" \u2014 pick a slot | "new game" \u2014 wipe it',
-          '\u2022 rename party <name> \u2014 give your party a custom name',
-          '\u2022 rename <character> to <new name> \u2014 rename a party member',
-          '\u2022 model on / off / status \u2014 the DM intent model that reads free-form orders',
-          '\u2022 pause / resume',
-        ]) this.hud.addCombatMessage(line, '#8a8');
-        return;
-      }
-
-      case 'model_toggle': {
-        this.handleModelToggle(cmd.state);
-        return;
-      }
-
-      case 'pause': {
-        if (!this.paused) this.togglePause();
-        this.hud.addCombatMessage('Time holds its breath.', '#8cf');
-        return;
-      }
-      case 'resume': {
-        this.dmStance = 'auto';
-        this.dmDirection = undefined;
-        if (this.paused) this.togglePause();
-        this.hud.addCombatMessage('The party resumes exploring at its own judgment.', '#8cf');
-        return;
-      }
-
-      case 'save': {
-        if (cmd.slot) {
-          this.activeSlot = cmd.slot - 1;
-          this.hud.addCombatMessage(`The party inks the ledger \u2014 future saves go to slot ${this.activeSlot + 1}.`, '#8cf');
-        }
-        this.saveGame(false);
-        return;
-      }
-      case 'new_game': {
-        this.startFreshRun();
-        return;
-      }
-
-      case 'rename_party': {
-        const placeName = this.mode === GameMode.Dungeon
-          ? this.dungeonName
-          : (this.currentTown?.name ?? 'The Wilderlands');
-        if (cmd.name) {
-          const chosen = this.party.setName(cmd.name);
-          this.hud.addCombatMessage(`\u2726 The party is now known as \u201c${chosen}\u201d.`, '#ffd700');
-          this.hud.setDungeonTitle(`${chosen} \u2014 ${placeName}`);
-        } else {
-          this.party.generateDefaultName();
-          this.hud.addCombatMessage(`\u2726 The party is now known as \u201c${this.party.partyName}\u201d.`, '#ffd700');
-          this.hud.setDungeonTitle(`${this.party.partyName} \u2014 ${placeName}`);
-        }
-        this.hud.setParty(this.party);
-        return;
-      }
-
-      case 'rename_member': {
-        if (cmd.oldName) {
-          const member = this.party.members.find(m => m.name.toLowerCase() === cmd.oldName.toLowerCase());
-          if (member) {
-            const cleaned = cmd.newName.replace(/[^a-zA-Z0-9\s'\-]/g, '').trim().slice(0, 30);
-            if (cleaned.length > 0) {
-              const old = member.name;
-              member.name = cleaned;
-              this.hud.addCombatMessage(`\u2726 ${old} is now known as \u201c${cleaned}\u201d.`, '#ffd700');
-            } else {
-              this.hud.addCombatMessage(`\u26a0 The name \u201c${cmd.newName}\u201d is not valid.`, '#c88');
-            }
-          } else {
-            this.hud.addCombatMessage(`\u26a0 No party member named \u201c${cmd.oldName}\u201d found.`, '#c88');
-          }
-        } else {
-          this.hud.addCombatMessage(`\u26a0 Usage: rename <character> to <new name>  (e.g. \u201crename Grom to Gandalf\u201d)`, '#c88');
-        }
-        this.hud.setParty(this.party);
-        return;
-      }
-
-      case 'look': {
-        this.hud.addCombatMessage(this.mode === GameMode.Dungeon ? this.describeCurrentRoom() : this.describeOverworldHere(), '#8aa');
-        return;
-      }
-
-      case 'feature_altar': case 'feature_vault': case 'feature_prison': case 'feature_chokepoint':
-      case 'feature_forge': case 'feature_library': case 'feature_fountain': case 'feature_sarcophagus':
-      case 'feature_throne': case 'feature_trapped_search': case 'feature_trapped_disarm':
-      case 'feature_treasure': case 'feature_merchant_talk': case 'feature_merchant_rob':
-      case 'feature_puzzle': case 'feature_ritual': case 'feature_war_room': case 'feature_chest':
-      case 'feature_inspect': case 'search_room': {
-        if (!inCombat && this.performFeatureIntent(cmd.intent)) {
-          this.hud.setParty(this.party);
-        } else {
-          this.confusedGlances();
-        }
-        return;
-      }
-
-      case 'roll': {
-        this.rollDiceForParty(cmd.expr);
-        return;
-      }
-
-      case 'upcast': {
-        this.party.upcastPolicy = cmd.policy;
-        const doctrine = this.party.upcastPolicy === 'always'
-          ? 'Casters spend the highest slot they can \u2014 maximum upcast!'
-          : this.party.upcastPolicy === 'never'
-            ? 'Casters always use the lowest usable slot \u2014 no upcasting.'
-            : 'Casters upcast when the fight calls for it \u2014 otherwise lowest slot.';
-        this.hud.addCombatMessage(`\u2726 Casting doctrine set: ${doctrine}`, '#8cf');
-        return;
-      }
-
-      case 'move': {
-        if (inCombat) { this.hud.addCombatMessage('They cannot reposition mid-melee!', '#c66'); return; }
-        this.dmDirection = cmd.direction;
-        this.dmStance = 'auto';
-        this.hud.addCombatMessage(`${leader.name} nods \u2014 the party sets off ${DM_DIR_NAMES[cmd.direction]}.`, '#6a8');
-        return;
-      }
-
-      case 'descend': {
-        if (this.mode !== GameMode.Dungeon) {
-          this.hud.addCombatMessage('There are no stairs here — the dungeon is underground.', '#886');
-          return;
-        }
-        if (inCombat) { this.hud.addCombatMessage('Not with swords still drawn!', '#c66'); return; }
-        if (this.descending) { this.hud.addCombatMessage('The party is already on its way down...', '#cc8'); return; }
-        this.hud.addCombatMessage('\u2b07 The party seeks the stairwell downward...', '#cc8');
-        this.descending = true;
-        setTimeout(() => this.generateNewDungeon(), 400);
-        return;
-      }
-
-      case 'wait_until': {
-        if (inCombat) { this.hud.addCombatMessage('Not while blades are drawn!', '#c66'); return; }
-        // Fast-forward the clock to the next desired stage of the day.
-        const want = cmd.time === 'dusk' ? 0.5 : cmd.time === 'night' ? 0.75 : 0.08; // dawn / morning / day / default
-        const STAMP = 180_000;
-        const cur = this.clock.phase;
-        let delta = want - cur;
-        if (delta < 0) delta += 1;
-        if (delta < 0.02) delta = 1; // already there — a full day passes
-        const newPhase = ((cur + delta) % 1 + 1) % 1;
-        const fromStage = this.clock.timeOfDay;
-        this.clock = {
-          phase: newPhase,
-          elapsed: this.clock.elapsed + delta * STAMP,
-          timeOfDay: timeOfDayFromPhase(newPhase),
-          light: 0.5 - 0.55 * Math.cos(newPhase * Math.PI * 2),
-        };
-        this.lastClockStage = this.clock.timeOfDay;
-        const line = dayChangeNarration(fromStage, this.clock.timeOfDay) ?? 'The campfire crackles and the hours turn. When the party opens their eyes, the world has moved on.';
-        this.hud.addCombatMessage(`🏕 The party settles in to wait out the hours.`, '#8cf');
-        this.hud.addCombatMessage(`${this.clock.light < NIGHT_VISIBILITY_LIGHT ? '🌙' : '🌤'} ${this.clock.timeOfDay.toUpperCase()} — ${line}`, '#7ca');
-        return;
-      }
-      case 'long_rest': {
-        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-        this.hud.addCombatMessage('\ud83d\udee1 The party makes camp right here \u2014 long rest.', '#8cf');
-        for (const msg of this.party.longRest()) this.hud.addCombatMessage(msg, '#7c7');
-        this.hud.setParty(this.party);
-        return;
-      }
-      case 'short_rest': {
-        if (inCombat) { this.hud.addCombatMessage('No rest mid-fight \u2014 win first!', '#c66'); return; }
-        this.hud.addCombatMessage('The party pauses for a short rest.', '#8cf');
-        for (const msg of this.party.shortRest()) this.hud.addCombatMessage(msg, '#8cf');
-        this.hud.setParty(this.party);
-        return;
-      }
-
-      case 'stance': {
-        this.dmDirection = undefined;
-        if (cmd.stance === 'aggressive') {
-          this.dmStance = 'aggressive';
-          this.hud.addCombatMessage('\u2694 Weapons up \u2014 the party will hunt anything that moves.', '#c84');
-        } else {
-          this.dmStance = 'cautious';
-          this.hud.addCombatMessage('The party tightens formation \u2014 discretion over valor.', '#886');
-        }
-        return;
-      }
-
-      case 'formation_help': {
-        this.hud.addCombatMessage(
-          `Formations: \u201cformation 2x2\u201d (block), \u201cformation 1x4\u201d (single file), \u201cformation 2x3\u201d (loose), \u201cformation line\u201d.`,
-          '#8cf'
-        );
-        return;
-      }
-      case 'formation': {
-        const { rows, cols } = cmd;
-        this.party.setFormation(rows, cols);
-        const shape =
-          rows === 1 && cols === 4 ? 'a single-file line, four deep'
-          : rows === 4 && cols === 1 ? 'a single-file line, four deep'
-          : `${cols}\u00d7${rows}`;
-        this.hud.addCombatMessage(`The party reforms into ${shape}${rows > 1 && cols > 1 ? ' block' : ''} \u2014 they\u2019ll spread out where space allows and squeeze single-file through tight spots.`, '#8cf');
-        return;
-      }
-
-      case 'search_traps': {
-        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-        const searcher = this.bestScout();
-        const { total } = rollPerception(searcher);
-        const radius = 3;
-        let found = 0;
-        for (const t of this.traps) {
-          if (t.detected || t.disarmed) continue;
-          const d = Math.max(Math.abs(t.tile.x - leader.tile.x), Math.abs(t.tile.y - leader.tile.y));
-          if (d <= radius) {
-            t.detected = true;
-            found++;
-            this.hud.addCombatMessage(`${searcher.name} spots a ${getTrapKind(t.kindId)!.name} at (${t.tile.x}, ${t.tile.y}).`, '#a86');
-          }
-        }
-        // A wired chest is a hazard in this room too, and the chest handler has
-        // always promised it could be spotted "with search for traps" — but
-        // nothing cleared the flag, so the needle was unavoidable and searching
-        // bought nothing. The same look that finds floor traps finds this.
-        const chest = this.currentRoom()?.feature;
-        if (chest?.kind === 'chest' && chest.trapped && !chest.used) {
-          if (total >= 12 + Math.floor(this.dungeonLevel / 2)) {
-            chest.trapped = false;
-            found++;
-            this.hud.addCombatMessage(`${searcher.name} traces a hair-fine wire under the lid of ${chest.name} and stills it.`, '#a86');
-          } else {
-            this.hud.addCombatMessage(`${searcher.name} eyes ${chest.name} and cannot say either way.`, '#888');
-          }
-        }
-        if (found === 0) {
-          this.hud.addCombatMessage(`${searcher.name} scans the stone (Perception ${total}) but finds no traps nearby.`, '#888');
-        } else {
-          this.hud.addCombatMessage(`${searcher.name} reveals ${found} hidden hazard${found === 1 ? '' : 's'}!`, '#6c6');
-        }
-        return;
-      }
-
-      case 'disarm_trap': {
-        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-        if (!this.checkTrapDisarm(3)) {
-          this.hud.addCombatMessage('There is no detected trap within reach to disarm. Try "search for traps".', '#888');
-        }
-        return;
-      }
-
-      // ── Use a looted potion or scroll (works mid-combat) ──
-      case 'use_item': {
-        this.handleLootedItemUse(cmd.arg);
-        return;
-      }
-
-      case 'inventory': {
-        const carriers = this.party.members.filter(m => m.inventory.length > 0);
-        if (carriers.length === 0) {
-          this.hud.addCombatMessage('The party carries nothing but weapons, wounds, and determination.', '#888');
-          return;
-        }
-        let totalItemValue = 0;
-        for (const m of carriers) {
-          this.hud.addCombatMessage(`\ud83c\udfa5 ${m.name}'s pack:`, '#ca8');
-          for (const item of m.inventory) {
-            const value = item.value ?? 0;
-            totalItemValue += value;
-            this.hud.addCombatMessage(
-              `  ${inventoryItemEmoji(item)} ${item.name}${value > 0 ? ` (${value.toLocaleString()} gp)` : ''}`,
-              '#ca8'
-            );
-          }
-        }
-        const coin = this.party.members.reduce((s, m) => s + m.gold, 0);
-        this.hud.addCombatMessage(
-          `\ud83d\udcb0 Combined wealth: ${coin.toLocaleString()} gp in coin + ${totalItemValue.toLocaleString()} gp in carried items.`,
-          '#fd8'
-        );
-        return;
-      }
-
-      case 'summon': {
-        const query = cmd.monster.toLowerCase();
-        const candidates = MONSTER_TEMPLATES
-          .filter(t => t.name.toLowerCase().includes(query) || query.includes(t.name.toLowerCase()))
-          .sort((a, b) => a.name.length - b.name.length);
-        if (candidates.length === 0) {
-          this.hud.addCombatMessage(`Nothing in the bestiary answers to "${query}".`, '#888');
-          return;
-        }
-        const template = candidates[0];
-        this.proclaim(`At your word, a ${template.name} manifests!`);
-        this.spawnEncounter([template]);
-        this.hud.setParty(this.party);
-        return;
-      }
-
-      case 'calendar': {
-        const c = this.calendar;
-        const phaseLabel = c.moonPhase.replace(/_/g, ' ');
-        const alt = this.clock.light < NIGHT_VISIBILITY_LIGHT ? 'night' : this.clock.light > 0.85 ? 'day' : this.clock.timeOfDay;
-        this.hud.addCombatMessage(`📅 ${this.calendarDesc()}.`, '#7aa');
-        this.hud.addCombatMessage(`The sun is ${alt}.${this.calendar.isGloomDay ? ' Old tales say the dead walk a Gloom day.' : ''}${this.calendar.isSacredDay ? ' Hearth blesses the faithful — the temple is open to all.' : ''}`, '#9aa');
-        if (this.calendar.moonLight > 0.86) this.hud.addCombatMessage(`🌕 The ${phaseLabel} rides high — a hunting pack is abroad tonight, and werecreatures answer its call.`, '#c86');
-        else if (this.calendar.moonLight < 0.14) this.hud.addCombatMessage(`🌑 The ${phaseLabel} blots the sky — the dark opens vaults the light has kept shut for a thousand years.`, '#8cf');
-        else this.hud.addCombatMessage(`The ${phaseLabel} sits midway through its cycle.`, '#9aa');
-        if (this.moonForgeBlade) {
-          this.hud.addCombatMessage(`⚔ The party wields the legendary Moonfall — silver that sings on every stroke and thunders on a critical.`, '#ffd700');
-        } else if (this.silveredWeapon && this.moonForgeLevel < 3) {
-          this.hud.addCombatMessage(`⚔ The moon-forge contract stands at tier ${this.moonForgeLevel} of 3 — temper the blade further with moon-fangs and a were-pelt at any smith.`, '#ca8');
-        } else if (this.moonForgeLevel >= 3) {
-          this.hud.addCombatMessage(`⚔ The moon-forge blade is complete — nothing mortal can temper it further. Seek the forge it spoke of to finish it.`, '#ffd700');
-        }
-        return;
-      }
-      case 'journal': {
-        this.journalCodex(cmd.raw);
-        return;
-      }
-      case 'report': {
-        const foes = this.monsters.filter(m => m.isAlive).length;
-        const armedTraps = this.traps.filter(t => !t.disarmed).length;
-        const detectedTraps = this.traps.filter(t => t.detected && !t.disarmed).length;
-        const trapNote = armedTraps > 0
-          ? ` | traps: ${detectedTraps}/${armedTraps} visible`
-          : ' | traps: none';
-        const placeLabel = this.mode === GameMode.Dungeon
-          ? this.dungeonName
-          : this.mode === GameMode.Town && this.currentTown
-            ? `${this.currentTown.name} (town)`
-            : 'The Wilderlands (surface)';
-        this.hud.addCombatMessage(`\ud83d\udccd ${placeLabel} \u2014 ${foes} foe${foes === 1 ? '' : 's'} remain. Orders: ${this.dmStance}${this.dmDirection ? ` (marching ${DM_DIR_NAMES[this.dmDirection]})` : ''} | casting: ${this.party.upcastPolicy}${trapNote}.`, '#ffd700');
-        this.hud.addCombatMessage(`📅 ${this.calendarDesc()} — the ${this.clock.timeOfDay}, weather ${this.weather?.type.replace(/_/g, ' ') ?? 'fair'}.`, '#7aa');
-        for (const m of this.party.members) {
-          const conds = m.conditions.map(c => CONDITION_META[c.id].label).join(', ');
-          const pct = Math.round((m.hp / m.maxHp) * 100);
-          const state = m.isConscious ? '' : m.isDead ? 'DEAD ' : m.stabilized ? 'STABILIZED ' : 'DYING ';
-          this.hud.addCombatMessage(`${m.isConscious ? '' : '\u2620 '}${state}${m.name}: ${pct}% HP${conds ? ` [${conds}]` : ''}${m.concentration ? ` (concentrating)` : ''}${m.exhaustion > 0 ? ` [Exhaustion ${m.exhaustion}]` : ''}`, m.isConscious ? '#ccc' : '#c44');
-        }
-        this.hud.addCombatMessage(`Gold carried: ${this.party.members.reduce((s, m) => s + m.gold, 0)}.`, '#ca8');
-        const h = this.history;
-        this.hud.addCombatMessage(
-          `\ud83d\udcdc Chronicle: ${h.kills} slain, ${h.victories} victor${h.victories === 1 ? 'y' : 'ies'}, ${h.defeats} retreat${h.defeats === 1 ? '' : 's'}, ${h.roomsVisited} room${h.roomsVisited === 1 ? '' : 's'} explored, deepest level ${h.deepestLevel}.`,
-          '#9aa'
-        );
-        // Bestiary kill ledger — per-kind totals, most slain first.
-        const ledger = Object.entries(h.killLedger)
-          .filter(([, n]) => n > 0)
-          .sort((a, b) => b[1] - a[1]);
-        if (ledger.length > 0) {
-          const kinds = ledger.length === 1 ? 'kind' : 'kinds';
-          const top = ledger.slice(0, 5).map(([id, n]) => {
-            const entry = getMonsterBestiaryEntry(id);
-            return `${entry ? entry.name : id} \u00d7${n}`;
-          }).join(', ');
-          const extra = ledger.length > 5 ? ` (+${ledger.length - 5} more)` : '';
-          this.hud.addCombatMessage(`\ud83d\udcd6 Bestiary: ${ledger.length} ${kinds} slain${extra} \u2014 ${top}.`, '#7bd');
-        }
-        const dice = getDiceStats();
-        const byType = Object.entries(dice.byType).filter(([, n]) => n > 0).map(([t, n]) => `${n}×${t}`).join(', ');
-        this.hud.addCombatMessage(`\ud83c\udfb2 ${dice.rolls} rolls this session \u2014 ${dice.crits} natural 20s, ${dice.fumbles} natural 1s.`, '#fd8');
-        const floorDice = dice.byFloor[this.dungeonLevel] ?? { rolls: 0, crits: 0, fumbles: 0 };
-        this.hud.addCombatMessage(
-          `\ud83d\uddfa Floor ${this.dungeonLevel}: ${floorDice.rolls} rolls \u2014 ${floorDice.crits} natural 20s, ${floorDice.fumbles} natural 1s.`,
-          '#fd8'
-        );
-        if (dice.critStreak >= 2) {
-          this.hud.addCombatMessage(`\ud83d\udd25 ${dice.critStreak} crits in a row (best ${dice.bestCritStreak})!`, '#ffd700');
-        } else if (dice.fumbleStreak >= 2) {
-          this.hud.addCombatMessage(`\ud83d\udc80 ${dice.fumbleStreak} fumbles in a row (best ${dice.bestFumbleStreak})\u2026`, '#c66');
-        } else if (dice.bestCritStreak >= 2 || dice.bestFumbleStreak >= 2) {
-          this.hud.addCombatMessage(`Streaks: best ${dice.bestCritStreak} crits, worst ${dice.bestFumbleStreak} fumbles in a row.`, '#aa8');
-        }
-        const luck = getLuckDie();
-        if (luck) this.hud.addCombatMessage(`\u26a1 Fated Luck die pending: ${luck.value} (from "${luck.source}") \u2014 spent on the next party d20 roll.`, '#fd8');
-        if (byType) this.hud.addCombatMessage(`  Breakdown: ${byType}`, '#aa8');
-        return;
-      }
-
-      // ── Equipment ──
-      case 'equip': {
-        const itemName = cmd.item;
-        const owner = cmd.member
-          ? this.party.members.find(m => m.name.toLowerCase().includes(cmd.member!)) ?? leader
-          : this.findItemOwner(itemName) ?? leader;
-        const item = [...owner.inventory, ...Object.values(owner.equipment)]
-          .find(i => i && i.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(itemName.replace(/[^a-z0-9]+/g, ' ').trim()));
-        if (!item) {
-          this.hud.addCombatMessage(`No one carries a "${itemName}" — try "gear" to see what's held.`, '#886');
-          return;
-        }
-      if (Object.values(owner.equipment).some(e => e?.id === item.id)) {
-        this.hud.addCombatMessage(`${owner.name} is already using the ${item.name}.`, '#886');
-        return;
-      }
-      // A telltale check before the DM forces gear on someone.
-      const telltale = curseTelltale(item);
-      if (telltale && !item.curseKnown) {
-        item.curseKnown = true;
-        this.hud.addCombatMessage(`⚠ ${owner.name} examines the ${item.name} first: ${telltale}. Equipping it anyway is unwise.`, '#fa6');
-      }
-        const line = owner.equip(item.id);
-        this.hud.addCombatMessage(line ? `⚔ ${line} (AC ${owner.ac})` : `The ${item.name} can't be equipped.`, line ? '#8cf' : '#c66');
-        this.hud.setParty(this.party);
-        return;
-      }
-      case 'unequip': {
-        const arg = cmd.arg;
-        const SLOT_WORDS: Record<string, EquipSlot> = { weapon: 'weapon', armor: 'armor', shield: 'shield', trinket: 'trinket', ring: 'trinket', amulet: 'trinket', cloak: 'trinket' };
-        let done = false;
-        for (const m of this.party.members) {
-          for (const slot of ['weapon', 'armor', 'shield', 'trinket'] as EquipSlot[]) {
-            const it = m.equipment[slot];
-            if (!it) continue;
-            const hit = SLOT_WORDS[arg] === slot ||
-              it.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(arg.replace(/[^a-z0-9]+/g, ' ').trim());
-            if (hit && arg.length > 0) {
-              const line = m.unequip(slot);
-              this.hud.addCombatMessage(`🎒 ${line} (AC ${m.ac})`, '#8cf');
-              done = true;
-            }
-          }
-        }
-        if (!done) this.hud.addCombatMessage('Nothing like that is equipped — try "gear" to see worn items.', '#886');
-        this.hud.setParty(this.party);
-        return;
-      }
-      case 'gear': {
-        this.hud.addCombatMessage('⚔ Equipped gear:', '#ffd700');
-        for (const m of this.party.members) {
-          this.hud.addCombatMessage(`${m.name} (AC ${m.ac}, +${m.attackBonus} to hit, +${m.damageBonus} dmg): ${m.gearSummary()}`, '#ccc');
-        }
-        return;
-      }
-
-      // ── Overworld, town, quest & commerce ──
-      case 'quests': {
-        this.listQuests();
-        return;
-      }
-      case 'tasks': {
-        this.listBulletinTasks();
-        return;
-      }
-      case 'accept_task': {
-        if (this.mode !== GameMode.Town || !this.currentTown || !this.townLife) {
-          this.hud.addCombatMessage('Board work is taken on in town.', '#886');
-          return;
-        }
-        // The same list "tasks" numbers, so the DM can read a number off the
-        // board and have it mean the same notice.
-        const board = this.bulletin.boardForTown(this.currentTown.id);
-        const pick = board[Math.max(0, (cmd.index ?? 1) - 1)];
-        if (!pick) {
-          this.hud.addCombatMessage('Nothing on the board matches that — try "tasks".', '#886');
-          return;
-        }
-        if (pick.completed) {
-          this.hud.addCombatMessage(`"${pick.title}" is already settled up.`, '#886');
-          return;
-        }
-        this.acceptBulletinTask(pick);
-        return;
-      }
-      case 'accept_quest': {
-        if (this.activeQuest()) {
-          this.hud.addCombatMessage('A quest is already accepted — finish it before taking another.', '#886');
-          return;
-        }
-        const pool = this.quests.filter(q => !q.accepted && !q.turnedIn);
-        const q = pool[Math.max(0, (cmd.index ?? 1) - 1)];
-        if (!q) {
-          this.hud.addCombatMessage('There is nothing to accept right now — try "quests".', '#886');
-          return;
-        }
-        this.acceptQuest(q);
-        return;
-      }
-      case 'turn_in_quest': {
-        const active = this.activeQuest();
-        if (!active || !active.completed) {
-          this.hud.addCombatMessage('No quest is ready to report — finish the objective first.', '#886');
-          return;
-        }
-        if (this.mode !== GameMode.Town) {
-          this.hud.addCombatMessage('Quest rewards are claimed in town — head back and report there.', '#886');
-          return;
-        }
-        this.reportQuest(active);
-        return;
-      }
-      case 'depart_town': {
-        this.departTown();
-        return;
-      }
-      case 'go_to_town': {
-        if (this.mode === GameMode.Overworld) {
-          this.overworldDestination = { kind: 'town', id: this.currentTown?.id ?? this.overworld?.spawnTownId ?? '' };
-          this.overworldPath = [];
-          this.hud.addCombatMessage('The party turns its steps toward town.', '#6a8');
-        } else {
-          this.hud.addCombatMessage(this.mode === GameMode.Town ? 'The party is already in town.' : 'The party is underground — climb out first ("leave").', '#886');
-        }
-        return;
-      }
-      case 'shop': case 'buy': case 'sell': {
-        if (this.mode !== GameMode.Town) {
-          this.hud.addCombatMessage('No merchants here — the market is in town.', '#886');
-          return;
-        }
-        this.hud.townPanel.show();
-        if (cmd.intent !== 'shop') {
-          const query = cmd.item.toLowerCase();
-          // Buy from the shelves, sell from the packs. Searching both at once
-          // meant "sell a potion of healing" found the shop's copy first and
-          // then quietly sold nothing, because the party did not own it.
-          const shelf = cmd.intent === 'buy' ? this.marketStock() : this.partyInventory();
-          const item = shelf.find(i => i.name.toLowerCase().includes(query));
-          if (item) {
-            if (cmd.intent === 'buy') this.buyItem(item);
-            else this.sellItem(item);
-          } else {
-            this.hud.addCombatMessage(`No ${cmd.intent === 'buy' ? 'stock' : 'item'} matching "${query}".`, '#888');
-          }
-        }
-        return;
-      }
-      case 'leave_dungeon': {
-        if (this.mode === GameMode.Dungeon) {
-          this.hud.addCombatMessage('The party turns back and climbs toward the light.', '#ca8');
-          this.exitDungeonToOverworld();
-        } else if (this.mode === GameMode.Overworld) {
-          this.hud.addCombatMessage('The party is already on the surface.', '#888');
-        } else {
-          this.hud.addCombatMessage('The party is in town — try "depart" to leave.', '#888');
-        }
-        return;
-      }
-      case 'enter_dungeon': {
-        const e = this.overworld ? entranceAt(this.overworld, leader.tile.x, leader.tile.y) : undefined;
-        if (this.mode === GameMode.Overworld && e) {
-          this.enterDungeonFromEntrance(e);
-        } else if (this.mode === GameMode.Dungeon) {
-          this.hud.addCombatMessage('The party is already underground.', '#888');
-        } else {
-          this.hud.addCombatMessage('There is no dungeon entrance here.', '#888');
-        }
-        return;
-      }
-      case 'travel_to': {
-        const query = cmd.destination.toLowerCase();
-        if (this.mode === GameMode.Overworld && this.overworld) {
-          const town = this.overworld.towns.find(t => t.name.toLowerCase().includes(query));
-          const entrance = this.overworld.entrances.find(e => e.name.toLowerCase().includes(query));
-          if (town) {
-            this.overworldDestination = { kind: 'town', id: town.id };
-            this.overworldPath = [];
-            this.hud.addCombatMessage(`The party sets course for ${town.name}.`, '#6a8');
-          } else if (entrance) {
-            this.overworldDestination = { kind: 'entrance', id: entrance.id };
-            this.overworldPath = [];
-            this.hud.addCombatMessage(`The party sets course for ${entrance.name}.`, '#6a8');
-          } else {
-            this.hud.addCombatMessage(`No town or dungeon named "${query}" on the maps.`, '#888');
-          }
-        } else {
-          this.hud.addCombatMessage('Travel orders only make sense on the surface.', '#886');
-        }
-        return;
-      }
-
-      // ── Bandit camps ──
-      case 'raid_camp': {
-        if (inCombat) { this.hud.addCombatMessage('Not mid-melee!', '#c66'); return; }
-        if (this.mode === GameMode.Town) { this.hud.addCombatMessage('There are no camps in town — head to the overworld.', '#886'); return; }
-        const pendingClue = this.banditCamps.clues.find(c => !c.resolved);
-        if (!pendingClue) {
-          this.hud.addCombatMessage('You have no camp clues to act on. Defeat bandits on the road to find their hideouts.', '#888');
-          return;
-        }
-        this.hud.addCombatMessage('⚔️ The party moves to assault the bandit camp!', '#c84');
-        // Spawn a combat encounter scaled to the camp tier
-        const templates = [];
-        for (let i = 0; i < 2 + pendingClue.tier; i++) {
-          templates.push(getMonsterTemplate('bandit') ?? getMonsterTemplate('goblin')!);
-        }
-        if (pendingClue.tier >= 2) templates.push(getMonsterTemplate('highwayman') ?? getMonsterTemplate('bandit')!);
-        if (pendingClue.tier >= 3) templates.push(getMonsterTemplate('bandit_captain') ?? getMonsterTemplate('orc')!);
-        this.spawnEncounter(templates);
-        pendingClue.resolved = true;
-        return;
-      }
-      case 'report_camp': {
-        if (this.mode !== GameMode.Town) {
-          this.hud.addCombatMessage('You must be in town to report a camp location.', '#886');
-          return;
-        }
-        const pendingClue = this.banditCamps.clues.find(c => !c.resolved);
-        if (!pendingClue) {
-          this.hud.addCombatMessage('You have no camp clues to report.', '#888');
-          return;
-        }
-        this.hud.addCombatMessage(`🗺️ The constable studies the map and nods grimly.`, '#ca8');
-        this.hud.addCombatMessage(`"Good work. The guard will handle the rest. Here's your reward — ${pendingClue.reportReward} gold, as promised."`, '#888');
-        // Award gold to the party
-        const living = this.party.members.filter(m => m.isAlive);
-        if (living.length > 0) {
-          const each = Math.floor(pendingClue.reportReward / living.length);
-          living.forEach(m => m.gold += each);
-        }
-        pendingClue.resolved = true;
-        return;
-      }
-      case 'list_clues': {
-        const pending = this.banditCamps.clues.filter(c => !c.resolved);
-        if (pending.length === 0) {
-          this.hud.addCombatMessage('No bandit camp clues in hand. Defeat bandits on the road to find their hideouts.', '#888');
-          return;
-        }
-        this.hud.addCombatMessage('🗺️ Bandit Camp Clues:', '#ca8');
-        pending.forEach((c, i) => {
-          this.hud.addCombatMessage(`  ${i + 1}. ${c.description} (Tier ${c.tier})`, '#a89');
-          this.hud.addCombatMessage(`     Report for ${c.reportReward} gp or "raid camp" to assault it.`, '#888');
-        });
-        return;
-      }
-
-      // ── Townsfolk ──
-      case 'talk_to': {
-        const query = cmd.npc.toLowerCase();
-        if (!query) { this.hud.addCombatMessage('Who do you want to talk to?', '#888'); return; }
-        if (this.mode !== GameMode.Town || !this.currentTown) {
-          this.hud.addCombatMessage('You must be in town to visit NPCs.', '#886');
-          return;
-        }
-        const tl = this.townLife?.byTown[this.currentTown.id];
-        if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around right now.', '#888'); return; }
-        const npc = tl.questGivers.find(g => g.name.toLowerCase().includes(query));
-        if (!npc) { this.hud.addCombatMessage(`No one named "${query}" is around right now.`, '#888'); return; }
-        this.greetQuestGiver(npc);
-        return;
-      }
-      case 'list_npcs': {
-        if (this.mode !== GameMode.Town || !this.currentTown) {
-          this.hud.addCombatMessage('You must be in town to see the locals.', '#886');
-          return;
-        }
-        const tl = this.townLife?.byTown[this.currentTown.id];
-        if (!tl?.questGivers) { this.hud.addCombatMessage('No one of note is around.', '#888'); return; }
-        this.hud.addCombatMessage('👥 Notable NPCs in town:', '#ca8');
-        tl.questGivers.forEach(g => {
-          this.hud.addCombatMessage(`  ${g.portrait} ${g.name} — ${g.title} [${getReputationTier(g)}]`, '#a89');
-        });
-        return;
-      }
-
-      case 'unknown': {
-        void text;
-        this.confusedGlances();
-        return;
-      }
-    }
+    this.dmCommands.dispatch(cmd, text);
   }
 
   /**
@@ -5827,7 +5173,7 @@ class Game {
    * row in the town panel, which looked clickable and did nothing because
    * `onVisitNPC` was declared, dispatched, and never assigned.
    */
-  private greetQuestGiver(npc: QuestGiver): void {
+  greetQuestGiver(npc: QuestGiver): void {
     this.hud.addCombatMessage(`${npc.portrait} ${npc.name} — ${npc.title}:`, '#ca8');
     // Show quest-specific dialogue if this NPC has posted quests
     const npcQuests = this.quests.filter(q => q.giverNpcId === npc.id && !q.turnedIn);
@@ -5856,7 +5202,7 @@ class Game {
   }
 
   /** "model on / off / status" — arm, disarm, or describe the intent model. */
-  private handleModelToggle(state: 'on' | 'off' | 'status'): void {
+  handleModelToggle(state: 'on' | 'off' | 'status'): void {
     if (state === 'status') {
       this.dmModelDebug = !this.dmModelDebug;
       if (!this.loadedIntentModel) {
@@ -5973,21 +5319,6 @@ function parseHealDice(description: string): { count: number; size: number; bonu
   return m
     ? { count: Number(m[1]), size: Number(m[2]), bonus: Number(m[3] || 0) }
     : { count: 1, size: 4, bonus: 0 };
-}
-
-/** Pick a fitting glyph for a carried item in the loot listing. */
-function inventoryItemEmoji(item: InventoryItem): string {
-  if (item.id === 'ration') return '\ud83c\udf5e';
-  if (item.type === 'potion') return '\ud83e\uddea';
-  if (item.type === 'scroll') return '\ud83d\udcdc';
-  if (item.type === 'weapon') return '\u2694\ufe0f';
-  if (item.type === 'armor') return '\ud83d\udee1\ufe0f';
-  if (item.type === 'treasure') {
-    if (item.id.startsWith('gem_')) return '\ud83d\udc8e';
-    if (item.id.startsWith('art_')) return '\ud83d\uddbc\ufe0f';
-    return '\u2728'; // magic item
-  }
-  return '\ud83d\udce6';
 }
 
 if (document.readyState === 'loading') {

@@ -4,7 +4,7 @@
  * Every order the Dungeon Master can type resolves to one `DMCommand`: an
  * intent plus whatever slots that intent needs. Two understanders produce
  * them — the deterministic regex parser (`DMCommandParser`) and the trained
- * intent model (`IntentModel`) — and `Game.dispatchDMCommand` acts on them.
+ * intent model (`IntentModel`) — and `DMCommandDispatcher` acts on them.
  *
  * Keep `INTENTS` in a fixed order: the trained model's output layer is indexed
  * by it, and the weights file records the list so a mismatch fails loudly.
