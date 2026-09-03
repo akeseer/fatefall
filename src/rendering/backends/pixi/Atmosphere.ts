@@ -46,6 +46,7 @@ import {
 } from 'pixi.js';
 import type { ColorMatrix, Container, FilterSystem, Renderer, RenderSurface } from 'pixi.js';
 import type { SceneMood } from '../../DrawCommand';
+import { themeLight } from '../../ThemeLight';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tunables. Everything the look is made of lives here; nothing below this block
@@ -152,6 +153,20 @@ interface Grade {
   contrast: number;
   lift: number[];
 }
+
+/**
+ * How far the underground grade's tint leans toward the light of the place.
+ *
+ * The torch already takes the theme's colour, but it sits under a grade that
+ * cools every dungeon toward blue, and a teal torch in a blue room reads as
+ * blue. Leaning the grade itself halfway toward the same colour lets the room
+ * agree with its light — ember in the dragon graveyard, teal in the sunken
+ * temple — without giving up the depth the cool cast provides.
+ */
+const GRADE_THEME_LEAN = 0.5;
+
+/** Time constant for the grade crossing between themes, so a floor change is a fade. */
+const GRADE_THEME_TAU_MS = 900;
 
 /** Full daylight overhead: the reference the others are departures from. */
 const GRADE_NOON: Grade = {
@@ -603,6 +618,9 @@ export class Atmosphere {
 
   // Smoothed state. Each of these chases a target derived from the mood.
   private undergroundMix = 0;
+  /** The light of the current place, and where it is easing to. */
+  private themeTint: [number, number, number] = [1, 1, 1];
+  private wantTheme: [number, number, number] = [1, 1, 1];
   private combatMix = 0;
   private vignetteStrength = VIGNETTE_DAY;
   private vignetteCenterX = 0.5;
@@ -677,6 +695,7 @@ export class Atmosphere {
    * backgrounded tab resumes at the right look instead of crawling to it.
    */
   update(mood: SceneMood, elapsedMs: number): void {
+    this.wantTheme = mood.underground ? themeLight(mood.themeId) : [1, 1, 1];
     const dt = clamp(elapsedMs, 0, MAX_STEP_MS);
     const daylight = clamp(mood.daylight, 0, 1);
 
@@ -766,6 +785,14 @@ export class Atmosphere {
     }
 
     const target = mixGrade(this.targetGrade, this.skyGrade, GRADE_UNDERGROUND, this.undergroundMix);
+
+    // The room agrees with its light: the underground tint leans toward the
+    // theme's colour, eased per channel so going down a floor is a fade.
+    const kTheme = 1 - Math.exp(-dtMs / GRADE_THEME_TAU_MS);
+    for (let i = 0; i < 3; i++) {
+      this.themeTint[i] += (this.wantTheme[i] - this.themeTint[i]) * kTheme;
+      target.tint[i] = lerp(target.tint[i], target.tint[i] * this.themeTint[i], this.undergroundMix * GRADE_THEME_LEAN);
+    }
 
     // Weather is a property of the sky, so it fades out as the party descends
     // rather than following them into a sealed corridor.

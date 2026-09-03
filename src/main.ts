@@ -5399,7 +5399,15 @@ function pick<T>(arr: T[]): T {
 
 function startGame() {
   const game = new Game();
-  (window as any).__game = game;
+  // A handle for driving the game from the console. Dev builds always have
+  // it; a production build only when asked for with ?debug, since a global
+  // that reaches every piece of state is not something to ship by default.
+  // `import.meta.env` is Vite's, and the tests project compiles this file too,
+  // so it is read through a local shape rather than Vite's ambient types.
+  const env = (import.meta as { env?: { DEV?: boolean } }).env;
+  if (env?.DEV || new URLSearchParams(location.search).has('debug')) {
+    (window as any).__game = game;
+  }
 
   // The player picks a slot: continue a saved run there or begin a new one.
   const saves = listSaves();
