@@ -118,7 +118,7 @@ EXTRA = {
         "get it defused", "defuse the thing before someone gets hurt",
     ],
     "quests": [
-        "anything posted", "any work going", "any jobs about", "whats on the notice board",
+        "anything posted", "any work going", "any jobs about", "whats on the quest board",
         "see if theres work", "check what needs doing", "is anyone hiring", "any commissions",
         "what needs doing round here", "look for work", "any bounties up", "read the board",
     ],
@@ -277,5 +277,376 @@ EXTRA = {
         "lovely weather", "no idea what to do next", "remind me why we came here",
     ],
 }
+
+
+# ── Second pass: density, not just breadth ──────────────────────────────────
+#
+# The first two passes gave most intents a wide vocabulary but a *thin* one:
+# several wording families were carried by a single template each. Because
+# gen_data.py holds out whole templates for the dev split, a family of one is
+# a family the model never sees at training time — and with nothing lexically
+# near it in its own class, the model falls back on `unknown`. That is the
+# whole of the `unknown` precision problem: on the dev split 94 of the 135
+# false `unknown`s came from three lone templates ("make sure the way is safe"
+# for search_traps, "get them" for stance, "what do we see" for look).
+#
+# So this pass is deliberately *shallow and wide within a family*: for every
+# way of saying a thing, several near neighbours, so that holding one out
+# still leaves the family learnable. Two collisions are fixed here as well:
+# "start …" was owned almost entirely by new_game (which pulled 64 stance rows
+# with it), and new_game's whole dev support was the single template "reset
+# everything", which the char-n-grams read as "rest".
+#
+# Nothing here is copied from tests/fixtures/dm-golden.jsonl. The acceptance
+# set stays sentences the model has never seen.
+
+WIDER = {
+    # The false-`unknown` mass. "is it safe / check before you tread / anything
+    # rigged" is how people actually ask for a trap sweep, and it had one
+    # template.
+    "search_traps": [
+        "is the way safe", "is it safe ahead", "is it safe up there", "is the floor safe",
+        "is the corridor safe", "is this stretch safe", "is the passage safe",
+        "make sure the path is safe", "make certain the way is safe", "make sure nothing is rigged",
+        "see if the way is safe", "see if the floor is safe", "see if anything is rigged",
+        "check the way ahead is safe", "check nothing is rigged", "check the ground first",
+        "is anything rigged here", "is anything rigged", "anything rigged in here",
+        "is this place rigged", "is anything trapped here", "anything trapped in here",
+        "are there any traps about", "any traps in this room", "any traps ahead",
+        "is there a trap here", "is there anything waiting to go off",
+        "look for anything rigged", "have a look for anything rigged",
+        "check before you tread", "look before you tread", "look before you step",
+        "watch where you tread", "mind where you step", "mind the floor",
+        "watch the floor", "watch the flagstones",
+        "study the ground first", "look the ground over", "give the ground a look",
+        "scan the ground", "scan the floor", "sweep the ground", "sweep the stones",
+        "probe the ground ahead", "test the ground", "test the stones",
+        "send the rogue ahead to check", "have the rogue check the floor first",
+        "have someone check the way", "someone check the floor first",
+        "check nothing is underfoot", "check for anything nasty underfoot",
+    ],
+    # "get them" had no near neighbours, so a two-word order read as chatter.
+    # None of these use "avoid"/"caution", which extractSlots reads as cautious.
+    "stance:aggressive": [
+        "get after them", "go get them", "get them all", "get after whatever is there",
+        "have at them", "go for them", "go for the throat",
+        "run them down", "set about them", "lay into them", "lay into whatever you find",
+        "tear into them", "go in swinging", "swing first", "strike first", "hit them first",
+        "be the aggressor",
+        "fight anything you meet", "fight whatever turns up", "fight on sight",
+        "engage on sight", "attack anything you meet", "attack whatever you find",
+        "look for trouble", "find trouble",
+        "go find a fight", "go pick a fight", "seek battle", "give battle",
+        "meet whatever comes head on", "put whatever you meet to the sword",
+        # "start" belonged almost entirely to new_game; give it fight context too.
+        "start swinging at whatever you find", "start hitting things", "start the killing",
+        "start a fight", "start fights", "start swinging early",
+    ],
+    "stance:cautious": [
+        "be careful, nothing reckless", "take no chances, play it safe", "no heroics, stay safe",
+        "keep it careful", "carefully now", "careful as you go", "careful in there",
+        "quietly does it", "easy does it, quietly", "keep quiet as you can",
+        "stay in the shadows", "stick to the shadows", "keep to the shadows and stay quiet",
+        "hug the walls and keep quiet", "stay low and quiet", "heads down and move quietly",
+        "do not engage, avoid them", "engage nothing, slip past", "walk away from any fight",
+        "go round anything you meet, avoid it", "leave whatever you find alone",
+        "let them be and slip past", "survive above all", "come back alive, be careful",
+        "watch yourselves, be careful",
+        # "start" again, this time with the caution said out loud.
+        "dont start anything with them", "dont start any fights", "start no fights",
+        "start nothing, avoid them", "start nothing and stay quiet",
+    ],
+    "look": [
+        "what do they see", "what can we see", "what can they see from there",
+        "what is in front of us", "whats in front of them", "what is around them",
+        "what does the room hold", "what is in this room", "whats in here",
+        "tell me what we see", "tell me what they can see", "say what we see",
+        "give me the room", "give me this room", "describe it", "describe it to me",
+        "describe this", "describe here", "what greets them", "what meets the eye",
+        "what stands out here", "what have we walked into", "tell me about here",
+        "tell me about this room", "what sort of place is this",
+        "what does the place look like", "so what is there",
+    ],
+    # A direction plus a trailing clause is still a move order. The old move
+    # templates were all bare, so any tail ("and keep going", "and stay sharp")
+    # dragged the reading somewhere else.
+    "move": [
+        "take them {dir}", "take them {dir} and keep going", "take them {dir} for now",
+        "take the party {dir} and stay alert", "go {dir} and keep your eyes open",
+        "head {dir} and keep your eyes open", "move {dir} and stay sharp",
+        "go {dir}, and watch yourselves", "head {dir}, and be ready",
+        "walk {dir} and keep together", "go {dir} and see what is there",
+        "lead them {dir} and keep going", "press {dir} and dont stop",
+        "bring them {dir}", "get them {dir}", "march them {dir}", "run them {dir}",
+        "usher them {dir}", "guide them {dir}", "point them {dir}", "turn them {dir}",
+        "{dir} from here", "{dir} for now", "keep to the {dir}", "hold to the {dir}",
+        "we head {dir}", "we push {dir}", "we move {dir}", "we carry on {dir}",
+        "try {dir} first", "the {dir} way then", "take the {dir} fork", "take the {dir} branch",
+    ],
+    # "sit here until X" / "stay put until X" had no template at all, and the
+    # {time} pool knew only the six words in TIMES.
+    "wait_until": [
+        "sit here until {time}", "sit here quietly until {time}", "sit still until {time}",
+        "stay put until {time}", "stay where you are until {time}", "stay here until {time}",
+        "do nothing until {time}", "hold here until {time}",
+        "hold position until {time}", "remain here until {time}", "linger until {time}",
+        "kill time until {time}", "wait quietly until {time}",
+        "settle in until {time}", "keep still until {time}", "dont move until {time}",
+        "stay quiet until {time}", "hunker down until {time}", "lie low until {time}",
+        "count the hours until {time}", "watch and wait until {time}",
+        "wait for the {time} to come", "hold out until {time}", "hang on until {time}",
+        "give it until {time}", "leave it until {time}", "stand by until {time}",
+        "twiddle thumbs until {time}", "do nothing at all until {time}",
+    ],
+    # "save" said without the word "save".
+    "save": [
+        "write this down", "write this down now", "note this down", "note it down",
+        "make a note of this", "put this on paper", "put this in the book",
+        "get this written down", "commit this to the record", "set this down",
+        "mark this point", "mark our place", "mark where we are", "drop a marker here",
+        "bookmark this", "lock this in", "bank this", "bank the progress",
+        "store this", "store the run", "stash the run", "remember this point",
+        "remember where we are", "dont lose this progress", "dont lose this",
+        "make sure we dont lose this", "make sure this is kept", "secure our progress",
+        "back this up", "take a snapshot", "snapshot the run", "write the run down",
+        "get it written down before anything happens", "put a pin in this",
+        "keep a record of this point", "note where we got to",
+    ],
+    "feature_forge": [
+        "put a proper edge on the blades", "put an edge on every blade",
+        "an edge on every blade", "a proper edge on the swords", "edge every blade",
+        "edge the blades", "sharpen every blade", "sharpen each blade", "sharpen the blade",
+        "get every blade sharp", "get the blades sharp", "get a proper edge on things",
+        "see every blade sharpened",
+        "take the blades to the whetstone", "run the blades over the stone",
+        "grind an edge on the weapons", "work an edge onto the blades",
+        "put the weapons to the grindstone", "use the grindstone", "use the anvil",
+        "a turn at the whetstone for everyone", "get everyone sharpening", "sharpen up",
+        "give the blades a going over at the forge", "dress the blade edges",
+    ],
+    # new_game scored P = R = F1 = 0.000: its entire dev support was the one
+    # held-out template "reset everything", and "start …" leaked in from stance.
+    "new_game": [
+        "start again", "start again from the beginning", "start afresh",
+        "begin from scratch", "begin anew", "take it from the top",
+        "do it all again", "run it again from the start", "clear it all and start again",
+        "clear the save", "clear our progress", "delete the save", "delete this run",
+        "throw this run away", "bin this run", "scrap this run", "scrap it all",
+        "burn it down and start again", "forget this party", "be done with this party",
+        "a whole new party", "a brand new party", "a fresh party",
+        "roll fresh characters", "roll up a new party", "start a new game", "start a new run",
+        "a new game please", "begin a new game", "kick off a new game",
+        "reset", "reset the game", "reset the run", "reset it", "reset the party",
+        "reset everything and start again", "wipe it and start over", "wipe the slate",
+        "wipe the slate clean", "restart from the beginning", "restart it",
+        "restart the run", "restart everything", "restart from zero",
+        "abandon this party", "abandon the whole run",
+    ],
+    # The three intents `unknown` leaks *into* most on the dev split. Widening
+    # them is the recall half of the same problem: chatter lands on whichever
+    # order-class has the thinnest, most generic templates.
+    "help": [
+        "what else can i say", "what am i able to order", "what can i ask for",
+        "run me through the commands", "give me the command list", "the list of orders please",
+        "what phrases do you know", "which orders work", "what do you understand",
+        "im lost, what can i type", "explain what i can order", "show me what to say",
+    ],
+    "summon": [
+        "put a {monster} in their way", "have a {monster} jump them",
+        "drop in a {monster}", "sic a {monster} on them", "loose a {monster} on them",
+        "a {monster} steps out at them", "let a {monster} ambush them",
+        "throw a {monster} at the party", "send in a {monster}",
+        "conjure a {monster} in front of them", "spawn a {monster} in the room",
+    ],
+    "buy": [
+        "buy a {item} from the stall", "purchase a {item} from the merchant",
+        "put coin down for a {item}", "pay for a {item}", "pay for some {item}",
+        "take a {item} and pay for it", "we will have a {item}",
+        "get a {item} bought", "buy up some {item}",
+    ],
+}
+
+
+# ── Third pass: the classes the second pass left behind ─────────────────────
+#
+# With the loud offenders fixed, the remaining false `unknown`s on the dev
+# split were the same shape again, just thinner: one-off templates ("peruse
+# the stock", "any commissions", "softly softly", "count the purse") in classes
+# that had never been widened at all. Same remedy, applied to the classes that
+# actually leaked, plus `calendar`, which was the smallest class in the set and
+# had no expansion of any kind.
+
+WIDER_STILL = {
+    "shop": [
+        "peruse the wares", "peruse what they have", "look over the stock",
+        "look over what they sell", "go through the stock", "go through the wares",
+        "see the stock", "see their stock", "what stock have they got",
+        "have a look at the shop", "have a look round the shop", "look round the store",
+        "wander the market", "walk the market", "walk the stalls", "do the rounds of the stalls",
+        "find a trader", "find the market", "where do they sell things",
+        "spend some time at the market", "we need supplies, find a shop",
+        "get to a shop", "get to the market", "the market then", "the shop then",
+    ],
+    "quests": [
+        "any contracts going", "is there a contract going", "what contracts are up",
+        "who needs adventurers", "who is looking to hire", "anyone want a job doing",
+        "is there paid work", "what paying work is there", "what jobs are going",
+        "see the postings", "look over the postings", "what has been posted",
+        "any bounties posted", "is there a bounty up",
+    ],
+    "report": [
+        "any of them badly off", "anyone in a bad state", "how is the party doing",
+        "how is everyone bearing up", "how are they bearing up", "are they all still standing",
+        "is everyone still on their feet", "who is running low", "who is nearly out",
+        "give me the state of play", "the party please",
+        "how are the party", "check everyone over", "tell me how they are",
+    ],
+    "resume": [
+        "keep at it", "carry right on", "on you go", "off you go then",
+        "back to what you were doing", "go back to it", "get back to it",
+        "carry on as before", "no more orders", "im done ordering",
+        "act as you see fit", "im out of the way, carry on", "unpause it", "let it run",
+        "let it play out", "start it up again", "run on", "press on as you were",
+    ],
+    "pause": [
+        "stop there", "stop a moment", "a moment please", "wait, stop",
+        "put it on ice", "put it on hold",
+        "freeze it there", "freeze right there", "still everything",
+        "let me think, hold on", "give me a moment to think", "hold that thought",
+        "pause it there", "pause a moment",
+    ],
+    "leave_dungeon": [
+        "get us out", "get them out", "get everyone out",
+        "back out the way you came", "retrace your steps and get out",
+        "make for the exit", "find the exit", "head for the exit", "to the exit",
+        "back up the stairs and out", "back to open air", "back into the daylight",
+        "call the delve off", "end the delve",
+    ],
+    "enter_dungeon": [
+        "get inside", "get them inside", "get everyone inside",
+        "go in through the entrance", "go in through the door",
+        "go down into the ruins", "go down into the crypt", "go into the tomb",
+        "go into the mine", "go under", "start the delve here",
+        "take the delve on", "time to go under", "get in there",
+    ],
+    "inventory": [
+        "count the coin", "count what we have", "count the loot",
+        "how heavy are the packs", "what is in the packs", "empty out the packs",
+        "tell me what they carry", "list what they carry", "the pack contents",
+        "our haul so far", "what have we picked up", "what did we pick up",
+        "how are we for supplies",
+    ],
+    "gear": [
+        "what are they using", "what is drawn", "who has a shield up",
+        "who is in armour", "what is on their backs",
+        "run the kit past me", "the equipment list", "list the equipment",
+        "what is each of them holding", "who carries what weapon",
+    ],
+    "calendar": [
+        "what is the moon doing", "what is the moon doing tonight",
+        "how does the moon look", "how is the moon",
+        "remind me what day it is", "remind me of the date", "what is the day",
+        "which day is this", "what is todays date", "the date please",
+        "how far into the month are we", "what month is it", "what time of year is it",
+        "is it a feast day", "any feast days", "is there a festival on",
+        "what is the season", "is winter close", "how many days have passed",
+        "the calendar please", "check the calendar",
+    ],
+    "list_npcs": [
+        "who is about the place", "who is knocking about", "who might we meet",
+        "name the locals for me", "run me through the locals", "who are the faces here",
+        "who could we speak to", "who is worth a visit",
+        "give me the townsfolk", "the locals please",
+    ],
+    "search_room": [
+        "look this room over properly", "go over the room", "go over this place",
+        "root about in here", "rummage around here", "rummage this room",
+        "turn the place over", "toss the room", "hunt about in here",
+        "look under everything", "look behind everything", "check the corners",
+    ],
+    "tasks": [
+        "read me the notices", "read out the bulletin", "read the small board",
+        "what is pinned to the notice board", "what is on the notices",
+        "the bulletin please", "the notice board please", "go and read the notices",
+        "any bulletin work",
+    ],
+    "turn_in_quest": [
+        "hand the job back in", "hand the work in", "give the job back",
+        "report it done", "tell them the job is done", "say the work is finished",
+        "the job is done, go and say so", "go and be paid", "go collect",
+        "collect on the contract", "settle up on the contract",
+    ],
+    "descend": [
+        "take the stairs down", "take the stairwell down", "go down another floor",
+        "deeper still", "keep going down", "go down again",
+        "the floor below this one", "sink another level", "push down a level",
+    ],
+    "feature_inspect": [
+        "give this a search", "search this over", "look this over",
+        "search whatever is in here", "investigate whatever this is",
+        "search the place over", "investigate what we found",
+    ],
+    "disarm_trap": [
+        "kill the trap", "kill that mechanism", "stop the trap working",
+        "stop it going off", "block the mechanism", "pin the mechanism",
+        "wedge the plate", "jam the plate", "cut the wire", "snip the wire",
+        "take the teeth out of it", "de-fang the thing",
+    ],
+    "long_rest": [
+        "roll out the bedrolls", "a full night here", "sleep the night through",
+        "sleep through to morning", "the night stops here", "we stop for the night",
+        "make a proper camp", "a proper nights rest",
+    ],
+    "short_rest": [
+        "a breather", "sit a while", "sit a moment", "an hour off the feet",
+        "get your wind back", "stop briefly and recover",
+        "have the wounded seen to", "quick patch up",
+    ],
+    "stance:aggressive": [
+        "be bold from here", "be bolder from here on", "be bold from now on",
+        "no more timidity", "no more creeping about", "no more skulking",
+        "fight from here on", "fight from now on",
+    ],
+    "stance:cautious": [
+        "softly now", "be soft and quiet", "be quiet and careful",
+        "careful and quiet from here", "be careful from here on",
+        "be careful from now on", "keep the caution up",
+    ],
+    "help": [
+        "what are my options", "what are the options", "list my options",
+        "what could i tell them", "give me something to say",
+    ],
+    # `accept_quest` already had the ordinal forms ("take the first quest",
+    # "accept the second job"); `accept_task` never got them, so board work
+    # named by position had no template at all.
+    "accept_task": [
+        "take the first task", "take the second task", "take the third task",
+        "accept the first notice", "accept the second notice", "accept the third notice",
+        "put us down for the first task", "put us down for the second job",
+        "sign us up for the first notice", "we will take the second odd job",
+        "put our name to the third notice", "take on the second bulletin",
+        "we take the first task", "take that second job off the board",
+    ],
+    # Compass words in table talk. The widened `move` templates put a lot of
+    # weight on a bare direction, so `unknown` needs the counter-examples.
+    "unknown": [
+        "the north wind is cold", "the wind is out of the east",
+        "the east road is a long one", "west of here is nothing much",
+        "the south was always warmer", "there is a draught from the north",
+        "they came up from the south, i heard", "the western hills look grim",
+    ],
+}
+
+for _key, _still in WIDER_STILL.items():
+    if _key in WIDER:
+        WIDER[_key] = WIDER[_key] + _still
+    else:
+        WIDER[_key] = _still
+
+for _key, _wider in WIDER.items():
+    if _key in EXTRA:
+        EXTRA[_key] = EXTRA[_key] + _wider
+    else:
+        EXTRA[_key] = _wider
 
 # fmt: on

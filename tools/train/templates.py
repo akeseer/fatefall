@@ -31,10 +31,18 @@ DIRS = {
     "west":  ["west", "w", "westward", "westwards", "to the west", "left"],
 }
 
+# Every wording here must survive timeTarget() in DMCommandParser.ts, which reads
+# dusk from /dusk|evening/, night from /night|midnight|dark/ and takes dawn as the
+# default. So a dawn wording must contain none of those words, and a dusk wording
+# must say "dusk" or "evening" outright — "twilight" would silently label as dawn.
 TIMES = {
-    "dawn":  ["dawn", "morning", "daylight", "day", "first light", "sunrise"],
-    "dusk":  ["dusk", "evening", "sundown", "sunset"],
-    "night": ["night", "nightfall", "midnight", "dark", "full dark"],
+    "dawn":  ["dawn", "morning", "daylight", "day", "first light", "sunrise", "sunup", "sun up",
+              "the sun comes up", "the sun is up", "the sun rises", "daybreak", "break of day",
+              "it gets light", "the light comes back", "morning light", "first thing", "cockcrow"],
+    "dusk":  ["dusk", "evening", "sundown", "sunset", "dusk falls", "evening falls", "evening comes",
+              "early evening", "the evening", "dusk proper", "evening light"],
+    "night": ["night", "nightfall", "midnight", "dark", "full dark", "it gets dark", "dark falls",
+              "night falls", "after dark", "the dead of night", "properly dark", "the small hours of the night"],
 }
 
 POLICIES = {
@@ -308,7 +316,9 @@ T["unequip"] = [
 T["quests"] = [
     "quests", "quest board", "postings", "contracts", "show quests", "what quests are there", "list the quests", "any work available",
     "check the quest board", "what jobs are posted", "show me the postings", "available contracts", "what's on the board",
-    "read the notice board", "quest list", "any quests", "what work is there", "show the contracts", "look at the quest board",
+    # "notice board" belongs to `tasks` in the regex cascade, so it must not
+    # appear here: the two classes had this same template and it was pure noise.
+    "read the quest board", "quest list", "any quests", "what work is there", "show the contracts", "look at the quest board",
     "what postings are up",
 ]
 T["accept_quest"] = [

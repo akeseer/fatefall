@@ -18,8 +18,8 @@ understanders produce them, and `understand()` in
    answer is used only when it clears a confidence bar and the intent makes
    sense in the current room.
 
-On a set of 157 hand-written orders, the regex alone gets 34% right and the two
-together get 95%.
+On a set of 166 hand-written orders, the regex alone gets 36% right and the two
+together get 99%.
 
 ## Results
 
@@ -27,14 +27,57 @@ Run `npm run model-report` for the current numbers.
 
 | | regex only | with the model |
 |---|---|---|
-| Hand-written orders (157) | 34.4% | **95.5%** |
-| Documented orders (352) | 100% | 99.1% |
+| Hand-written orders (166) | 35.5% | **98.8%** |
+| Documented orders (369) | 100% | 99.5% |
 
-The 99.1% is not a regression: three canonical phrases change meaning and all
-three are the model correcting a known quirk in the regex cascade's ordering.
-They are listed and justified in `tests/intent-model.test.ts`.
+The 99.5% is not a regression: two canonical phrases change meaning and both
+are the model correcting a known quirk in the regex cascade's ordering. They
+are listed and justified in `tests/intent-model.test.ts`.
 
-Prediction costs about 50 microseconds, so it runs comfortably on a keystroke.
+Prediction costs about 60 microseconds, so it runs comfortably on a keystroke.
+
+## Looking closer
+
+`npm run model-report` scores what the player experiences: `understand()` with
+the regex fallback in place, on the two acceptance sets. `python
+tools/train/eval.py` does the other half — the classifier on its own, over the
+11,870-row dev split. It reads the shipped `.bin` rather than a checkpoint, at
+the temperature and threshold in its header and with the context gating the game
+applies, so the numbers are the ones the player gets and not the ones the float
+model would give. It takes about five seconds and writes nothing.
+
+It prints, in order:
+
+- **Accuracy**, split by whether a row clears the accept bar. Rows below the bar
+  never reach the player — the regex answer stands for those.
+- **The confused pairs**, ranked by count, each as a share of the true intent's
+  support, then per-intent precision, recall and F1 sorted weakest first. A
+  square matrix over 69 intents is unreadable; the pairs are where the mass is.
+- **Calibration** — ECE and MCE over ten confidence bins, a reliability table,
+  and the ECE above the accept bar on its own. The runtime trusts the model only
+  above that bar, so confidence that stops meaning what it says quietly changes
+  how often the model is listened to at all.
+- **Regex agreement** with the cascade that labelled the data, split by whether
+  the regex committed to an answer, and who turns out to be right when the two
+  disagree.
+- **`unknown` precision and recall**, against a 0.95 precision bar. Precision is
+  the number that matters: of the rows called `unknown`, how many really were
+  table talk rather than an order that got dropped.
+
+Flags: `--model`, `--split`, `--bins`, `--pairs`, `--classes`, `--all-classes`,
+`--threshold`, `--margin`, `--unknown-bar`. Where the current weights stand:
+
+| | |
+|---|---|
+| Dev accuracy | 85.6% — 91.0% on the 81.6% of rows that clear the bar |
+| ECE | 0.028, and 0.023 above the bar |
+| Regex agreement | 84.9% where the regex commits; on the 897 disagreements the model is right 651 times to the regex's 174 |
+| `unknown` precision / recall | 86.5% / 88.0% — still under the 0.95 precision bar on this split |
+
+The dev split is the harsher of the two measurements and deliberately so: it
+holds out *whole templates*, so every wording family with only one member is a
+family the model is scored on having never seen. See the last of the known
+limits below for what that costs.
 
 ## How it is built
 
@@ -74,6 +117,7 @@ Training takes under a minute on a laptop GPU and works on CPU too. Only
 | `featurizer.py` | The feature extractor. Must stay identical to the TypeScript one. |
 | `train.py` | Trains, calibrates, quantises, exports, and reports. |
 | `export.py` | The binary weights format and the reference forward pass. |
+| `eval.py` | Scores the shipped weights on the dev split: confusion, calibration, regex agreement, `unknown` (`python tools/train/eval.py`). |
 | `probe.ts` | Ask the shipped model about a specific order (`npm run probe -- "your order"`). |
 | `report.ts` | Score the shipped model (`npm run model-report`). |
 | `make_golden.mjs` | Rebuilds the hand-written acceptance set. |
@@ -120,8 +164,23 @@ labels. After editing `DMCommandParser.ts`:
 
 - A bag of n-grams has no word order beyond bigrams. Negation is handled by
   training on negated phrasings, not by understanding it.
-- Six of the 157 hand-written orders are still misread, and one line of table
-  talk ("a camp would be nice about now") is taken as an order to make camp —
-  the word "camp" is a documented command, so the regex claims it.
+- Two of the 166 hand-written orders are still misread: "sign us up for the
+  second one" is board work read as a quest rather than a bulletin task (the
+  sentence names neither), and one line of table talk ("a camp would be nice
+  about now") is taken as an order to make camp — the word "camp" is a
+  documented command, so the regex claims it before the model is asked.
 - Names are open vocabulary and are pulled out by span rules, never by the
   classifier, so renaming a character to something unusual still works.
+- `unknown` precision clears its 0.95 bar on the hand-written set — 19 of 19,
+  no real order dropped as chatter, and 5% of the table talk acted on — but is
+  0.865 on the dev split, where the bar still reads FAIL. The gap is the split's
+  design, not a second opinion about the same thing: the dev split holds out
+  whole templates, so a wording family with one member ("is there a festival
+  on", "prioritise staying alive", "take five") is scored with nothing near it
+  in its own class, and the model's honest answer for a phrasing it has never
+  seen is `unknown`. The remaining 126 false `unknown`s are spread thinly over
+  twenty-odd such templates, so closing that gap means widening those families
+  in `vocabulary.py`, not tuning the model. What the player actually feels is
+  the last line of the report: 2.0% of the split's table talk clears the accept
+  bar and would be acted on, down from 6.4%. Run `python tools/train/eval.py`
+  for the current figures.

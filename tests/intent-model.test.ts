@@ -122,6 +122,10 @@ describeModel('understand() with the trained model', () => {
    * Places where the model deliberately disagrees with the regex and is right.
    * The canonical labels come from the regex, which has known ordering quirks;
    * each entry here has been reviewed by hand and says why the model wins.
+   *
+   * Agreement with the regex is 367 of 369 canonical phrases (99.5%), so the
+   * chokepoint and ritual-circle entries below are exercised by the current
+   * weights; the third is kept because a retrain can bring it back.
    */
   const REVIEWED_IMPROVEMENTS: Record<string, DMIntent> = {
     // On the surface, "descend into the dungeon" means go in, not take stairs.
@@ -155,7 +159,7 @@ describeModel('understand() with the trained model', () => {
       if (got.intent !== row.intent) wrong.push(`${JSON.stringify(row.text)}: want ${row.intent}, got ${got.intent}`);
     }
     const accuracy = 1 - wrong.length / rows.length;
-    expect(accuracy, `golden-set accuracy ${(accuracy * 100).toFixed(1)}%:\n${wrong.join('\n')}`).toBeGreaterThanOrEqual(0.9);
+    expect(accuracy, `golden-set accuracy ${(accuracy * 100).toFixed(1)}%:\n${wrong.join('\n')}`).toBeGreaterThanOrEqual(0.92);
 
     // The regex alone should do markedly worse — that is the point of the model.
     const regexRight = rows.filter(r => parseDMCommandRegex(r.text, r.ctx).intent === r.intent).length;
@@ -181,6 +185,32 @@ describeModel('understand() with the trained model', () => {
     expect(wrong, wrong.join('\n')).toEqual([]);
   });
 
+  it('fills the slots across the whole set, not only where it guessed the intent', () => {
+    const rows = readJsonl<{ text: string; ctx: DMContext; intent: DMIntent; slots?: Record<string, unknown> }>('dm-golden.jsonl');
+    // Micro-averaged over every expected slot on every row, misclassified rows
+    // included: the strict check above skips those, so a wrong intent that also
+    // loses its arguments would otherwise cost nothing here.
+    let tp = 0, fp = 0, fn = 0;
+    const missed: string[] = [];
+    for (const row of rows) {
+      if (!row.slots) continue;
+      const got = understand(row.text, row.ctx, model).cmd as Record<string, unknown>;
+      for (const [k, want] of Object.entries(row.slots)) {
+        if (got[k] === want) { tp++; continue; }
+        fn++;
+        // A wrong value is both a miss and a false alarm; a missing one is only a miss.
+        if (got[k] !== undefined) fp++;
+        missed.push(`${JSON.stringify(row.text)}: ${k} want ${JSON.stringify(want)}, got ${JSON.stringify(got[k])}`);
+      }
+    }
+    expect(tp + fn).toBeGreaterThan(30);
+    const precision = tp + fp === 0 ? 0 : tp / (tp + fp);
+    const recall = tp / (tp + fn);
+    const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
+    expect(f1, `slot micro-F1 ${(f1 * 100).toFixed(1)}% (P ${precision.toFixed(3)}, R ${recall.toFixed(3)}):\n${missed.join('\n')}`)
+      .toBeGreaterThanOrEqual(0.9);
+  });
+
   it('does not invent orders out of chatter', () => {
     const rows = readJsonl<{ text: string; ctx: DMContext; intent: DMIntent }>('dm-golden.jsonl')
       .filter(r => r.intent === 'unknown');
@@ -188,5 +218,21 @@ describeModel('understand() with the trained model', () => {
     const fired = rows.filter(r => understand(r.text, r.ctx, model).cmd.intent !== 'unknown');
     // A little over-eagerness is tolerable; acting on most chatter is not.
     expect(fired.length / rows.length, `acted on: ${fired.map(r => JSON.stringify(r.text)).join(', ')}`).toBeLessThanOrEqual(0.25);
+  });
+
+  it('does not shrug off orders it was given', () => {
+    // The test above is recall over the chatter rows. This is the other half and
+    // the one that matters: of everything the model *called* chatter, how much
+    // really was chatter rather than an order silently dropped on the floor.
+    const rows = readJsonl<{ text: string; ctx: DMContext; intent: DMIntent }>('dm-golden.jsonl');
+    const shrugged = rows.filter(r => understand(r.text, r.ctx, model).cmd.intent === 'unknown');
+    expect(shrugged.length).toBeGreaterThan(0);
+    const dropped = shrugged.filter(r => r.intent !== 'unknown');
+    const precision = 1 - dropped.length / shrugged.length;
+    expect(
+      precision,
+      `unknown precision ${(precision * 100).toFixed(1)}% — real orders dropped as chatter:\n` +
+        dropped.map(r => `${JSON.stringify(r.text)}: want ${r.intent}`).join('\n'),
+    ).toBeGreaterThanOrEqual(0.95);
   });
 });
