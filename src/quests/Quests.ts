@@ -10,6 +10,7 @@ import { Overworld, OverworldEntrance, OverworldTown } from '../world/Overworld'
 import { MAGIC_ITEMS } from '../ai/DnDKnowledge';
 import { getMonsterTemplate } from '../entities/Monster';
 import { RumorBias } from '../world/TownLife';
+import { pluralise } from './BulletinBoard';
 
 export type QuestKind = 'reach_floor' | 'slay_boss' | 'slay_kind' | 'clear_floor' | 'collect_item';
 
@@ -51,11 +52,39 @@ export interface QuestState {
   treasuresFound?: number;
 }
 
-const QUESTS: { kind: QuestKind; title: (e: OverworldEntrance) => string; detail: (e: OverworldEntrance, kind?: string, count?: number) => string }[] = [
+/** Display name for a hunt target, already pluralised for a notice. */
+function huntName(kind: string | undefined, plural: boolean): string {
+  const t = kind ? getMonsterTemplate(kind) : undefined;
+  if (!t) return plural ? 'creatures' : 'creature';
+  return plural ? pluralise(t.name) : t.name;
+}
+
+interface QuestTemplate {
+  kind: QuestKind;
+  title: (e: OverworldEntrance, kind?: string, count?: number) => string;
+  detail: (e: OverworldEntrance, kind?: string, count?: number) => string;
+}
+
+const QUESTS: QuestTemplate[] = [
   {
     kind: 'reach_floor',
     title: e => `Plumb the Depths of ${e.name}`,
     detail: (e, _k, _c) => `Descend to floor ${e.depth} of ${e.name} and return with proof you touched its heart.`,
+  },
+  {
+    kind: 'reach_floor',
+    title: e => `The Bottom of ${e.name}`,
+    detail: (e, _k, _c) => `Nobody in this town has stood on floor ${e.depth} of ${e.name} and come back to describe it. Be the first, or be the next to try.`,
+  },
+  {
+    kind: 'reach_floor',
+    title: e => `Sound the Depth of ${e.name}`,
+    detail: (e, _k, _c) => `Go down through ${e.name} as far as floor ${e.depth}, note what changes on the way, and come back up while that is still an option.`,
+  },
+  {
+    kind: 'reach_floor',
+    title: e => `${e.name}, Floor ${e.depth}`,
+    detail: (e, _k, _c) => `The contract is simple and the fee is not: reach floor ${e.depth} of ${e.name}. What you do on the way down is your own business.`,
   },
   {
     kind: 'slay_boss',
@@ -63,9 +92,39 @@ const QUESTS: { kind: QuestKind; title: (e: OverworldEntrance) => string; detail
     detail: (e, _k, _c) => `Something ancient holds court at the bottom of ${e.name}. Slay it and bring back a trophy.`,
   },
   {
+    kind: 'slay_boss',
+    title: e => `Whatever Holds ${e.name}`,
+    detail: (e, _k, _c) => `Everything in ${e.name} takes its orders from one thing on the lowest floor. Remove the one thing and the rest becomes housekeeping.`,
+  },
+  {
+    kind: 'slay_boss',
+    title: e => `Break the Court of ${e.name}`,
+    detail: (e, _k, _c) => `Something at the bottom of ${e.name} has been left alone far too long and has started making arrangements. End it, and bring back proof that it ended.`,
+  },
+  {
+    kind: 'slay_boss',
+    title: e => `The Thing Beneath ${e.name}`,
+    detail: (e, _k, _c) => `Three parties have gone into ${e.name} to deal with what sits at the bottom of it. The town would like a fourth answer.`,
+  },
+  {
     kind: 'clear_floor',
     title: e => `Sweep the Halls of ${e.name}`,
     detail: (e, _k, _c) => `Nothing may still be breathing when you leave. Clear a floor of ${e.name} end to end.`,
+  },
+  {
+    kind: 'clear_floor',
+    title: e => `Empty a Floor of ${e.name}`,
+    detail: (e, _k, _c) => `One level of ${e.name}, cleared end to end — corners, side rooms, and anything pretending to be furniture.`,
+  },
+  {
+    kind: 'clear_floor',
+    title: e => `Quiet ${e.name}`,
+    detail: (e, _k, _c) => `The guild wants one floor of ${e.name} silent for long enough to survey it properly. Silence it.`,
+  },
+  {
+    kind: 'clear_floor',
+    title: e => `Nothing Left Standing in ${e.name}`,
+    detail: (e, _k, _c) => `Half-cleared is worse than untouched; it only teaches them that you are coming. Take a floor of ${e.name} completely.`,
   },
   {
     kind: 'collect_item',
@@ -73,12 +132,39 @@ const QUESTS: { kind: QuestKind; title: (e: OverworldEntrance) => string; detail
     detail: (e, _k, count) => `A collector is paying for whatever ${e.name} still holds. Bring back ${count} pieces of treasure.`,
   },
   {
+    kind: 'collect_item',
+    title: e => `Crate Work: ${e.name}`,
+    detail: (e, _k, count) => `A factor is paying by the piece for whatever is still loose in ${e.name}. ${count} items, and no questions about provenance.`,
+  },
+  {
+    kind: 'collect_item',
+    title: e => `Strip the Vaults of ${e.name}`,
+    detail: (e, _k, count) => `Bring up ${count} pieces of treasure from ${e.name}. The buyer is not asking which vaults they came out of, and would rather not be told.`,
+  },
+  {
+    kind: 'collect_item',
+    title: e => `Consignment from ${e.name}`,
+    detail: (e, _k, count) => `${count} pieces of anything valuable out of ${e.name}, delivered whole. Cracked, chipped and cursed all count — the collector has odd taste.`,
+  },
+  {
     kind: 'slay_kind',
     title: e => `Hunt in ${e.name}`,
-    detail: (e, kind, count) => {
-      const t = kind ? getMonsterTemplate(kind) : undefined;
-      return `The roads are unsafe — cull ${count} ${t?.name ?? 'creatures'} inside ${e.name} and the town will be grateful.`;
-    },
+    detail: (e, kind, count) => `The roads are unsafe — cull ${count} ${huntName(kind, true)} inside ${e.name} and the town will be grateful.`,
+  },
+  {
+    kind: 'slay_kind',
+    title: (e, kind) => `${e.name} Contract: ${huntName(kind, true)}`,
+    detail: (e, kind, count) => `Cull ${count} ${huntName(kind, true)} out of ${e.name}. The rest will take the hint and stop coming up the stair.`,
+  },
+  {
+    kind: 'slay_kind',
+    title: (e, kind) => `Bounty in ${e.name}: ${huntName(kind, false)}`,
+    detail: (e, kind, count) => `The bounty clerk pays by the head for ${huntName(kind, true)} taken inside ${e.name}. ${count} of them, and he counts very carefully.`,
+  },
+  {
+    kind: 'slay_kind',
+    title: (e, kind) => `Thin the ${huntName(kind, true)} of ${e.name}`,
+    detail: (e, kind, count) => `There are more ${huntName(kind, true)} in ${e.name} than that place can feed, which is why they keep coming out of it. Take ${count}.`,
   },
 ];
 
@@ -145,7 +231,10 @@ export function generateQuests(
   for (let i = 0; i < count && available.length > 0; i++) {
     const entrance = available.splice(Math.floor(Math.random() * available.length), 1)[0];
     const kind = templateKinds[Math.floor(Math.random() * templateKinds.length)];
-    const template = QUESTS.find(t => t.kind === kind) ?? QUESTS[0];
+    // Each objective has several ways of being written up; pick one so two
+    // hunts in a row do not read like the same notice with a new name in it.
+    const variants = QUESTS.filter(t => t.kind === kind);
+    const template = variants[Math.floor(Math.random() * variants.length)] ?? QUESTS[0];
     const hunt = template.kind === 'slay_kind' ? pickHuntKind(entrance, bias) : undefined;
     const fetchCount = 2 + Math.floor(Math.random() * 3);
 
@@ -172,7 +261,7 @@ export function generateQuests(
     const quest: Quest = {
       id: `quest_${town.id}_${i + 1}`,
       kind: template.kind,
-      title: template.title(entrance),
+      title: template.title(entrance, hunt?.id, template.kind === 'collect_item' ? fetchCount : hunt?.count),
       detail: template.detail(entrance, hunt?.id, template.kind === 'collect_item' ? fetchCount : hunt?.count),
       giverTownId: town.id,
       giverNpcId,

@@ -8,13 +8,14 @@
  * closed — a town can be mid-festival when the party returns days later.
  */
 
-import { Overworld, OverworldTown, getTownById } from './Overworld';
+import { Overworld, OverworldTown, OverworldEntrance, getTownById } from './Overworld';
 import { Wanderer, WandererKind } from './OverworldLife';
 import { TileMap, TileType } from './TileMap';
 import { Vector2, manhattan } from '../engine/types';
 import { QuestGiver, generateQuestGivers } from '../quests/QuestGivers';
 import { TownEvent, rollTownEvent } from './TownTypes';
 import { BulletinTask, generateBulletinTasks } from '../quests/BulletinBoard';
+import { WorldRegion, regionAt } from './WorldRegions';
 
 export type RumorBias = 'hunt' | 'depth' | 'boss' | 'rich' | 'fey' | 'undead' | 'dragon' | 'none';
 
@@ -54,6 +55,206 @@ const RUMORS: Rumor[] = [
   { text: 'The merchants are squabbling over a new route — whoever clears it names the toll.', bias: 'rich' },
   { text: 'Traders whisper that the old barrow has a new tenant — something with cold breath.', bias: 'undead' },
   { text: 'A prophecy-seller claims the deepest floor of the nearest delve holds a wish.', bias: 'boss' },
+  { text: 'Three shepherds lost flocks inside a week. Whatever took them was not a wolf — wolves leave more behind.', bias: 'hunt' },
+  { text: 'The night watch has stopped walking the north wall. They say the noise follows them along it.', bias: 'hunt' },
+  { text: 'A trapper came in with an empty line and a broken arm, and will not say what sprang his snares.', bias: 'hunt' },
+  { text: 'The bounty clerk has run out of blank notices. He is writing the new ones on the backs of the old.', bias: 'hunt' },
+  { text: 'A surveyor put a plumb line down the old shaft and ran out of rope. Twice.', bias: 'depth' },
+  { text: 'Cold air comes up out of the ground here all summer. The brewers are delighted. Nobody else is.', bias: 'depth' },
+  { text: 'There is a second stair down there that nobody remembers cutting, and it goes the wrong way.', bias: 'depth' },
+  { text: 'The dogs will not go past the mile-marker any more, and dogs are not the cautious ones around here.', bias: 'boss' },
+  { text: 'Something took the watchtower bell. Not the tower. Just the bell.', bias: 'boss' },
+  { text: 'A priest went below to bless the lower halls and came back grey. All he will say is: it counted us.', bias: 'boss' },
+  { text: 'A gravedigger settled every debt he had in one afternoon and has not been seen sober since.', bias: 'rich' },
+  { text: 'The assayer is buying strange ore at three times the going rate and asking no questions at all.', bias: 'rich' },
+  { text: 'Somebody in this town is spending coins no mint in the realm has struck for four hundred years.', bias: 'rich' },
+  { text: 'The tax collector would like to know where the new money is coming from. So would everyone else.', bias: 'rich' },
+  { text: 'Milk left on the step comes back as coin. Nobody will say aloud who takes it.', bias: 'fey' },
+  { text: 'A miller\'s boy went missing for a night and came back knowing every song in the valley and none of his letters.', bias: 'fey' },
+  { text: 'The stone circle has one more stone than it did last spring. The surveyor is on his third bottle.', bias: 'fey' },
+  { text: 'Every gate in the west quarter has been hung with cold iron. Nobody explains it, and nobody jokes about it.', bias: 'fey' },
+  { text: 'The gravedigger has doubled his price, and he digs deeper for it.', bias: 'undead' },
+  { text: 'The names on the older stones are wearing away from the inside.', bias: 'undead' },
+  { text: 'The bell-ringer swears the temple bell rings itself an hour before every funeral now. He has started keeping the hour free.', bias: 'undead' },
+  { text: 'Cattle are going missing whole — no blood, no drag marks, just a scorched hollow in the grass.', bias: 'dragon' },
+  { text: 'The granary roof is scored with grooves the width of a man\'s arm, and the granary is two storeys up.', bias: 'dragon' },
+  { text: 'A tinker sold a scale to the smith as a shield boss. It is still too heavy for the shield.', bias: 'dragon' },
+  { text: 'The bridge toll has doubled and the bridge is no better for it.', bias: 'none' },
+  { text: 'Two guilds are suing each other over a well. The case will outlast everyone named in it.', bias: 'none' },
+  { text: 'A new inn opened on the square, and the old one has started watering its ale out of spite.', bias: 'none' },
+  { text: 'The town crier has been paid to stop crying one particular piece of news, which is how everyone heard it.', bias: 'none' },
+];
+
+/**
+ * Rumors a town only tells about itself. Keyed by town archetype id, so a
+ * mining settlement worries about its shafts and a port worries about what
+ * comes in on the tide. An archetype with no entry simply falls back to the
+ * general pool.
+ */
+const ARCHETYPE_RUMORS: Record<string, Rumor[]> = {
+  port_town: [
+    { text: 'A ship came in on the tide with her sails set and nobody aboard. The harbourmaster has impounded her and stopped answering questions.', bias: 'hunt' },
+    { text: 'The net-menders keep hauling up worked stone from the bay. Somebody built down there once, and built well.', bias: 'depth' },
+    { text: 'A captain is paying double for hands who will sail past the reef after dark. Nobody has taken that coin twice.', bias: 'rich' },
+  ],
+  mining_settlement: [
+    { text: 'The third shaft has been boarded over, and the foreman will not say who gave the order.', bias: 'depth' },
+    { text: 'The canaries in the deep gallery have stopped singing. They have not stopped living — they have just stopped.', bias: 'boss' },
+    { text: 'Someone struck silver nine days ago and still has not come up to file the claim.', bias: 'rich' },
+  ],
+  wizard_college: [
+    { text: 'A student\'s familiar came back without the student. It is being very careful about what it says.', bias: 'depth' },
+    { text: 'The wards on the undercroft have been renewed twice this month. They are meant to hold for a year.', bias: 'boss' },
+    { text: 'Someone is selling practice scrolls that work considerably better than practice scrolls should.', bias: 'rich' },
+  ],
+  frontier_outpost: [
+    { text: 'The patrol route has been shortened twice this season. The captain is calling it efficiency.', bias: 'hunt' },
+    { text: 'Every trapper on the north line came in early, and not one of them is going back out.', bias: 'hunt' },
+    { text: 'The palisade was rebuilt in the spring. Something has already put a hole in it from the outside.', bias: 'boss' },
+  ],
+  holy_city: [
+    { text: 'The vigil in the lower chapel has not been kept by the same priest twice. They all ask to be reassigned.', bias: 'undead' },
+    { text: 'Pilgrims are arriving with the same dream and different accents.', bias: 'boss' },
+    { text: 'The reliquary inventory came up one item short, and the sacristan is being remarkably calm about it.', bias: 'rich' },
+  ],
+  trade_hub: [
+    { text: 'Three caravans have come in light, and none of the drivers will name the stretch of road where it happened.', bias: 'hunt' },
+    { text: 'A factor is buying grave-goods at market rate and shipping the crates out unopened.', bias: 'undead' },
+    { text: 'The moneylenders have quietly stopped writing insurance on the eastern route. They are not saying why.', bias: 'rich' },
+  ],
+  farming_village: [
+    { text: 'The dogs bark at the treeline at the same hour every night, and there is never anything in the treeline.', bias: 'fey' },
+    { text: 'A field was harvested in the night. Neatly. Nobody has claimed the work or the crop.', bias: 'fey' },
+    { text: 'The plough turned up a stair last autumn. The farmer has ploughed around it ever since.', bias: 'depth' },
+  ],
+  noble_seat: [
+    { text: 'The lord\'s huntsman has been paid to lose the boar hunt three seasons running, and nobody will explain the arrangement.', bias: 'hunt' },
+    { text: 'A second cousin arrived to press a claim and knew the castle better than the steward does.', bias: 'none' },
+    { text: 'The house guard is recruiting quietly, and not one of the new men is from here.', bias: 'hunt' },
+  ],
+  forest_hold: [
+    { text: 'The old paths have moved again. The elders are pretending this is ordinary.', bias: 'fey' },
+    { text: 'Someone has been leaving offerings at a tree the hold does not have a name for.', bias: 'fey' },
+    { text: 'The deer have come down to the walls and will not go back up the valley.', bias: 'hunt' },
+  ],
+  desert_oasis: [
+    { text: 'A caravan arrived three days early with every crate intact and no memory of the crossing.', bias: 'fey' },
+    { text: 'The old cistern has dropped a foot since the moon turned, and it has not rained anywhere.', bias: 'depth' },
+    { text: 'A guide is charging triple to go near the ruin field, and getting it.', bias: 'rich' },
+  ],
+};
+
+/** What the world can tell a rumor about, when the pieces exist. */
+export interface RumorContext {
+  town?: OverworldTown;
+  /** The nearest dungeon entrance to the town, if the map has one. */
+  entrance?: OverworldEntrance;
+  /** Another town, for talk about the road between them. */
+  neighbor?: OverworldTown;
+  /** The territory the town sits in. */
+  region?: WorldRegion;
+}
+
+/** A rumor that only exists when the world supplies its parts. */
+interface ContextualRumor {
+  bias: RumorBias;
+  /** Returns the line, or null when this world has nothing to hang it on. */
+  text: (ctx: RumorContext) => string | null;
+}
+
+const CONTEXTUAL_RUMORS: ContextualRumor[] = [
+  {
+    bias: 'depth',
+    text: c => c.entrance ? `The guild has ${c.entrance.name} down as ${c.entrance.depth} floors. The last crew to check came back certain it was more.` : null,
+  },
+  {
+    bias: 'boss',
+    text: c => c.entrance ? `Whatever keeps house at the bottom of ${c.entrance.name} has started sending things up to fetch its meals.` : null,
+  },
+  {
+    bias: 'hunt',
+    text: c => c.entrance ? `The trail to ${c.entrance.name} has been widened by something that does not use trails.` : null,
+  },
+  {
+    bias: 'rich',
+    text: c => c.entrance ? `A carter has been hauling crates out of ${c.entrance.name} after dark and paying his tolls in very old coin.` : null,
+  },
+  {
+    bias: 'depth',
+    text: c => c.entrance ? `${c.entrance.name} exhales when the weather turns. The tanners have started planning their week around it.` : null,
+  },
+  {
+    bias: 'undead',
+    text: c => (c.entrance && c.entrance.depth >= 3) ? `They stopped burying the dead within sight of ${c.entrance.name}. The graves would not stay tidy.` : null,
+  },
+  {
+    bias: 'boss',
+    text: c => (c.entrance && c.entrance.depth >= 5) ? `${c.entrance.name} runs ${c.entrance.depth} floors down, and the guild has stopped selling maps of the last two.` : null,
+  },
+  {
+    bias: 'hunt',
+    text: c => c.neighbor ? `The road to ${c.neighbor.name} is three days now instead of two. Nobody takes the short way after dark.` : null,
+  },
+  {
+    bias: 'rich',
+    text: c => c.neighbor ? `${c.neighbor.name} is paying better than we are for the same work, which is either good news or a warning.` : null,
+  },
+  {
+    bias: 'none',
+    text: c => c.neighbor ? `A rider came through from ${c.neighbor.name} without stopping and would not take water.` : null,
+  },
+  {
+    bias: 'undead',
+    text: c => c.neighbor ? `${c.neighbor.name} has been shutting its gates at dusk for a month. They will not say what they are shutting them against.` : null,
+  },
+  {
+    bias: 'hunt',
+    text: c => c.region ? `Nothing has come out of ${c.region.name} on foot in a fortnight, and the carts that do come through are not stopping here.` : null,
+  },
+  {
+    bias: 'fey',
+    text: c => c.region?.biome === 'forest' ? `Half of ${c.region.name} is walking wrong. The rangers have started marking every tree twice.` : null,
+  },
+  {
+    bias: 'depth',
+    text: c => c.region?.biome === 'mountain' ? `The passes through ${c.region.name} are open, and the shepherds are still not using them.` : null,
+  },
+  {
+    bias: 'undead',
+    text: c => c.region?.biome === 'swamp' ? `The water in ${c.region.name} has gone still, which anyone raised here will tell you is the worse sign.` : null,
+  },
+  {
+    bias: 'rich',
+    text: c => c.region?.biome === 'desert' ? `The last storm uncovered a doorway out in ${c.region.name}. The next one will bury it again.` : null,
+  },
+  {
+    bias: 'boss',
+    text: c => c.region?.biome === 'snow' ? `Something crossed ${c.region.name} in a straight line, through the drifts, and did not slow down for the river.` : null,
+  },
+  {
+    bias: 'depth',
+    text: c => c.region?.biome === 'coast' ? `The tide along ${c.region.name} has been coming in wrong, and the old hands have started writing it down.` : null,
+  },
+  {
+    bias: 'hunt',
+    text: c => c.region?.biome === 'grassland' ? `A whole season of mileposts along ${c.region.name} has been pulled up and stacked. Neatly.` : null,
+  },
+  {
+    bias: 'none',
+    text: c => (c.town && c.town.population < 2500) ? `There are more names in the graveyard at ${c.town.name} than there are people paying tax in it, and the gap is widening.` : null,
+  },
+  {
+    bias: 'undead',
+    text: c => (c.town && c.town.population < 2500) ? `${c.town.name} is small enough that everyone knows who is meant to be dead. Two people have been counted twice this month.` : null,
+  },
+  {
+    bias: 'rich',
+    text: c => (c.town && c.town.population > 11000) ? `${c.town.name} has outgrown its walls again. Whatever is outside them has noticed.` : null,
+  },
+  {
+    bias: 'hunt',
+    text: c => (c.town && c.town.population > 11000) ? `A town the size of ${c.town.name} loses people every week and calls it drifting. The watch has stopped calling it that.` : null,
+  },
 ];
 
 export interface Festival {
@@ -63,16 +264,114 @@ export interface Festival {
   startedAt: number;
 }
 
-interface FestivalTemplate { name: string; kind: string }
+interface FestivalTemplate {
+  name: string;
+  kind: string;
+  /** The line the log gets when this one begins. Each festival opens differently. */
+  opening: (town: string) => string;
+  /**
+   * Town archetypes that hold this festival. Omitted means anywhere — a
+   * listed festival only ever fires in the towns that would actually keep it.
+   */
+  archetypes?: string[];
+}
 
 const FESTIVALS: FestivalTemplate[] = [
-  { name: 'the Festival of Lanterns', kind: 'lights' },
-  { name: 'the Harvest Fair', kind: 'harvest' },
-  { name: 'the Day of the Moon', kind: 'moon' },
-  { name: 'the Anvil-Choir', kind: 'music' },
-  { name: 'the Solstice Fete', kind: 'solstice' },
-  { name: 'the Feast of the First Keg', kind: 'ale' },
-  { name: 'the Midsummer Fling', kind: 'dance' },
+  {
+    name: 'the Festival of Lanterns', kind: 'lights',
+    opening: t => `🎪 ${t} hangs its first lanterns at dusk — by full dark the roofs are a second, lower sky.`,
+  },
+  {
+    name: 'the Harvest Fair', kind: 'harvest',
+    opening: t => `🎪 The Harvest Fair opens in ${t}: gourds the size of dogs, a prize pig with strong opinions, and a queue for the pie tent that goes round the well.`,
+  },
+  {
+    name: 'the Day of the Moon', kind: 'moon',
+    opening: t => `🎪 ${t} keeps the Day of the Moon — every shutter open, every candle silver, and nobody sleeps until the temple says they may.`,
+  },
+  {
+    name: 'the Anvil-Choir', kind: 'music',
+    opening: t => `🎪 The Anvil-Choir has started up in ${t}. Hammers on the beat, four-part harmony, and a noise complaint nobody will sign.`,
+    archetypes: ['mining_settlement', 'trade_hub', 'frontier_outpost', 'noble_seat'],
+  },
+  {
+    name: 'the Solstice Fete', kind: 'solstice',
+    opening: t => `🎪 Bonfires go up on every rise around ${t} for the Solstice Fete, and half the children in town are already too close to them.`,
+  },
+  {
+    name: 'the Feast of the First Keg', kind: 'ale',
+    opening: t => `🎪 ${t} broaches the first keg of the season. The brewer makes a speech; nobody hears the end of it.`,
+  },
+  {
+    name: 'the Midsummer Fling', kind: 'dance',
+    opening: t => `🎪 Fiddlers have taken the square in ${t} and the Midsummer Fling is under way. Three feuds will end tonight and two will start.`,
+  },
+  {
+    name: 'the Salt Blessing', kind: 'salt',
+    opening: t => `🎪 ${t} ropes its whole fleet together into one floating street for the Salt Blessing, and the priests walk it keel to keel.`,
+    archetypes: ['port_town'],
+  },
+  {
+    name: 'the Deep Draught', kind: 'deep',
+    opening: t => `🎪 ${t} sends a cask down the main shaft at dawn and drinks it standing when it comes back up. Nobody has ever explained why it tastes better.`,
+    archetypes: ['mining_settlement'],
+  },
+  {
+    name: 'the Rite of Open Doors', kind: 'doors',
+    opening: t => `🎪 Every door in ${t} is propped open for the Rite, and the temple is feeding whoever walks through them — no questions, no collection plate.`,
+    archetypes: ['holy_city', 'farming_village'],
+  },
+  {
+    name: 'the Convocation of Sparks', kind: 'sparks',
+    opening: t => `🎪 The towers of ${t} are throwing coloured fire off their roofs and scoring each other out of ten. The fire is harmless. The scoring is not.`,
+    archetypes: ['wizard_college'],
+  },
+  {
+    name: 'the Muster', kind: 'muster',
+    opening: t => `🎪 ${t} holds the Muster: the garrison drills in the square all day, then loses a drinking contest to the townsfolk all night.`,
+    archetypes: ['frontier_outpost', 'noble_seat', 'trade_hub'],
+  },
+  {
+    name: 'the Tally', kind: 'tally',
+    opening: t => `🎪 ${t} reads out the year's books in the square, debts and all, and then burns them. Attendance is enthusiastic and not entirely voluntary.`,
+    archetypes: ['trade_hub', 'port_town', 'desert_oasis'],
+  },
+  {
+    name: 'the Long Table', kind: 'table',
+    opening: t => `🎪 One table now runs the length of the main street in ${t}, and nobody is permitted to eat in their own house.`,
+    archetypes: ['farming_village', 'forest_hold', 'holy_city'],
+  },
+  {
+    name: 'the Investiture', kind: 'investiture',
+    opening: t => `🎪 The houses of ${t} have paraded their colours and gone to the lists to settle a year of grudges in front of witnesses.`,
+    archetypes: ['noble_seat'],
+  },
+  {
+    name: 'the Green Vigil', kind: 'green',
+    opening: t => `🎪 ${t} has hung its bridges with new growth for the Green Vigil. No axe will be lifted here for three days, on pain of a very cold silence.`,
+    archetypes: ['forest_hold'],
+  },
+  {
+    name: 'the Night of Wells', kind: 'wells',
+    opening: t => `🎪 ${t} lights the pool from underneath for the Night of Wells, and the whole town stays up to watch the stars come over the rim.`,
+    archetypes: ['desert_oasis', 'farming_village'],
+  },
+  {
+    name: 'the Founders\' Wake', kind: 'founders',
+    opening: t => `🎪 ${t} is reading the oldest names off the oldest stones, and drinking, at length, to people none of them ever met.`,
+  },
+  {
+    name: 'the Beast Fair', kind: 'beasts',
+    opening: t => `🎪 The Beast Fair fills the stockyards of ${t} with prize animals. One of them is already loose.`,
+  },
+  {
+    name: 'the Mourning Quiet', kind: 'quiet',
+    opening: t => `🎪 ${t} has muffled its bells and closed its ledgers for the Mourning Quiet. The whole town is speaking a register lower.`,
+  },
+  {
+    name: 'the Kite Days', kind: 'kites',
+    opening: t => `🎪 Paper birds are fighting over the rooftops of ${t}. By local custom the losers stay where they fall.`,
+  },
 ];
 
 export const FESTIVAL_FLAVOR: Record<string, string> = {
@@ -83,6 +382,45 @@ export const FESTIVAL_FLAVOR: Record<string, string> = {
   solstice: 'bonfires ring the town and children chase sparks',
   ale: 'the first keg of the season rolls out and no one is sober',
   dance: 'ribbons and fiddles — the whole square turns into a dance floor',
+  salt: 'the fleet is roped together into one floating street and every keel gets a blessing',
+  deep: 'the first cask of the season goes down the shaft sweet and comes back up sweeter',
+  doors: 'every door in town stands propped open and the temple is feeding all comers',
+  sparks: 'the towers throw harmless coloured fire off their roofs and score each other out of ten',
+  muster: 'the garrison drills all day and loses to civilians all night',
+  tally: 'the year\'s books are read aloud in the square, debts and all, and then burned',
+  table: 'one table runs the length of the street and nobody eats at home',
+  investiture: 'the houses parade their colours and settle a year of grudges in the lists',
+  green: 'the bridges are hung with new growth and no axe is lifted for three days',
+  wells: 'the pool is lit from beneath and the whole town is up to watch the stars come over',
+  founders: 'the oldest names are read off the stones and toasted by people who never met them',
+  beasts: 'the stockyards are full of prize animals and at least one of them is loose',
+  quiet: 'the bells are muffled, no trade is done, and the town speaks a register lower',
+  kites: 'paper birds fight over the rooftops and the losers are left where they fall',
+};
+
+/** How each celebration ends, so the log does not sign off the same way twice. */
+const FESTIVAL_CLOSING: Record<string, (town: string) => string> = {
+  lights: t => `The lanterns come down over ${t} in daylight and look like what they are: paper.`,
+  harvest: t => `The last of the fair is carted out of ${t}, and the prize pig goes home undefeated.`,
+  moon: t => `The candles gutter out in ${t} and the temple doors shut on a town that badly needs to sleep.`,
+  music: t => `The Anvil-Choir in ${t} runs out of voice before it runs out of ale. The square goes quiet by inches.`,
+  solstice: t => `The bonfires around ${t} burn down to rings of white ash, and the children are carried home.`,
+  ale: t => `The keg in ${t} is empty, the brewer's speech is still unfinished, and trade resumes.`,
+  dance: t => `The fiddlers in ${t} pack up mid-tune and the square goes back to being a square.`,
+  salt: t => `The fleet at ${t} unropes on the morning tide, blessed and slightly hungover.`,
+  deep: t => `${t} sends the empty cask back down the shaft and goes back to work an hour late.`,
+  doors: t => `The doors of ${t} close one by one, and the temple counts what is left in the pot.`,
+  sparks: t => `The last of the fire fades off the towers of ${t}. Two colleges are disputing the scoring.`,
+  muster: t => `The garrison of ${t} stands down, nurses its dignity, and goes back to the wall.`,
+  tally: t => `The ashes of the year's books blow across the square in ${t} and the new ledgers are opened.`,
+  table: t => `The long table is broken up into ordinary tables again, and ${t} eats indoors.`,
+  investiture: t => `The lists at ${t} are cleared, the grudges are settled on paper, and the colours come down.`,
+  green: t => `The green comes off the bridges of ${t} and the axes come out of the sheds.`,
+  wells: t => `The lights under the pool at ${t} are put out, and the stars go back to being ordinary.`,
+  founders: t => `${t} finishes its toasts, straightens the old stones, and gets on with the living.`,
+  beasts: t => `The stockyards of ${t} empty out. The loose animal has still not been recovered.`,
+  quiet: t => `The bells of ${t} are unmuffled, the shutters go up, and the town finds its voice again.`,
+  kites: t => `The last paper birds are swept off the roofs of ${t} and the roofs are dull again.`,
 };
 
 export interface TownLife {
@@ -145,47 +483,106 @@ function randInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-export function pickRumor(): Rumor {
+/**
+ * Pick the rumor a town will be repeating. With no context this is the
+ * free-floating pool; given a town, its nearest delve, a neighbour and a
+ * region, roughly half the time the talk is about something the world
+ * actually contains.
+ */
+export function pickRumor(ctx: RumorContext = {}): Rumor {
+  const local: Rumor[] = [];
+  const archetypeId = ctx.town?.archetypeId;
+  if (archetypeId && ARCHETYPE_RUMORS[archetypeId]) local.push(...ARCHETYPE_RUMORS[archetypeId]);
+  for (const c of CONTEXTUAL_RUMORS) {
+    const text = c.text(ctx);
+    if (text) local.push({ text, bias: c.bias });
+  }
+  if (local.length > 0 && Math.random() < 0.55) {
+    return local[Math.floor(Math.random() * local.length)];
+  }
   return RUMORS[Math.floor(Math.random() * RUMORS.length)];
 }
 
+/** Everything a town can gossip about: its delve, its neighbour, its country. */
+function rumorContextFor(overworld: Overworld, town: OverworldTown): RumorContext {
+  let entrance: OverworldEntrance | undefined;
+  let best = Infinity;
+  for (const e of overworld.entrances) {
+    const d = manhattan(e.tile, town.tile);
+    if (d < best) { best = d; entrance = e; }
+  }
+  let neighbor: OverworldTown | undefined;
+  let nearest = Infinity;
+  for (const t of overworld.towns) {
+    if (t.id === town.id) continue;
+    const d = manhattan(t.tile, town.tile);
+    if (d < nearest) { nearest = d; neighbor = t; }
+  }
+  const region = overworld.regions ? regionAt(overworld.regions, town.tile) : undefined;
+  return { town, entrance, neighbor, region };
+}
+
 /** Tavern rumor buffs: bought with 10 gp at the tavern, last for N fights. */
-const TAVERN_BUFFS: (TownRumorBuff & { narration: string })[] = [
+const TAVERN_BUFFS: (TownRumorBuff & { narration: string[] })[] = [
   {
     name: 'Boss Weakness Intel',
     description: 'The bartender heard the dungeon boss is vulnerable to your weapons.',
     damageBonus: 3, acBonus: 0, attackBonus: 1, goldFindBonus: 0, xpBonus: 0,
-    narration: 'The bartender leans in: the boss on the deepest floor hates fire — and steel.',
+    narration: [
+      'The bartender leans in: the boss on the deepest floor hates fire — and steel.',
+      'A retired delver draws the thing on the bar in spilled ale and taps the seam under its jaw. "There. Only there."',
+      'The barkeep will not repeat it above a mutter: whatever holds the bottom floor bleeds like anything else once you get past the plate.',
+    ],
   },
   {
     name: 'Lucky Coins',
     description: 'A lucky charm found in the ale. Bonus gold after fights.',
     damageBonus: 0, acBonus: 0, attackBonus: 0, goldFindBonus: 25, xpBonus: 0,
-    narration: 'You find a strange coin at the bottom of your drink — it feels warm in your palm.',
+    narration: [
+      'You find a strange coin at the bottom of your drink — it feels warm in your palm.',
+      'The change from the round comes back one coin heavy. Nobody at the bar will admit to putting it there.',
+      'An old woman presses a holed penny into your hand, says "for the toll," and will not explain which toll.',
+    ],
   },
   {
     name: 'Barroom Brawl Training',
     description: 'You sparred with the locals. Sharper reflexes in combat.',
     damageBonus: 0, acBonus: 1, attackBonus: 2, goldFindBonus: 0, xpBonus: 0,
-    narration: 'A half-orc teaches you a dirty trick — watch their eyes, not their hands.',
+    narration: [
+      'A half-orc teaches you a dirty trick — watch their eyes, not their hands.',
+      'Two tables go over. By the time the barkeep separates everyone, you have learned three things and paid for one chair.',
+      'The bouncer walks you through how she puts people down without breaking anything. It is mostly footwork and patience.',
+    ],
   },
   {
     name: 'Campfire Tales',
     description: 'Old adventurers shared hard-won wisdom. Bonus XP from fights.',
     damageBonus: 0, acBonus: 0, attackBonus: 0, goldFindBonus: 0, xpBonus: 15,
-    narration: 'A scarred veteran tells you how she survived the deep — knowledge is worth its weight in gold.',
+    narration: [
+      'A scarred veteran tells you how she survived the deep — knowledge is worth its weight in gold.',
+      'A one-handed man walks you through every mistake he made on the fourth floor, in order, without self-pity.',
+      'The old guard in the corner names four parties that went down and did not come back, and what each of them got wrong.',
+    ],
   },
   {
     name: 'Hearty Meal',
     description: 'A massive meal and strong ale. Boosted vigor for the road.',
     damageBonus: 1, acBonus: 0, attackBonus: 1, goldFindBonus: 10, xpBonus: 5,
-    narration: 'The stew is thick, the bread is fresh, and the ale hits like a hammer. You feel unstoppable.',
+    narration: [
+      'The stew is thick, the bread is fresh, and the ale hits like a hammer. You feel unstoppable.',
+      'The cook takes one look at the party and starts bringing food without being asked. Nobody speaks for ten minutes.',
+      'Second helpings arrive unrequested. The bill, when it comes, has been quietly rounded down.',
+    ],
   },
   {
     name: 'Thieves\' Tips',
     description: 'A shady figure whispers about hidden treasure locations.',
     damageBonus: 0, acBonus: 0, attackBonus: 0, goldFindBonus: 40, xpBonus: 0,
-    narration: 'A figure in the corner slides you a note: check behind the waterfall on floor 2.',
+    narration: [
+      'A figure in the corner slides you a note: check behind the waterfall on floor 2.',
+      'Someone you do not see leaves a chalk mark on your table and a floor plan under the salt.',
+      'A woman with very clean hands tells you which flagstone in the lower hall is a lid, then leaves before the round arrives.',
+    ],
   },
 ];
 
@@ -199,13 +596,50 @@ export function rollTavernBuff(): TownRumorBuff | null {
 /** Get the narration for a tavern buff. */
 export function getTavernBuffNarration(buff: TownRumorBuff): string {
   const found = TAVERN_BUFFS.find(b => b.name === buff.name);
-  return found?.narration ?? 'The barkeep nods knowingly.';
+  if (!found || found.narration.length === 0) return 'The barkeep nods knowingly.';
+  return found.narration[Math.floor(Math.random() * found.narration.length)];
+}
+
+/**
+ * Caravan traffic, said four different ways. The party sees a lot of these,
+ * so the log should not read like a shipping manifest.
+ */
+const CARAVAN_DEPARTURE: ((wagons: number, from: string, to: string) => string)[] = [
+  (w, f, t) => `🛒 A caravan of ${w} wagons and their guards rolls out of ${f} for ${t}.`,
+  (w, f, t) => `🛒 ${w} wagons form up on the ${f} road, argue about the order, and set off for ${t}.`,
+  (w, f, t) => `🛒 The ${f} caravan leaves for ${t} — ${w} wagons, a hired blade on each flank, and a driver who keeps checking behind.`,
+  (w, f, t) => `🛒 ${w} wagons pull out of ${f} at walking pace, bound for ${t} and already behind schedule.`,
+];
+
+const CARAVAN_ARRIVAL: ((to: string, from: string | null) => string)[] = [
+  (t, f) => `🛒 A caravan rolls into ${t}${f ? ` from ${f}` : ''} — crates, spices, and fresh rumors for the market.`,
+  (t, f) => `🛒 Wagons crowd the square at ${t}${f ? `, road-dust from ${f} an inch thick on them` : ''}. The stalls rearrange themselves around the new stock.`,
+  (t, f) => `🛒 A caravan makes ${t} before dark${f ? ` — the ${f} run, and the drivers look pleased about that` : ''}.`,
+  (t, f) => `🛒 The market at ${t} doubles in size in an hour${f ? `: the ${f} wagons are in` : ''}, and the prices are already moving.`,
+];
+
+const CARAVAN_TURNAROUND: ((at: string, home: string) => string)[] = [
+  (a, h) => `🛒 The caravan in ${a} loads up and turns back toward ${h}.`,
+  (a, h) => `🛒 Empty crates go on first, then whatever ${a} is selling. The wagons point themselves at ${h} again.`,
+  (a, h) => `🛒 The drivers settle up in ${a}, water the oxen, and start the long haul back to ${h}.`,
+  (a, h) => `🛒 The ${h} caravan has sold what it came to sell. It leaves ${a} before the tolls change.`,
+];
+
+const CARAVAN_HOME: ((home: string) => string)[] = [
+  h => `🛒 The caravan that left ${h} rolls back into the yard — goods unloaded, drivers paid.`,
+  h => `🛒 The ${h} wagons come home light and intact, which the drivers consider a better outcome than profit.`,
+  h => `🛒 The yard at ${h} takes the caravan back in: axles greased, guards dismissed, one crate quietly unaccounted for.`,
+  h => `🛒 The caravan finishes its circuit at ${h}. The tally is short a barrel and nobody is raising it.`,
+];
+
+function pickLine<T>(pool: T[]): T {
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 export function initTownLife(overworld: Overworld, now: number = Date.now()): TownLifeState {
   const byTown: Record<string, TownLife> = {};
   for (const town of overworld.towns) {
-    const rumor = pickRumor();
+    const rumor = pickRumor(rumorContextFor(overworld, town));
     byTown[town.id] = {
       townId: town.id,
       rumor: rumor.text,
@@ -331,15 +765,21 @@ export function tickTownLife(
 
     // Festivals begin and end on their own clocks.
     if (!tl.festival && now > tl.nextFestivalAt) {
-      const tpl = FESTIVALS[Math.floor(Math.random() * FESTIVALS.length)];
+      // A town only holds the festivals it would actually keep; the rest of
+      // the calendar is open to anyone.
+      const pool = FESTIVALS.filter(f => !f.archetypes || f.archetypes.includes(town.archetypeId));
+      const tpl = pool[Math.floor(Math.random() * pool.length)] ?? FESTIVALS[0];
       tl.festival = { name: tpl.name, kind: tpl.kind, until: now + randInt(45, 120) * 1000, startedAt: now };
       if (partyHere) {
-        lines.push(`🎪 ${town.name} has begun ${tpl.name} — ${FESTIVAL_FLAVOR[tpl.kind] || 'the town is celebrating'}!`);
+        lines.push(tpl.opening(town.name));
       }
     } else if (tl.festival && now > tl.festival.until) {
+      const closing = FESTIVAL_CLOSING[tl.festival.kind];
       tl.festival = null;
       tl.nextFestivalAt = now + randInt(150, 360) * 1000;
-      if (partyHere) lines.push(`The festival in ${town.name} winds down; the square returns to trade and gossip.`);
+      if (partyHere) {
+        lines.push(closing ? closing(town.name) : `The festival in ${town.name} winds down; the square returns to trade and gossip.`);
+      }
     }
 
     // A caravan departs on schedule (one per town at a time, cap total).
@@ -351,7 +791,7 @@ export function tickTownLife(
         state.caravans.push(caravan);
         tl.nextCaravanAt = now + randInt(120, 300) * 1000;
         if (partyHere) {
-          lines.push(`🛒 A caravan of ${randInt(2, 4)} wagons and guards departs ${town.name} for ${dest.name}.`);
+          lines.push(pickLine(CARAVAN_DEPARTURE)(randInt(2, 4), town.name, dest.name));
         }
       }
     }
@@ -374,7 +814,7 @@ export function tickTownLife(
           removeCaravan(c, wanderers);
           finished.push(c);
           if (home && manhattan(home.tile, ctx.partyTile) <= 16) {
-            lines.push(`🛒 The caravan that left ${home.name} rolls back into the yard — goods unloaded, drivers paid.`);
+            lines.push(pickLine(CARAVAN_HOME)(home.name));
           }
           continue;
         }
@@ -383,7 +823,7 @@ export function tickTownLife(
         c.restUntil = now + randInt(15, 40) * 1000;
         parkCaravan(c, dest, wanderers);
         if (manhattan(dest.tile, ctx.partyTile) <= 16) {
-          lines.push(`🛒 A caravan rolls into ${dest.name}${home ? ` from ${home.name}` : ''} — crates, spices, and fresh rumors for the market.`);
+          lines.push(pickLine(CARAVAN_ARRIVAL)(dest.name, home?.name ?? null));
         }
         continue;
       }
@@ -397,7 +837,7 @@ export function tickTownLife(
         c.routeIndex = 0;
         syncCaravan(c, wanderers);
         if (manhattan(dest.tile, ctx.partyTile) <= 16) {
-          lines.push(`🛒 The caravan in ${dest.name} loads up and turns back toward ${home?.name ?? 'home'}.`);
+          lines.push(pickLine(CARAVAN_TURNAROUND)(dest.name, home?.name ?? 'home'));
         }
       }
     }
