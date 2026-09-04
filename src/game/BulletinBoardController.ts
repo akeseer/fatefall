@@ -13,6 +13,7 @@ import type { HUD } from '../ui/HUD';
 import type { OverworldTown } from '../world/Overworld';
 import type { TownLifeState } from '../world/TownLife';
 import type { BulletinTask } from '../quests/BulletinBoard';
+import { sfx } from '../audio/Sfx';
 import { bulletinIcon, bulletinObjective, bulletinObjectiveMet, bulletinProgress } from '../quests/BulletinBoard';
 
 /** The party's running tally of what it has done, which slay tasks read. */
@@ -172,6 +173,7 @@ export class BulletinBoardController {
       // addXp, not a raw xp bump, so the level-up actually fires.
       if (m.addXp(task.rewardXp)) {
         this.game.hud.addCombatMessage(`⬆ ${m.name} reaches level ${m.level}!`, '#7c7');
+        sfx.levelUp();
       }
     }
     // Reputation reward

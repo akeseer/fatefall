@@ -6,12 +6,14 @@
  *  - a sharp crack + low thump for natural 20s (crits)
  *  - a sad, descending thud for natural 1s (fumbles)
  *
- * The AudioContext is created lazily on the first roll and resumed on every
- * play, so the browser autoplay policy is satisfied by whatever user gesture
- * (typing a DM command, clicking a button) preceded the roll.
+ * This was the first sound in the game and used to own its own AudioContext.
+ * It is a client of the shared engine now — one context for the page, the
+ * effects bus, the shared noise buffer, and the single mute — and keeps only
+ * the voices that are its own.
  */
 
 import { DiceRollEvent, DiceType, onDiceRoll } from '../rules/DiceEvents';
+import { getAudio } from '../audio/Audio';
 
 /** Higher-pitched clicks for smaller dice, deeper knocks for bigger ones. */
 const TICK_FREQ: Record<DiceType, number> = {
@@ -27,39 +29,25 @@ const TICK_FREQ: Record<DiceType, number> = {
 const TICK_MIN_GAP = 0.035; // seconds — don't stack ticks from rapid-fire events
 
 export class DiceSounds {
-  private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
-  private noise: AudioBuffer | null = null;
   private lastTick = 0;
 
   constructor() {
     onDiceRoll((e) => this.onRoll(e));
   }
 
+  /** The shared context, or null when the engine is unavailable or muted. */
+  private get ctx(): AudioContext | null {
+    const a = getAudio();
+    return a.audible ? a.ctx() : null;
+  }
+  private get master(): GainNode | null { return getAudio().sfx; }
+  private get noise(): AudioBuffer | null { return getAudio().noise; }
+
   private ensureCtx(): AudioContext | null {
-    if (typeof window === 'undefined' || typeof AudioContext === 'undefined') return null;
-    if (!this.ctx) {
-      try {
-        this.ctx = new AudioContext();
-      } catch {
-        return null; // audio unavailable — stay silent, never break the game
-      }
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.8;
-      this.master.connect(this.ctx.destination);
-      // 0.25s of white noise, reused by every burst.
-      const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.25, this.ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-      this.noise = buf;
-    }
-    // Autoplay policy: resume on the gesture that triggered the roll.
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
   }
 
   private onRoll(e: DiceRollEvent) {
-    if (document.hidden) return; // never clatter while the tab is hidden
     const ctx = this.ensureCtx();
     if (!ctx || !this.master) return;
 
@@ -189,7 +177,6 @@ export class DiceSounds {
   victoryFanfare() {
     const ctx = this.ensureCtx();
     if (!ctx || !this.master) return;
-    if (document.hidden) return;
 
     const now = ctx.currentTime;
     // Bright square-wave lead over a soft triangle bass, in C major.
@@ -249,7 +236,6 @@ export class DiceSounds {
   defeatSting() {
     const ctx = this.ensureCtx();
     if (!ctx || !this.master) return;
-    if (document.hidden) return;
 
     const now = ctx.currentTime;
     const notes: { freq: number; at: number; dur: number; gain: number }[] = [

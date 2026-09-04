@@ -10,6 +10,8 @@ import { clearSlot, listSaves } from '../save/SaveManager';
 import { DiceTray } from './DiceTray';
 import { calendarFromElapsed } from '../world/CalendarSystem';
 import { DiceSounds } from './DiceSounds';
+import { getAudio } from '../audio/Audio';
+import { sfx } from '../audio/Sfx';
 import { buildDieScene, buildDiceModel, normalize3, quatFromAxisAngle, quatToMatrix3d } from './Dice3D';
 import { TownPanel } from './TownPanel';
 import { BattleView } from './BattleView';
@@ -201,6 +203,7 @@ export class HUD {
         <button id="btn-new-dungeon" title="Generate a fresh dungeon"><span class="ic">↻</span>New Dungeon</button>
         <button id="btn-compendium" title="Open the D&D compendium"><span class="ic" style="color:${T.arcane};">📖</span>Grimoire</button>
         <button id="btn-save" title="Save the run to this browser"><span class="ic" style="color:${T.coin};">💾</span>Save</button>
+        <button id="btn-audio" title="Mute / unmute (M)"><span class="ic">🔊</span>Sound</button>
         <button id="btn-dm-panel" title="Issue orders to the party"><span class="ic" style="color:${T.good};">\u2328</span>DM</button>
         <button id="btn-town" title="Open the town (quests & market)"><span class="ic" style="color:${T.gold};">🏪</span>Town</button>
         <button id="btn-menu" title="Save and return to the main menu" class="dp-btn-bad"><span class="ic">☰</span>Menu</button>
@@ -261,6 +264,33 @@ export class HUD {
     this.overlay.querySelector('#btn-save')!.addEventListener('click', () => {
       this.onSave?.();
     });
+
+    // Sound: the toolbar speaker and the M key both toggle the one engine,
+    // and the speaker shows the state. The key ignores anything typed into a
+    // field, since "m" is a letter the DM uses.
+    const audioBtn = this.overlay.querySelector('#btn-audio') as HTMLButtonElement;
+    const audio = getAudio();
+    const showAudio = () => {
+      const ic = audioBtn.querySelector('.ic') as HTMLElement | null;
+      if (ic) ic.textContent = audio.muted ? '🔇' : '🔊';
+      audioBtn.title = audio.muted ? 'Unmute (M)' : 'Mute (M)';
+      audioBtn.classList.toggle('dp-btn-bad', audio.muted);
+    };
+    audioBtn.addEventListener('click', () => { audio.toggleMuted(); sfx.click(); });
+    audio.onChange(showAudio);
+    showAudio();
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyM' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      audio.toggleMuted();
+      sfx.click();
+    });
+    // Every toolbar button answers the hand.
+    for (const b of Array.from(this.overlay.querySelectorAll('#hud-top button'))) {
+      if (b.id === 'btn-audio') continue;
+      b.addEventListener('click', () => sfx.click());
+    }
 
     // DM command bar
     this.overlay.querySelector('#btn-dm-panel')!.addEventListener('click', () => {

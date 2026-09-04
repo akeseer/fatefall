@@ -36,6 +36,7 @@ import type { Party } from '../entities/Party';
 import type { HUD } from '../ui/HUD';
 import type { Monster, MonsterTemplate } from '../entities/Monster';
 import type { Room } from '../world/DungeonGenerator';
+import { sfx } from '../audio/Sfx';
 import type { PlacedTrap } from '../traps/Traps';
 import type { Overworld, OverworldEntrance, OverworldTown } from '../world/Overworld';
 import type { TownLifeState } from '../world/TownLife';
@@ -185,6 +186,7 @@ export class DMCommandDispatcher {
 
   /** What the party does when an order lands and means nothing to them. */
   confusedGlances(): void {
+    sfx.refuse();
     this.game.hud.addCombatMessage('The party exchanges confused glances. Type "help" for orders they understand.', '#888');
   }
 

@@ -75,6 +75,8 @@ import {
 } from './ai/LoreGenerator';
 import { LOCATIONS, getRandomElement, LocationTemplate, getLocation, MAGIC_ITEMS } from './ai/DnDKnowledge';
 import { getLLM } from './ai/LLMService';
+import { sfx } from './audio/Sfx';
+import { getAudio } from './audio/Audio';
 
 // ── Context-aware compendium content ────────────────
 
@@ -2049,10 +2051,16 @@ class Game {
       this.mapRenderer.popNumber(tile.x * TILE_SIZE, tile.y * TILE_SIZE, text, kind);
     const burst = (tile: Vector2, line: string, healing = false) => {
       const kind = healing ? 'heal' : effectFor(line);
+      // The sound of it, by the same reading of the line the picture uses.
+      if (kind === 'fire') sfx.fire();
+      else if (kind === 'shock') sfx.shock();
+      else if (kind === 'arcane') sfx.arcane();
+      else if (kind === 'heal') sfx.heal();
       // Magic crosses the room; a weapon does not. Drawing a streak of light
       // for a man stepping forward and swinging reads as nonsense.
       if (origin && kind !== 'strike' && (origin.x !== tile.x || origin.y !== tile.y)) {
         this.mapRenderer.popBolt(origin.x * TILE_SIZE, origin.y * TILE_SIZE, tile.x * TILE_SIZE, tile.y * TILE_SIZE, kind);
+        sfx.cast();
       }
       this.mapRenderer.popEffect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, kind);
     };
@@ -2065,19 +2073,20 @@ class Game {
         const name = m.template.name;
         if (line.includes(name + ' is slain')) {
           pop(m.tile, 'slain', 'slain');
+          sfx.slain();
           this.mapRenderer.popDeath(m.tile.x * TILE_SIZE, m.tile.y * TILE_SIZE, m);
           placed = true;
           break;
         }
         const dealt = m.isAlive ? amountAfter(line, name + ' takes ') : null;
-        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); burst(m.tile, line); placed = true; break; }
+        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); burst(m.tile, line); if (crit) sfx.crit(); else if (effectFor(line) === 'strike') sfx.hit(); placed = true; break; }
       }
       if (placed) continue;
 
       for (const c of this.party.members) {
-        if (line.includes(c.name + ' is down')) { pop(c.tile, 'down', 'down'); break; }
+        if (line.includes(c.name + ' is down')) { pop(c.tile, 'down', 'down'); sfx.down(); break; }
         const taken = amountAfter(line, c.name + ' takes ');
-        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : 'hurt'); burst(c.tile, line); break; }
+        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : 'hurt'); burst(c.tile, line); if (crit) sfx.crit(); else if (effectFor(line) === 'strike') sfx.hurt(); break; }
         const healed = amountAfter(line, c.name + ' heals ');
         if (healed !== null) { pop(c.tile, '+' + healed, 'heal'); burst(c.tile, line, true); break; }
       }
@@ -2114,6 +2123,8 @@ class Game {
    */
   beginTransition(kind: 'fade' | 'blinds'): void {
     this.transition = { kind, ms: 0, total: kind === 'fade' ? Game.FADE_MS : Game.BLINDS_MS };
+    if (kind === 'blinds') sfx.battle();
+    else sfx.fade();
   }
 
   private sceneMood(): SceneMood {
@@ -2845,6 +2856,7 @@ class Game {
    * beats what they are wearing. Shared by combat spoils and chests.
    */
   distributeLoot(loot: LootResult, emptyLine: string): void {
+    if (loot.items.length > 0 || loot.goldValue > 0) sfx.chest();
     for (const line of loot.narration) {
       this.hud.addCombatMessage(line, '#dd0');
     }
@@ -3069,6 +3081,7 @@ class Game {
     const say = (msg: string, color = '#9c6') => this.hud.addCombatMessage(msg, color);
 
     if (item.type === 'potion') {
+      sfx.potion();
       if (item.id === 'potion_healing' || item.id === 'potion_greater_healing' || item.id === 'potion_superior_healing') {
         const { count, size, bonus } = parseHealDice(item.description);
         const heal = rollDice(count, size) + bonus;
@@ -3099,6 +3112,7 @@ class Game {
         say(`${target.name} drinks ${item.name}. ${item.description}`);
       }
     } else if (item.type === 'scroll') {
+      sfx.scroll();
       const reader = target;
       if (item.id === 'scroll_fireball' || item.id === 'scroll_lightning_bolt') {
         const foes = this.combatEngine.monsters.filter(m => m.isAlive);
@@ -4348,6 +4362,7 @@ class Game {
   /** The party walks into town: rest, quests, market, and a warm fire. */
   private arriveAtTown(town: OverworldTown): void {
     this.beginTransition('fade');
+    sfx.town();
     this.mode = GameMode.Town;
     this.bulletinArrivalProgress(town.id);
     this.currentTown = town;
@@ -4384,6 +4399,7 @@ class Game {
             for (const m of this.party.members) {
               if (m.addXp(evt.effect.value)) {
                 this.hud.addCombatMessage(`⬆ ${m.name} reaches level ${m.level}!`, '#7c7');
+                sfx.levelUp();
               }
             }
             break;
@@ -4830,6 +4846,7 @@ class Game {
     const townName = this.currentTown?.name ?? 'town';
     this.hud.townPanel.hide();
     this.beginTransition('fade');
+    sfx.depart();
     this.mode = GameMode.Overworld;
     this.currentTown = null;
     this.overworldDestination = active.completed
@@ -4914,6 +4931,7 @@ class Game {
 
   enterDungeonFromEntrance(e: OverworldEntrance): void {
     this.beginTransition('fade');
+    sfx.descend();
     this.dungeonEntranceId = e.id;
     this.mode = GameMode.Dungeon;
     this.dungeonLevel = 1;
@@ -4946,6 +4964,7 @@ class Game {
   /** Leave the dungeon for the surface — quest complete or by order. */
   exitDungeonToOverworld(): void {
     this.beginTransition('fade');
+    sfx.ascend();
     this.descending = true;
     const entranceId = this.dungeonEntranceId;
     // Old saves may not have an overworld yet — build one on first exit.
@@ -5029,6 +5048,7 @@ class Game {
 
   addGold(n: number): void {
     this.party.leader.gold += n;
+    if (n > 0) sfx.gold();
   }
 
   /** Spend gold across the party, richest first. True if fully paid. */
@@ -5079,6 +5099,7 @@ class Game {
 
   private restAtInn(): void {
     if (this.mode !== GameMode.Town) return;
+    sfx.heal();
     this.hud.addCombatMessage('The party rests at the inn.', '#8cf');
     for (const msg of this.party.longRest()) this.hud.addCombatMessage(msg, '#7c7');
     this.hud.setParty(this.party);
@@ -5298,6 +5319,7 @@ class Game {
     const text = raw.trim();
     if (!text) return;
     this.hud.addCombatMessage(`\u276f ${text}`, '#6fd');
+    sfx.order();
     const result = understand(text, this.dmContext(), this.intentPredictor);
     if (this.dmModelDebug && result.source !== 'none') {
       const p = result.prob !== undefined ? ` ${result.prob.toFixed(2)}` : '';
@@ -5414,6 +5436,7 @@ function startGame() {
   const env = (import.meta as { env?: { DEV?: boolean } }).env;
   if (env?.DEV || new URLSearchParams(location.search).has('debug')) {
     (window as any).__game = game;
+    (window as any).__audio = getAudio();
   }
 
   // The player picks a slot: continue a saved run there or begin a new one.
