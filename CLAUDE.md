@@ -68,6 +68,15 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   scale `#game-canvas`'s CSS size to zoom (re-grab the element after start, since the
   backend swaps it in). When screenshots stall, rasterise the recorded frame or the
   sprite `<img>`s to ASCII from the page; that has worked every time.
+- **`src/audio/`** — sound, with no sound files. `Audio.ts` owns the one AudioContext
+  for the page (lazily created, unlocked by the first pointer or key), a master gain
+  with separate effects and music buses, and remembered volume and mute
+  (`fatefall.audio`). `Sfx.ts` is the effect bank: each effect is a few lines of
+  oscillator and filtered-noise synthesis behind a per-kind rate limit, and every one
+  returns silently when the engine is unavailable or muted. `ui/DiceSounds.ts` is a
+  client of the engine. Never create a second AudioContext; browsers cap them and it
+  would break the single mute. Wire a new sound at the event that makes it, next to
+  the picture of it. `window.__audio` is exposed alongside `__game` for inspection.
 - **`src/ui/HUD.ts`** — builds the DOM overlay from a template string. The log is
   append-only HTML strings (`addCombatMessage`).
 
