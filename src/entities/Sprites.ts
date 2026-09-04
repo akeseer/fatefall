@@ -688,7 +688,7 @@ export class SpriteRenderer {
       case 'ogre': this.drawOgre(ctx, s, baseColor); break;
       case 'manticore': this.drawManticore(ctx, s, baseColor); break;
       case 'wight': this.drawWight(ctx, s, baseColor); break;
-      case 'werewolf': this.drawWerewolf(ctx, s, baseColor); break;
+      case 'werewolf': this.drawLycanthrope(ctx, s, baseColor, 'wolf'); break;
       case 'minotaur': this.drawMinotaur(ctx, s, baseColor); break;
       case 'banshee': this.drawBanshee(ctx, s, baseColor); break;
       case 'ettin': this.drawEttin(ctx, s, baseColor); break;
@@ -732,7 +732,7 @@ export class SpriteRenderer {
       case 'harpy': this.drawHarpy(ctx, s, baseColor); break;
       case 'hippogriff': this.drawHippogriff(ctx, s, baseColor); break;
       case 'bugbear': this.drawBugbear(ctx, s, baseColor); break;
-      case 'wererat': this.drawWererat(ctx, s, baseColor); break;
+      case 'wererat': this.drawLycanthrope(ctx, s, baseColor, 'rat'); break;
       case 'ankheg': this.drawAnkheg(ctx, s, baseColor); break;
       case 'ghast': this.drawGhast(ctx, s, baseColor); break;
       case 'gargoyle': this.drawGargoyle(ctx, s, baseColor); break;
@@ -754,7 +754,7 @@ export class SpriteRenderer {
       case 'water_weird': this.drawWaterWeird(ctx, s, baseColor); break;
       case 'lamia': this.drawLamia(ctx, s, baseColor); break;
       case 'wereboar': this.drawLycanthrope(ctx, s, baseColor, 'boar'); break;
-      case 'weretiger': this.drawWeretiger(ctx, s, baseColor); break;
+      case 'weretiger': this.drawLycanthrope(ctx, s, baseColor, 'tiger'); break;
       case 'couatl': this.drawCouatl(ctx, s, baseColor); break;
       case 'night_hag': this.drawNightHag(ctx, s, baseColor); break;
       case 'shambling_mound': this.drawShamblingMound(ctx, s, baseColor); break;
@@ -1135,10 +1135,10 @@ export class SpriteRenderer {
       case 'formian_queen': this.drawFormianQueen(ctx, s, baseColor); break;
       case 'modron_primus': this.drawModronPrimus(ctx, s, baseColor); break;
       case 'werebat': this.drawWerebat(ctx, s, baseColor); break;
-      case 'wererat_king': this.drawWereratKing(ctx, s, baseColor); break;
-      case 'werewolf_alpha': this.drawWerewolfAlpha(ctx, s, baseColor); break;
+      case 'wererat_king': this.drawLycanthrope(ctx, s, baseColor, 'rat', true); break;
+      case 'werewolf_alpha': this.drawLycanthrope(ctx, s, baseColor, 'wolf', true); break;
       case 'wereshark': this.drawLycanthrope(ctx, s, baseColor, 'shark'); break;
-      case 'weretiger_alpha': this.drawWeretigerAlpha(ctx, s, baseColor); break;
+      case 'weretiger_alpha': this.drawLycanthrope(ctx, s, baseColor, 'tiger', true); break;
       case 'beetle_king': this.drawBeetleKing(ctx, s, baseColor); break;
       case 'owlbear_alpha': this.drawOwlbearAlpha(ctx, s, baseColor); break;
       case 'ghast_matriarch': this.drawGhastMatriarch(ctx, s, baseColor); break;
@@ -2578,41 +2578,6 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.2, s * 0.36, s * 0.1, s * 0.3);
   }
 
-  private drawWerewolf(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    const fur = flash || '#6e6a63';
-    ctx.fillStyle = fur;
-    // Hunched furry torso
-    ctx.fillRect(s * 0.26, s * 0.3, s * 0.46, s * 0.44);
-    // Wolf head + snout
-    ctx.fillRect(s * 0.32, s * 0.08, s * 0.32, s * 0.24);
-    ctx.fillRect(s * 0.6, s * 0.16, s * 0.16, s * 0.1);
-    // Ears
-    ctx.fillRect(s * 0.3, s * 0.0, s * 0.08, s * 0.1);
-    ctx.fillRect(s * 0.56, s * 0.0, s * 0.08, s * 0.1);
-    // Yellow eyes + jaws
-    ctx.fillStyle = '#ffdd00';
-    ctx.fillRect(s * 0.38, s * 0.15, s * 0.06, s * 0.05);
-    ctx.fillRect(s * 0.5, s * 0.15, s * 0.06, s * 0.05);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(s * 0.64, s * 0.24, s * 0.1, s * 0.03);
-    // Clawed hand
-    ctx.fillStyle = fur;
-    ctx.fillRect(s * 0.14, s * 0.44, s * 0.14, s * 0.08);
-    ctx.fillStyle = '#dddddd';
-    ctx.fillRect(s * 0.1, s * 0.44, s * 0.05, s * 0.02);
-    ctx.fillRect(s * 0.1, s * 0.48, s * 0.05, s * 0.02);
-    // Digitigrade legs
-    ctx.fillStyle = fur;
-    ctx.fillRect(s * 0.3, s * 0.72, s * 0.13, s * 0.16);
-    ctx.fillRect(s * 0.56, s * 0.72, s * 0.13, s * 0.16);
-  }
-
-  /**
-   * The minotaur is built on the orc's stance — planted, symmetrical,
-   * greataxe up — because it is the same kind of threat, then separated
-   * from it and from the werebear by what only a bull has: horns swept
-   * out past the shoulders, a pale muzzle with a ring through it, hooves.
-   */
   private drawMinotaur(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
     const r = this.grid(ctx, s);
     const hide = flash || '#7a4c2c';
@@ -3732,27 +3697,6 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.8, s * 0.26, s * 0.12, s * 0.08);
   }
 
-  private drawWererat(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // Hunched rat body
-    ctx.fillStyle = flash || '#6a5a52';
-    ctx.fillRect(s * 0.28, s * 0.34, s * 0.44, s * 0.42);
-    // Rat head
-    ctx.fillRect(s * 0.32, s * 0.1, s * 0.36, s * 0.26);
-    // Snout + whiskers
-    ctx.fillRect(s * 0.6, s * 0.16, s * 0.14, s * 0.1);
-    // Pink nose
-    ctx.fillStyle = '#e89090';
-    ctx.fillRect(s * 0.7, s * 0.18, s * 0.04, s * 0.04);
-    // Red eyes
-    ctx.fillStyle = '#ff3020';
-    ctx.fillRect(s * 0.38, s * 0.14, s * 0.05, s * 0.05);
-    ctx.fillRect(s * 0.54, s * 0.14, s * 0.05, s * 0.05);
-    // Bare tail
-    ctx.fillStyle = '#e8b0a0';
-    ctx.fillRect(s * 0.2, s * 0.6, s * 0.1, s * 0.03);
-    ctx.fillRect(s * 0.12, s * 0.64, s * 0.1, s * 0.03);
-  }
-
   private drawAnkheg(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
     // Armored insect body
     ctx.fillStyle = flash || '#6a6a4a';
@@ -4257,13 +4201,18 @@ export class SpriteRenderer {
     ctx: CanvasRenderingContext2D,
     s: number,
     flash: string | undefined,
-    kind: 'boar' | 'bear' | 'shark'
+    kind: 'boar' | 'bear' | 'shark' | 'wolf' | 'rat' | 'tiger',
+    // The pack leaders: a broader torso and one mark of rank on the head.
+    alpha: boolean = false
   ) {
     const r = this.grid(ctx, s);
     const P = {
       boar: { fur: '#6e5847', lit: '#8d7461', dark: '#473627', belly: '#8a7362' },
       bear: { fur: '#6d4a30', lit: '#8e6746', dark: '#47301c', belly: '#8f6f4e' },
       shark: { fur: '#4f6478', lit: '#6f8699', dark: '#33424f', belly: '#cfd8e0' },
+      wolf: { fur: '#5a5560', lit: '#7c7785', dark: '#38343c', belly: '#9a96a0' },
+      rat: { fur: '#6f6259', lit: '#8c7f75', dark: '#4a3f38', belly: '#d8a0a0' },
+      tiger: { fur: '#c8792a', lit: '#e39a45', dark: '#7a4416', belly: '#efe1c3' },
     }[kind];
     const fur = flash || P.fur;
     const lit = flash || P.lit;
@@ -4271,6 +4220,7 @@ export class SpriteRenderer {
     const belly = flash || P.belly;
     const claw = flash || '#e9e2d2';
     const bear = kind === 'bear';
+    const broad = bear || alpha;
 
     // Digitigrade legs: thigh forward, hock back, paw flat with claws
     r(fur, 9, 18, 4, 4);
@@ -4282,8 +4232,8 @@ export class SpriteRenderer {
     for (const x of [7, 9, 11, 17, 19, 21]) r(claw, x, 26, 1, 1);
 
     // Torso, hunched: the shoulders rise to the ears
-    const tx = bear ? 5 : 6;
-    const tw = bear ? 19 : 17;
+    const tx = broad ? 5 : 6;
+    const tw = broad ? 19 : 17;
     r(fur, tx, 9, tw, 10);
     r(lit, tx, 9, tw, 1);
     r(dark, tx, 18, tw, 1);
@@ -4370,30 +4320,76 @@ export class SpriteRenderer {
         for (const x of [9, 11, 13, 15, 17]) r(flash || '#f2f4f6', x, 9, 1, 1);
         break;
       }
+      case 'wolf': {
+        // Long muzzle thrust forward and low, ears pricked, yellow eyes
+        r(fur, 8, 2, 12, 7);
+        r(lit, 8, 2, 12, 1);
+        r(dark, 8, 2, 1, 7);
+        r(dark, 8, 0, 3, 3);
+        r(dark, 17, 0, 3, 3);
+        r(lit, 9, 1, 1, 1);
+        r(lit, 18, 1, 1, 1);
+        if (alpha) { r(dark, 7, 0, 1, 2); r(dark, 20, 0, 1, 2); }
+        r(flash || '#f0c020', 11, 5, 2, 2);
+        r(flash || '#f0c020', 15, 5, 2, 2);
+        r(fur, 5, 6, 7, 4);
+        r(belly, 5, 8, 7, 2);
+        r(flash || '#16120f', 5, 6, 2, 2);
+        for (const x of [7, 9, 11]) r(claw, x, 9, 1, 1);
+        if (alpha) { r(belly, 14, 3, 1, 1); r(belly, 15, 4, 1, 1); r(belly, 16, 5, 1, 1); }
+        break;
+      }
+      case 'rat': {
+        // Narrow skull between two round ears, pink snout, whiskers, a tail
+        r(fur, 10, 3, 9, 7);
+        r(lit, 10, 3, 9, 1);
+        r(dark, 10, 3, 1, 7);
+        r(fur, 7, 1, 4, 4);
+        r(fur, 17, 1, 4, 4);
+        r(belly, 8, 2, 2, 2);
+        r(belly, 18, 2, 2, 2);
+        r(flash || '#0e0a0a', 12, 5, 2, 2);
+        r(flash || '#0e0a0a', 16, 5, 2, 2);
+        r(belly, 9, 7, 5, 3);
+        r(flash || '#3a1818', 9, 8, 1, 1);
+        r(claw, 5, 8, 4, 1);
+        r(claw, 19, 8, 4, 1);
+        r(dark, 22, 20, 5, 1);
+        r(dark, 26, 16, 1, 5);
+        if (alpha) {
+          // A crown, sat on the brow between the ears
+          r(flash || '#e8c040', 11, 1, 7, 2);
+          r(flash || '#e8c040', 11, 0, 1, 1);
+          r(flash || '#e8c040', 14, 0, 1, 1);
+          r(flash || '#e8c040', 17, 0, 1, 1);
+        }
+        break;
+      }
+      case 'tiger': {
+        // Broad striped skull, round ears, amber eyes, pale muzzle with fangs
+        r(fur, 8, 2, 12, 8);
+        r(lit, 8, 2, 12, 1);
+        r(dark, 8, 2, 1, 8);
+        r(fur, 7, 0, 3, 3);
+        r(fur, 18, 0, 3, 3);
+        r(dark, 10, 3, 1, 6);
+        r(dark, 14, 2, 1, 3);
+        r(dark, 17, 3, 1, 6);
+        r(flash || '#ffb020', 11, 5, 2, 2);
+        r(flash || '#ffb020', 16, 5, 2, 2);
+        r(flash || '#1a1008', 12, 5, 1, 1);
+        r(flash || '#1a1008', 17, 5, 1, 1);
+        r(belly, 11, 7, 6, 3);
+        r(flash || '#1a1210', 13, 7, 2, 1);
+        r(claw, 12, 10, 1, 1);
+        r(claw, 16, 10, 1, 1);
+        // Stripes down the torso, doubled on the alpha
+        r(dark, 8, 12, 1, 5);
+        r(dark, 20, 12, 1, 5);
+        if (alpha) { r(dark, 10, 11, 1, 6); r(dark, 18, 11, 1, 6); r(dark, 18, 0, 1, 1); }
+        break;
+      }
     }
-  }
-
-  private drawWeretiger(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // Orange body
-    ctx.fillStyle = flash || '#d8802a';
-    ctx.fillRect(s * 0.26, s * 0.34, s * 0.48, s * 0.42);
-    // Stripes
-    ctx.fillStyle = '#3a2a1a';
-    ctx.fillRect(s * 0.32, s * 0.4, s * 0.08, s * 0.04);
-    ctx.fillRect(s * 0.46, s * 0.36, s * 0.08, s * 0.04);
-    ctx.fillRect(s * 0.58, s * 0.42, s * 0.08, s * 0.04);
-    // Cat head
-    ctx.fillRect(s * 0.34, s * 0.08, s * 0.32, s * 0.28);
-    // Ears
-    ctx.fillRect(s * 0.32, s * 0.0, s * 0.08, s * 0.1);
-    ctx.fillRect(s * 0.6, s * 0.0, s * 0.08, s * 0.1);
-    // Pale eyes
-    ctx.fillStyle = '#f8f0d8';
-    ctx.fillRect(s * 0.4, s * 0.16, s * 0.06, s * 0.05);
-    ctx.fillRect(s * 0.54, s * 0.16, s * 0.06, s * 0.05);
-    // Fangs
-    ctx.fillStyle = '#e8e0c8';
-    ctx.fillRect(s * 0.46, s * 0.28, s * 0.08, s * 0.04);
   }
 
   private drawCouatl(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -14552,71 +14548,6 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.46, s * 0.66, s * 0.08, s * 0.08);
   }
 
-
-  private drawWereratKing(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // plague-crowned monarch of the city's vermin
-    ctx.fillStyle = flash || '#6a6a62'; // tattered grey-lean body
-    ctx.fillRect(s * 0.3, s * 0.34, s * 0.4, s * 0.34);
-    ctx.fillStyle = '#4a4a44'; // dirty finery trim
-    ctx.fillRect(s * 0.32, s * 0.4, s * 0.36, s * 0.05);
-    ctx.fillRect(s * 0.32, s * 0.54, s * 0.36, s * 0.05);
-    ctx.fillStyle = '#8a8a80'; // long rat-king snout
-    ctx.fillRect(s * 0.34, s * 0.18, s * 0.32, s * 0.2);
-    ctx.fillStyle = '#c03020'; // plague-ruby eyes
-    ctx.fillRect(s * 0.4, s * 0.22, s * 0.05, s * 0.05);
-    ctx.fillRect(s * 0.56, s * 0.22, s * 0.05, s * 0.05);
-    ctx.fillStyle = '#e8d8c8'; // long crooked vermin fangs
-    ctx.fillRect(s * 0.44, s * 0.34, s * 0.04, s * 0.06);
-    ctx.fillRect(s * 0.52, s * 0.34, s * 0.04, s * 0.06);
-    ctx.fillStyle = '#5a5a52'; // tattered crown horns
-    ctx.fillRect(s * 0.3, s * 0.1, s * 0.06, s * 0.08);
-    ctx.fillRect(s * 0.64, s * 0.1, s * 0.06, s * 0.08);
-    ctx.fillStyle = '#4a4a44'; // whip of wire tail
-    ctx.fillRect(s * 0.6, s * 0.66, s * 0.12, s * 0.03);
-  }
-
-  private drawWerewolfAlpha(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // first wolf, silver-maned king of the pack
-    ctx.fillStyle = flash || '#8a8a96'; // huge gray-pelted body
-    ctx.fillRect(s * 0.2, s * 0.36, s * 0.5, s * 0.3);
-    ctx.fillStyle = '#6a6a76'; // slung rib-shadow
-    ctx.fillRect(s * 0.24, s * 0.44, s * 0.42, s * 0.06);
-    ctx.fillStyle = '#a0a0ac'; // great lupine head
-    ctx.fillRect(s * 0.58, s * 0.2, s * 0.28, s * 0.22);
-    ctx.fillStyle = '#c8c8d8'; // silver-mane hackle
-    ctx.fillRect(s * 0.52, s * 0.26, s * 0.14, s * 0.1);
-    ctx.fillStyle = '#f0e0a0'; // moon-bleached eyes
-    ctx.fillRect(s * 0.62, s * 0.26, s * 0.06, s * 0.05);
-    ctx.fillRect(s * 0.74, s * 0.26, s * 0.06, s * 0.05);
-    ctx.fillStyle = '#e8e8e8'; // long gleaming fangs
-    ctx.fillRect(s * 0.66, s * 0.38, s * 0.04, s * 0.07);
-    ctx.fillRect(s * 0.76, s * 0.38, s * 0.04, s * 0.07);
-    ctx.fillStyle = '#6a6a76'; // powerful haunches
-    ctx.fillRect(s * 0.24, s * 0.66, s * 0.12, s * 0.12);
-    ctx.fillRect(s * 0.5, s * 0.66, s * 0.12, s * 0.12);
-  }
-
-  private drawWeretigerAlpha(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // striped apex with bracer-claws of moonlight
-    ctx.fillStyle = flash || '#c08830'; // strong tawny body
-    ctx.fillRect(s * 0.2, s * 0.34, s * 0.5, s * 0.32);
-    ctx.fillStyle = '#2a1c0c'; // vertical tiger-stripes
-    ctx.fillRect(s * 0.24, s * 0.36, s * 0.05, s * 0.28);
-    ctx.fillRect(s * 0.38, s * 0.36, s * 0.05, s * 0.28);
-    ctx.fillRect(s * 0.52, s * 0.36, s * 0.05, s * 0.28);
-    ctx.fillStyle = '#d8a848'; // broad striped head
-    ctx.fillRect(s * 0.6, s * 0.2, s * 0.28, s * 0.2);
-    ctx.fillStyle = '#f0e8c0'; // pale fury jowls
-    ctx.fillRect(s * 0.64, s * 0.34, s * 0.14, s * 0.05);
-    ctx.fillStyle = '#3a2a14'; // cold night-striped eyes
-    ctx.fillRect(s * 0.68, s * 0.24, s * 0.05, s * 0.04);
-    ctx.fillRect(s * 0.78, s * 0.24, s * 0.05, s * 0.04);
-    ctx.fillStyle = '#d8c8a8'; // bracer-claw moon claws
-    ctx.fillRect(s * 0.7, s * 0.42, s * 0.04, s * 0.08);
-    ctx.fillStyle = '#8a5a20'; // leaping haunches
-    ctx.fillRect(s * 0.26, s * 0.66, s * 0.12, s * 0.12);
-    ctx.fillRect(s * 0.5, s * 0.66, s * 0.12, s * 0.12);
-  }
 
   private drawBeetleKing(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
     // colossal horned insect-warlord of the cracked dunes
