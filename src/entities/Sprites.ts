@@ -753,7 +753,7 @@ export class SpriteRenderer {
       case 'specter': this.drawSpecter(ctx, s, baseColor); break;
       case 'water_weird': this.drawWaterWeird(ctx, s, baseColor); break;
       case 'lamia': this.drawLamia(ctx, s, baseColor); break;
-      case 'wereboar': this.drawWereboar(ctx, s, baseColor); break;
+      case 'wereboar': this.drawLycanthrope(ctx, s, baseColor, 'boar'); break;
       case 'weretiger': this.drawWeretiger(ctx, s, baseColor); break;
       case 'couatl': this.drawCouatl(ctx, s, baseColor); break;
       case 'night_hag': this.drawNightHag(ctx, s, baseColor); break;
@@ -1015,7 +1015,7 @@ export class SpriteRenderer {
       case 'hobgoblin_devastator': this.drawHobgoblinDevastator(ctx, s, baseColor); break;
       case 'gnoll_warden': this.drawGnollWarden(ctx, s, baseColor); break;
       case 'kobold_inventor': this.drawKoboldInventor(ctx, s, baseColor); break;
-      case 'lizardfolk_baron': this.drawLizardfolkBaron(ctx, s, baseColor); break;
+      case 'lizardfolk_baron': this.drawLizardfolk(ctx, s, baseColor, 'baron'); break;
       case 'merrow_champ': this.drawMerrowChamp(ctx, s, baseColor); break;
       case 'fallen_aasimar': this.drawFallenAasimar(ctx, s, baseColor); break;
       case 'frost_devil': this.drawFrostDevil(ctx, s, baseColor); break;
@@ -1044,7 +1044,7 @@ export class SpriteRenderer {
       case 'sahuagin_baron': this.drawSahuaginBaron(ctx, s, baseColor); break;
       case 'roc_ancient': this.drawRocAncient(ctx, s, baseColor); break;
       case 'giant_bombardier_beetle': this.drawGiantBombardierBeetle(ctx, s, baseColor); break;
-      case 'werebear': this.drawWerebear(ctx, s, baseColor); break;
+      case 'werebear': this.drawLycanthrope(ctx, s, baseColor, 'bear'); break;
       case 'wereraven': this.drawWereraven(ctx, s, baseColor); break;
       case 'hobgoblin_iron_shadow': this.drawHobgoblinIronShadow(ctx, s, baseColor); break;
       case 'flying_snake': this.drawFlyingSnake(ctx, s, baseColor); break;
@@ -1137,7 +1137,7 @@ export class SpriteRenderer {
       case 'werebat': this.drawWerebat(ctx, s, baseColor); break;
       case 'wererat_king': this.drawWereratKing(ctx, s, baseColor); break;
       case 'werewolf_alpha': this.drawWerewolfAlpha(ctx, s, baseColor); break;
-      case 'wereshark': this.drawWereshark(ctx, s, baseColor); break;
+      case 'wereshark': this.drawLycanthrope(ctx, s, baseColor, 'shark'); break;
       case 'weretiger_alpha': this.drawWeretigerAlpha(ctx, s, baseColor); break;
       case 'beetle_king': this.drawBeetleKing(ctx, s, baseColor); break;
       case 'owlbear_alpha': this.drawOwlbearAlpha(ctx, s, baseColor); break;
@@ -2607,33 +2607,89 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.56, s * 0.72, s * 0.13, s * 0.16);
   }
 
+  /**
+   * The minotaur is built on the orc's stance — planted, symmetrical,
+   * greataxe up — because it is the same kind of threat, then separated
+   * from it and from the werebear by what only a bull has: horns swept
+   * out past the shoulders, a pale muzzle with a ring through it, hooves.
+   */
   private drawMinotaur(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    const hide = flash || '#7a4a26';
-    ctx.fillStyle = hide;
-    ctx.fillRect(s * 0.24, s * 0.3, s * 0.52, s * 0.48);
-    // Head
-    ctx.fillRect(s * 0.3, s * 0.08, s * 0.36, s * 0.24);
-    // Curving horns
-    ctx.fillStyle = '#e8dcc0';
-    ctx.fillRect(s * 0.18, s * 0.06, s * 0.12, s * 0.06);
-    ctx.fillRect(s * 0.14, s * 0.1, s * 0.06, s * 0.06);
-    ctx.fillRect(s * 0.66, s * 0.06, s * 0.12, s * 0.06);
-    ctx.fillRect(s * 0.76, s * 0.1, s * 0.06, s * 0.06);
-    // Eyes + nose ring
-    ctx.fillStyle = '#ff3300';
-    ctx.fillRect(s * 0.36, s * 0.16, s * 0.06, s * 0.05);
-    ctx.fillRect(s * 0.54, s * 0.16, s * 0.06, s * 0.05);
-    ctx.fillStyle = '#cc8800';
-    ctx.fillRect(s * 0.44, s * 0.31, s * 0.1, s * 0.04);
-    // Greataxe
-    ctx.fillStyle = '#665c50';
-    ctx.fillRect(s * 0.78, s * 0.14, s * 0.05, s * 0.66);
-    ctx.fillStyle = '#9aa4ad';
-    ctx.fillRect(s * 0.72, s * 0.1, s * 0.16, s * 0.12);
-    // Hooves
-    ctx.fillStyle = '#2c1c10';
-    ctx.fillRect(s * 0.28, s * 0.86, s * 0.16, s * 0.1);
-    ctx.fillRect(s * 0.54, s * 0.86, s * 0.16, s * 0.1);
+    const r = this.grid(ctx, s);
+    const hide = flash || '#7a4c2c';
+    const lit = flash || '#9a6740';
+    const dark = flash || '#4f2f18';
+    const bone = flash || '#e8dcc0';
+    const boneDk = flash || '#b8a888';
+    const steel = flash || '#a9b1bc';
+    const steelLit = flash || '#d6dde6';
+    const steelDk = flash || '#7c838d';
+    // Greataxe haft, held low in the left hand
+    r(flash || '#5c3f22', 2, 5, 2, 20);
+    r(flash || '#71502e', 2, 5, 1, 20);
+    // Legs and hooves
+    r(hide, 8, 19, 5, 5);
+    r(hide, 16, 19, 5, 5);
+    r(dark, 8, 22, 5, 1);
+    r(dark, 16, 22, 5, 1);
+    r(flash || '#2c1c10', 7, 24, 6, 3);
+    r(flash || '#2c1c10', 16, 24, 6, 3);
+    // Loincloth and belt
+    r(flash || '#5a2a22', 7, 16, 15, 4);
+    r(flash || '#7a3a2e', 7, 16, 15, 1);
+    r(flash || '#3a1a14', 7, 19, 15, 1);
+    r(flash || '#b08a30', 7, 15, 15, 1);
+    // Torso: massive, the chest split down the middle
+    r(hide, 5, 8, 19, 8);
+    r(lit, 5, 8, 19, 1);
+    r(dark, 5, 14, 19, 1);
+    r(dark, 14, 9, 1, 6);
+    r(lit, 7, 10, 6, 1);
+    r(lit, 16, 10, 6, 1);
+    // Arms: left down to the axe grip, right hanging to a fist
+    r(hide, 4, 11, 3, 7);
+    r(dark, 4, 11, 1, 7);
+    r(hide, 2, 17, 4, 3);
+    r(hide, 24, 9, 3, 9);
+    r(lit, 24, 9, 3, 1);
+    r(hide, 23, 18, 4, 3);
+    // Axe head: two bearded bits either side of the socket
+    r(steel, 0, 6, 3, 5);
+    r(steel, 4, 6, 3, 5);
+    r(steelLit, 0, 6, 7, 1);
+    r(steelDk, 0, 10, 3, 1);
+    r(steelDk, 4, 10, 3, 1);
+    r(steelDk, 2, 5, 2, 7);
+    // Head, brow heavy, red eyes deep in it
+    r(hide, 9, 1, 10, 8);
+    r(lit, 9, 1, 10, 1);
+    r(dark, 9, 1, 1, 8);
+    r(dark, 9, 3, 10, 1);
+    r(flash || '#2a1208', 10, 4, 3, 2);
+    r(flash || '#2a1208', 15, 4, 3, 2);
+    r(flash || '#ff3a1a', 11, 4, 2, 2);
+    r(flash || '#ff3a1a', 15, 4, 2, 2);
+    // Pale muzzle overhanging the chest, nostrils, the ring
+    r(flash || '#a88462', 10, 6, 8, 4);
+    r(dark, 11, 7, 2, 1);
+    r(dark, 15, 7, 2, 1);
+    r(flash || '#d8a838', 12, 8, 1, 2);
+    r(flash || '#d8a838', 15, 8, 1, 2);
+    r(flash || '#d8a838', 13, 9, 2, 1);
+    // Horns from the temples, out and up; ears beneath them
+    r(hide, 7, 4, 2, 2);
+    r(hide, 19, 4, 2, 2);
+    r(bone, 7, 2, 2, 2);
+    r(bone, 5, 1, 3, 2);
+    r(bone, 4, 0, 2, 2);
+    r(boneDk, 7, 3, 2, 1);
+    r(boneDk, 5, 2, 3, 1);
+    r(bone, 19, 2, 2, 2);
+    r(bone, 20, 1, 3, 2);
+    r(bone, 22, 0, 2, 2);
+    r(boneDk, 19, 3, 2, 1);
+    r(boneDk, 20, 2, 3, 1);
+    // Mane between the horns
+    r(dark, 11, 0, 6, 2);
   }
 
   private drawBanshee(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -3338,13 +3394,23 @@ export class SpriteRenderer {
    * owns one strong outline feature: the lizardfolk a long snout and a raised
    * tail, the sahuagin a dorsal crest and a trident, the troglodyte a wide neck
    * frill over a hunched back.
+   *
+   * The baron is the same body in darker scale, so the two read as one
+   * people: what marks the chief is a red-tipped crest, a bone pauldron and
+   * a necklace of teeth, and a stone greataxe where the warrior has a spear.
    */
-  private drawLizardfolk(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
+  private drawLizardfolk(
+    ctx: CanvasRenderingContext2D,
+    s: number,
+    flash?: string,
+    kind: 'lizardfolk' | 'baron' = 'lizardfolk'
+  ) {
     const r = this.grid(ctx, s);
-    const scale = flash || '#3f7a4a';
-    const lit = flash || '#569a5e';
-    const dark = flash || '#2b5635';
-    const belly = flash || '#93b06a';
+    const baron = kind === 'baron';
+    const scale = flash || (baron ? '#356b45' : '#3f7a4a');
+    const lit = flash || (baron ? '#4d8c58' : '#569a5e');
+    const dark = flash || (baron ? '#22492c' : '#2b5635');
+    const belly = flash || (baron ? '#9db070' : '#93b06a');
     // Tail sweeping up and out behind
     r(scale, 19, 20, 5, 3);
     r(scale, 23, 17, 4, 3);
@@ -3356,8 +3422,8 @@ export class SpriteRenderer {
     r(dark, 10, 23, 9, 1);
     r(scale, 9, 24, 6, 3);
     r(scale, 15, 24, 6, 3);
-    r('#e6dcbc', 9, 26, 1, 2);
-    r('#e6dcbc', 20, 26, 1, 2);
+    r(flash || '#e6dcbc', 9, 26, 1, 2);
+    r(flash || '#e6dcbc', 20, 26, 1, 2);
     // Torso with a pale scute belly
     r(scale, 9, 10, 11, 10);
     r(lit, 9, 10, 11, 1);
@@ -3375,19 +3441,46 @@ export class SpriteRenderer {
     r(scale, 2, 5, 8, 4);
     r(belly, 2, 8, 8, 1);
     r(dark, 2, 5, 8, 1);
-    r('#e6dcbc', 3, 8, 1, 2);
-    r('#e6dcbc', 6, 8, 1, 2);
-    // Crest spines off the back of the skull
-    r(dark, 17, 0, 2, 4);
-    r(dark, 19, 2, 2, 3);
+    r(flash || '#e6dcbc', 3, 8, 1, 2);
+    r(flash || '#e6dcbc', 6, 8, 1, 2);
     // Slit eye
     r(flash || '#101c12', 10, 4, 4, 3);
-    r('#ffe44a', 10, 5, 4, 2);
-    r('#101c12', 12, 5, 1, 2);
-    // Bone-tipped spear held upright
-    r(flash || '#6f5433', 23, 4, 2, 12);
-    r(flash || '#e2dac0', 23, 0, 2, 5);
-    r(flash || '#f4eedc', 23, 0, 1, 5);
+    r(flash || '#ffe44a', 10, 5, 4, 2);
+    r(flash || '#101c12', 12, 5, 1, 2);
+    if (baron) {
+      const bone = flash || '#e2dac0';
+      const boneDk = flash || '#a89c80';
+      const red = flash || '#d84a2a';
+      // Crest: taller, more of it, tipped red
+      r(dark, 15, 0, 2, 2);
+      r(dark, 17, 0, 2, 4);
+      r(dark, 19, 1, 2, 3);
+      r(red, 15, 0, 2, 1);
+      r(red, 17, 0, 2, 1);
+      r(red, 19, 1, 2, 1);
+      // Bone pauldron over the near shoulder, a necklace of teeth
+      r(bone, 5, 9, 5, 3);
+      r(boneDk, 5, 11, 5, 1);
+      r(boneDk, 6, 10, 1, 1);
+      r(boneDk, 8, 10, 1, 1);
+      r(bone, 10, 11, 9, 1);
+      for (const x of [11, 13, 15, 17]) r(dark, x, 11, 1, 1);
+      // Stone greataxe raised on the far arm
+      r(flash || '#6f5433', 23, 4, 2, 13);
+      r(flash || '#8a6a48', 23, 4, 1, 13);
+      r(flash || '#8a9098', 21, 1, 6, 4);
+      r(flash || '#b8bec6', 22, 0, 4, 1);
+      r(flash || '#5a6068', 21, 4, 6, 1);
+      r(flash || '#6f5433', 23, 1, 2, 4);
+    } else {
+      // Crest spines off the back of the skull
+      r(dark, 17, 0, 2, 4);
+      r(dark, 19, 2, 2, 3);
+      // Bone-tipped spear held upright
+      r(flash || '#6f5433', 23, 4, 2, 12);
+      r(flash || '#e2dac0', 23, 0, 2, 5);
+      r(flash || '#f4eedc', 23, 0, 1, 5);
+    }
   }
 
   private drawSatyr(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -3926,23 +4019,63 @@ export class SpriteRenderer {
   }
 
 
+  /**
+   * A displacer beast is a panther with two extra pairs of legs and a pair of
+   * tentacles off its shoulders, and those are the only things that keep it
+   * from being a black cat: it is drawn side-on and low so all six legs show,
+   * with the tentacles reared up and apart to spiked pads. The old
+   * "displacement afterimage" was a translucent smear, which the rim pass
+   * cannot outline; the effect is left to the pale green eyes.
+   */
   private drawDisplacerBeast(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // Blue-black panther body
-    ctx.fillStyle = flash || '#2a2a4a';
-    ctx.fillRect(s * 0.22, s * 0.42, s * 0.56, s * 0.26);
-    // Head
-    ctx.fillRect(s * 0.28, s * 0.22, s * 0.34, s * 0.22);
-    // Tentacles from shoulders
-    ctx.fillStyle = '#3a3a5a';
-    ctx.fillRect(s * 0.52, s * 0.1, s * 0.08, s * 0.2);
-    ctx.fillRect(s * 0.6, s * 0.16, s * 0.08, s * 0.2);
-    // Displacement afterimage
-    ctx.fillStyle = 'rgba(90,90,160,0.35)';
-    ctx.fillRect(s * 0.7, s * 0.46, s * 0.2, s * 0.16);
-    // Pale eyes
-    ctx.fillStyle = '#e0e8ff';
-    ctx.fillRect(s * 0.32, s * 0.28, s * 0.05, s * 0.04);
-    ctx.fillRect(s * 0.46, s * 0.28, s * 0.05, s * 0.04);
+    const r = this.grid(ctx, s);
+    const coat = flash || '#2e3358';
+    const lit = flash || '#474d80';
+    const dark = flash || '#1a1d38';
+    const pad = flash || '#4a4f7c';
+    const spike = flash || '#b8bcd8';
+    const eye = flash || '#9cf05a';
+    // Tentacles from the shoulders, leaning apart, ending in spiked pads
+    r(coat, 9, 9, 2, 4);
+    r(coat, 8, 6, 2, 3);
+    r(coat, 7, 3, 2, 3);
+    r(pad, 4, 1, 6, 3);
+    r(spike, 3, 1, 1, 2);
+    r(spike, 5, 4, 1, 1);
+    r(spike, 8, 4, 1, 1);
+    r(coat, 13, 9, 2, 4);
+    r(coat, 14, 6, 2, 3);
+    r(coat, 15, 3, 2, 3);
+    r(pad, 14, 1, 6, 3);
+    r(spike, 20, 1, 1, 2);
+    r(spike, 15, 4, 1, 1);
+    r(spike, 18, 4, 1, 1);
+    // Six legs as three near/far pairs, the far leg a step behind, with
+    // enough floor between the pairs that the rim does not fuse them
+    for (const x of [4, 11, 18]) {
+      r(dark, x + 2, 18, 1, 6);
+      r(coat, x, 19, 2, 5);
+      r(dark, x, 24, 3, 2);
+    }
+    // Body, low and long, tail whipping up behind
+    r(coat, 5, 12, 18, 7);
+    r(lit, 5, 12, 18, 1);
+    r(dark, 5, 17, 18, 2);
+    r(coat, 22, 11, 3, 2);
+    r(coat, 24, 8, 2, 4);
+    r(coat, 25, 5, 2, 3);
+    // Head forward and low, ears up, jaw shadowed
+    r(coat, 1, 9, 8, 6);
+    r(lit, 1, 9, 8, 1);
+    r(coat, 2, 7, 2, 2);
+    r(coat, 6, 7, 2, 2);
+    r(dark, 1, 13, 5, 2);
+    r(eye, 2, 10, 2, 2);
+    r(eye, 6, 10, 2, 2);
+    r(dark, 3, 10, 1, 2);
+    r(dark, 7, 10, 1, 2);
+    r(flash || '#e8e4d8', 2, 15, 1, 1);
+    r(flash || '#e8e4d8', 4, 15, 1, 1);
   }
 
 
@@ -4112,24 +4245,132 @@ export class SpriteRenderer {
     r(skin, 8, 8, 2, 2);
   }
 
-  private drawWereboar(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // Bristly body
-    ctx.fillStyle = flash || '#6a5a4a';
-    ctx.fillRect(s * 0.24, s * 0.34, s * 0.52, s * 0.42);
-    // Boar head + snout
-    ctx.fillRect(s * 0.3, s * 0.1, s * 0.4, s * 0.26);
-    ctx.fillRect(s * 0.6, s * 0.18, s * 0.16, s * 0.12);
-    // Tusks
-    ctx.fillStyle = '#e8e0c8';
-    ctx.fillRect(s * 0.6, s * 0.26, s * 0.06, s * 0.08);
-    ctx.fillRect(s * 0.66, s * 0.26, s * 0.06, s * 0.08);
-    // Bristle ridge
-    ctx.fillStyle = '#4a3e32';
-    ctx.fillRect(s * 0.3, s * 0.08, s * 0.4, s * 0.04);
-    // Small red eyes
-    ctx.fillStyle = '#ff3020';
-    ctx.fillRect(s * 0.36, s * 0.16, s * 0.05, s * 0.04);
-    ctx.fillRect(s * 0.5, s * 0.16, s * 0.05, s * 0.04);
+  /**
+   * The were-creatures share one frame: a hunched humanoid on digitigrade
+   * legs, arms hanging long past the hip and ending in claws, the animal's
+   * head sat forward on the shoulders. Boar, bear and shark were three
+   * unrelated boxes; the body now says "lycanthrope" before the head and
+   * hide say which one — tusks and a bristle crest, round ears and a blunt
+   * pale muzzle, or a dorsal fin and a mouthful of teeth.
+   */
+  private drawLycanthrope(
+    ctx: CanvasRenderingContext2D,
+    s: number,
+    flash: string | undefined,
+    kind: 'boar' | 'bear' | 'shark'
+  ) {
+    const r = this.grid(ctx, s);
+    const P = {
+      boar: { fur: '#6e5847', lit: '#8d7461', dark: '#473627', belly: '#8a7362' },
+      bear: { fur: '#6d4a30', lit: '#8e6746', dark: '#47301c', belly: '#8f6f4e' },
+      shark: { fur: '#4f6478', lit: '#6f8699', dark: '#33424f', belly: '#cfd8e0' },
+    }[kind];
+    const fur = flash || P.fur;
+    const lit = flash || P.lit;
+    const dark = flash || P.dark;
+    const belly = flash || P.belly;
+    const claw = flash || '#e9e2d2';
+    const bear = kind === 'bear';
+
+    // Digitigrade legs: thigh forward, hock back, paw flat with claws
+    r(fur, 9, 18, 4, 4);
+    r(fur, 16, 18, 4, 4);
+    r(dark, 8, 21, 4, 3);
+    r(dark, 17, 21, 4, 3);
+    r(dark, 7, 24, 5, 3);
+    r(dark, 17, 24, 5, 3);
+    for (const x of [7, 9, 11, 17, 19, 21]) r(claw, x, 26, 1, 1);
+
+    // Torso, hunched: the shoulders rise to the ears
+    const tx = bear ? 5 : 6;
+    const tw = bear ? 19 : 17;
+    r(fur, tx, 9, tw, 10);
+    r(lit, tx, 9, tw, 1);
+    r(dark, tx, 18, tw, 1);
+    r(dark, tx, 10, 1, 8);
+    r(belly, 11, 12, 7, 6);
+
+    // Arms out past the hip, clawed hands
+    r(fur, 3, 10, 4, 9);
+    r(dark, 3, 10, 1, 9);
+    r(fur, 2, 19, 4, 3);
+    r(fur, 22, 10, 4, 9);
+    r(lit, 22, 10, 4, 1);
+    r(fur, 23, 19, 4, 3);
+    const ch = bear ? 2 : 1;
+    r(claw, 2, 22, 1, ch);
+    r(claw, 4, 22, 1, ch);
+    r(claw, 23, 22, 1, ch);
+    r(claw, 25, 22, 1, ch);
+
+    switch (kind) {
+      case 'boar': {
+        // Skull, round ears, bristle crest over the crown
+        r(fur, 9, 2, 10, 8);
+        r(lit, 9, 2, 10, 1);
+        r(dark, 9, 2, 1, 8);
+        r(fur, 7, 1, 3, 3);
+        r(fur, 18, 1, 3, 3);
+        r(dark, 8, 2, 1, 1);
+        r(dark, 19, 2, 1, 1);
+        r(dark, 11, 0, 6, 2);
+        r(dark, 9, 4, 10, 1);
+        // Small red eyes tight against the brow
+        r(flash || '#ff3a20', 11, 5, 2, 2);
+        r(flash || '#ff3a20', 15, 5, 2, 2);
+        r(flash || '#3a0806', 12, 5, 1, 2);
+        r(flash || '#3a0806', 15, 5, 1, 2);
+        // Snout disc dropping past the jaw, tusks curling up beside it
+        r(flash || '#8f6f6a', 11, 7, 6, 4);
+        r(flash || '#6a4c48', 11, 10, 6, 1);
+        r(dark, 12, 9, 1, 1);
+        r(dark, 15, 9, 1, 1);
+        r(claw, 10, 8, 1, 3);
+        r(claw, 17, 8, 1, 3);
+        break;
+      }
+      case 'bear': {
+        // Broad skull, round ears, blunt pale muzzle with a black nose
+        r(fur, 8, 2, 12, 8);
+        r(lit, 8, 2, 12, 1);
+        r(dark, 8, 2, 1, 8);
+        r(fur, 7, 0, 3, 3);
+        r(fur, 18, 0, 3, 3);
+        r(belly, 8, 1, 1, 1);
+        r(belly, 19, 1, 1, 1);
+        r(dark, 8, 4, 12, 1);
+        r(flash || '#1c120a', 10, 5, 3, 2);
+        r(flash || '#1c120a', 15, 5, 3, 2);
+        r(flash || '#e8d8b0', 11, 5, 1, 1);
+        r(flash || '#e8d8b0', 16, 5, 1, 1);
+        r(flash || '#b08a5c', 11, 7, 6, 4);
+        r(flash || '#1a1210', 13, 7, 2, 2);
+        r(dark, 12, 10, 4, 1);
+        break;
+      }
+      case 'shark': {
+        // Dorsal fin rising off the back behind the shoulder
+        r(dark, 23, 1, 2, 3);
+        r(dark, 22, 3, 4, 3);
+        r(dark, 21, 6, 6, 3);
+        r(lit, 23, 1, 1, 5);
+        // Gill slits on the chest
+        r(dark, 7, 11, 1, 3);
+        r(dark, 9, 11, 1, 3);
+        // Wedge head, pale below, eyes black and wide-set
+        r(fur, 8, 2, 12, 8);
+        r(lit, 8, 2, 12, 1);
+        r(dark, 8, 2, 1, 8);
+        r(belly, 8, 7, 12, 3);
+        r(flash || '#0a0e12', 10, 4, 2, 2);
+        r(flash || '#0a0e12', 16, 4, 2, 2);
+        // The mouth: a gum line with teeth above and below it
+        r(flash || '#4a1a22', 9, 7, 10, 3);
+        for (const x of [10, 12, 14, 16, 18]) r(flash || '#f2f4f6', x, 7, 1, 1);
+        for (const x of [9, 11, 13, 15, 17]) r(flash || '#f2f4f6', x, 9, 1, 1);
+        break;
+      }
+    }
   }
 
   private drawWeretiger(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -6255,20 +6496,61 @@ export class SpriteRenderer {
     r(flash || '#ff5a1a', 14, 5, 1, 2);
   }
 
+  /**
+   * The needle blight is a trunk and the twig blight a bundle of sticks;
+   * the vine blight is a knot — a rounded mass of coiled creeper with
+   * leaves sprouting from it, a face sunk into the tangle, and a tendril
+   * reaching out either side. Round where its cousins are straight.
+   */
   private drawVineBlight(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    ctx.fillStyle = flash || '#3a5a28'; // mass of tangled vines
-    ctx.fillRect(s * 0.28, s * 0.22, s * 0.44, s * 0.4);
-    ctx.fillStyle = flash || '#2a4820'; // creeping tendrils
-    ctx.fillRect(s * 0.1, s * 0.3, s * 0.2, s * 0.05);
-    ctx.fillRect(s * 0.72, s * 0.36, s * 0.18, s * 0.05);
-    ctx.fillRect(s * 0.24, s * 0.58, s * 0.3, s * 0.04);
-    ctx.fillStyle = flash || '#4a6e30'; // thorns
-    ctx.fillRect(s * 0.32, s * 0.26, s * 0.04, s * 0.08);
-    ctx.fillRect(s * 0.56, s * 0.3, s * 0.04, s * 0.1);
-    ctx.fillStyle = flash || '#2a3a1a'; // staring face
-    ctx.fillRect(s * 0.4, s * 0.3, s * 0.08, s * 0.1);
-    ctx.fillRect(s * 0.52, s * 0.3, s * 0.08, s * 0.1);
-    ctx.fillRect(s * 0.44, s * 0.46, s * 0.12, s * 0.04);
+    const r = this.grid(ctx, s);
+    const vine = flash || '#3f6a2e';
+    const lit = flash || '#5f8e44';
+    const dark = flash || '#26421c';
+    const leaf = flash || '#8ac04a';
+    const eye = flash || '#f0e060';
+    // Tendrils reaching out either side, hooking up at the tips
+    r(vine, 2, 12, 6, 2);
+    r(vine, 1, 8, 2, 5);
+    r(vine, 1, 6, 3, 2);
+    r(leaf, 3, 4, 2, 2);
+    r(vine, 20, 14, 6, 2);
+    r(vine, 25, 10, 2, 5);
+    r(leaf, 24, 8, 3, 2);
+    // Root legs, twisted
+    r(vine, 9, 19, 4, 6);
+    r(vine, 15, 19, 4, 6);
+    r(dark, 10, 20, 1, 4);
+    r(dark, 17, 20, 1, 4);
+    r(dark, 8, 24, 5, 2);
+    r(dark, 15, 24, 5, 2);
+    // Body: a knotted mass of vine, the coils showing as bands
+    r(vine, 7, 8, 14, 12);
+    r(vine, 6, 10, 16, 8);
+    r(lit, 8, 8, 12, 1);
+    r(dark, 7, 19, 14, 1);
+    r(dark, 6, 10, 1, 8);
+    r(dark, 7, 11, 5, 1);
+    r(dark, 15, 10, 6, 1);
+    r(dark, 6, 15, 5, 1);
+    r(dark, 17, 15, 5, 1);
+    r(dark, 8, 18, 12, 1);
+    r(lit, 8, 10, 3, 1);
+    r(lit, 16, 13, 4, 1);
+    r(lit, 9, 16, 4, 1);
+    // Leaves sprouting from the knot
+    r(leaf, 9, 6, 3, 2);
+    r(leaf, 16, 5, 3, 3);
+    r(leaf, 17, 5, 1, 1);
+    r(leaf, 5, 12, 2, 2);
+    r(leaf, 19, 17, 3, 2);
+    // The face knotted into it: two hollows with a glint in each, a crack
+    r(dark, 10, 12, 3, 3);
+    r(dark, 15, 12, 3, 3);
+    r(eye, 11, 13, 2, 1);
+    r(eye, 15, 13, 2, 1);
+    r(dark, 11, 16, 6, 1);
+    r(dark, 13, 17, 2, 1);
   }
 
   /**
@@ -7390,23 +7672,73 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.4, s * 0.48, s * 0.2, s * 0.16);
   }
 
+  /**
+   * A warlock who died still owing: a hooded corpse in a tattered robe,
+   * eyes and chest-rune burning the green of its patron, one bony hand
+   * raised with an eldritch bolt crackling off it. The bolt is solid paint
+   * held clear of the edge so the rim pass can outline it.
+   */
   private drawDeathlock(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    ctx.fillStyle = flash || '#4a4a4e'; // shriveled robed corpse
-    ctx.fillRect(s * 0.34, s * 0.24, s * 0.32, s * 0.3);
-    ctx.fillStyle = flash || '#3a3a40'; // sunken face
-    ctx.fillRect(s * 0.38, s * 0.1, s * 0.24, s * 0.16);
-    ctx.fillStyle = flash || '#2a2a30'; // hood
-    ctx.fillRect(s * 0.34, s * 0.06, s * 0.32, s * 0.08);
-    ctx.fillStyle = '#00e0a0'; // necrotic green eyes
-    ctx.fillRect(s * 0.42, s * 0.16, s * 0.04, s * 0.04);
-    ctx.fillRect(s * 0.56, s * 0.16, s * 0.04, s * 0.04);
-    ctx.fillStyle = '#00e0a0'; // crackling eldritch bolt
-    ctx.fillRect(s * 0.72, s * 0.2, s * 0.04, s * 0.24);
-    ctx.fillRect(s * 0.76, s * 0.16, s * 0.02, s * 0.1);
-    ctx.fillRect(s * 0.14, s * 0.24, s * 0.04, s * 0.16);
-    ctx.fillRect(s * 0.12, s * 0.22, s * 0.02, s * 0.08);
-    ctx.fillStyle = flash || '#3a3a40'; // trailing robe
-    ctx.fillRect(s * 0.3, s * 0.54, s * 0.4, s * 0.14);
+    const r = this.grid(ctx, s);
+    const robe = flash || '#33303f';
+    const robeLit = flash || '#4c4859';
+    const robeDk = flash || '#1f1d28';
+    const skin = flash || '#6e7370';
+    const skinDk = flash || '#4a4f4d';
+    const bone = flash || '#9aa094';
+    const eye = flash || '#20f0a0';
+    const bolt = flash || '#1adc90';
+    const boltLit = flash || '#a0ffd8';
+    // Tattered hem, strips of different lengths
+    r(robe, 7, 21, 3, 4);
+    r(robe, 11, 21, 3, 6);
+    r(robe, 15, 21, 4, 5);
+    r(robe, 20, 21, 2, 3);
+    r(robeDk, 7, 24, 3, 1);
+    r(robeDk, 11, 26, 3, 1);
+    r(robeDk, 15, 25, 4, 1);
+    // Robe, a belt of bone charms across it, the rune burning on the chest
+    r(robe, 7, 11, 15, 10);
+    r(robeLit, 7, 11, 15, 1);
+    r(robeDk, 7, 11, 1, 10);
+    r(robeDk, 7, 20, 15, 1);
+    r(bone, 9, 16, 11, 1);
+    for (const x of [10, 13, 16, 19]) r(robeDk, x, 16, 1, 1);
+    r(bolt, 13, 13, 3, 1);
+    r(bolt, 14, 12, 1, 3);
+    // Left arm hanging, a bony hand at the end of it
+    r(robe, 4, 12, 3, 7);
+    r(robeDk, 4, 12, 1, 7);
+    r(bone, 4, 19, 3, 2);
+    r(bone, 4, 21, 1, 1);
+    r(bone, 6, 21, 1, 1);
+    // Right arm raised, hand open, the bolt off the fingers
+    r(robe, 21, 11, 3, 4);
+    r(robe, 22, 8, 3, 4);
+    r(bone, 23, 5, 3, 3);
+    r(bolt, 24, 1, 2, 4);
+    r(bolt, 26, 2, 1, 2);
+    r(bolt, 23, 1, 1, 1);
+    r(boltLit, 24, 2, 1, 3);
+    // Hood, and the shrivelled face deep inside it
+    r(robe, 8, 1, 12, 4);
+    r(robeLit, 9, 1, 10, 1);
+    r(robe, 7, 4, 2, 8);
+    r(robe, 19, 4, 2, 8);
+    r(robeDk, 7, 9, 2, 3);
+    r(robeDk, 19, 9, 2, 3);
+    r(skinDk, 9, 4, 10, 8);
+    r(skin, 10, 5, 8, 6);
+    r(skinDk, 10, 5, 1, 6);
+    r(eye, 11, 6, 2, 2);
+    r(eye, 15, 6, 2, 2);
+    r(boltLit, 11, 6, 1, 1);
+    r(boltLit, 15, 6, 1, 1);
+    r(skinDk, 13, 8, 2, 1);
+    r(skinDk, 11, 10, 6, 1);
+    r(bone, 12, 10, 1, 1);
+    r(bone, 14, 10, 1, 1);
+    r(bone, 16, 10, 1, 1);
   }
 
   private drawBoneNaga(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -7692,24 +8024,60 @@ export class SpriteRenderer {
     r(flash || '#9c8f70', 22, 4, 3, 3);
   }
 
+  /**
+   * The hawk stoops with its wings swept back; the blood hawk hangs with
+   * them spread the full width of the box, crimson breast to the viewer.
+   * The old one was a dark red smear a few pixels tall.
+   */
   private drawBloodHawk(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    ctx.fillStyle = flash || '#5a2222'; // crimson-breasted body
-    ctx.fillRect(s * 0.32, s * 0.24, s * 0.32, s * 0.2);
-    ctx.fillStyle = flash || '#8a3030'; // blood chest
-    ctx.fillRect(s * 0.38, s * 0.3, s * 0.2, s * 0.12);
-    ctx.fillStyle = flash || '#6a2828'; // sleek raptor head
-    ctx.fillRect(s * 0.58, s * 0.12, s * 0.14, s * 0.12);
-    ctx.fillStyle = flash || '#d8c828'; // curved talon beak
-    ctx.fillRect(s * 0.7, s * 0.14, s * 0.08, s * 0.05);
-    ctx.fillStyle = flash || '#6a2828'; // angry crest
-    ctx.fillRect(s * 0.58, s * 0.08, s * 0.05, s * 0.04);
-    ctx.fillStyle = flash || '#5a2222'; // wings
-    ctx.fillRect(s * 0.12, s * 0.2, s * 0.22, s * 0.14);
-    ctx.fillRect(s * 0.66, s * 0.22, s * 0.22, s * 0.14);
-    ctx.fillRect(s * 0.36, s * 0.44, s * 0.08, s * 0.12);
-    ctx.fillRect(s * 0.56, s * 0.44, s * 0.08, s * 0.12);
-    ctx.fillStyle = '#f0d030'; // fierce eye
-    ctx.fillRect(s * 0.62, s * 0.16, s * 0.04, s * 0.04);
+    const r = this.grid(ctx, s);
+    const feather = flash || '#7c3636';
+    const lit = flash || '#a84e4e';
+    const dark = flash || '#451a1a';
+    const breast = flash || '#d03a3a';
+    const eye = flash || '#ffe040';
+    // Wings spread wide, tips raised, primaries splayed below
+    r(feather, 1, 4, 4, 3);
+    r(feather, 1, 7, 10, 4);
+    r(lit, 1, 7, 10, 1);
+    r(dark, 1, 11, 9, 1);
+    r(feather, 2, 12, 2, 2);
+    r(feather, 5, 12, 2, 2);
+    r(feather, 8, 12, 2, 2);
+    r(feather, 23, 4, 4, 3);
+    r(feather, 17, 7, 10, 4);
+    r(lit, 17, 7, 10, 1);
+    r(dark, 18, 11, 9, 1);
+    r(feather, 24, 12, 2, 2);
+    r(feather, 21, 12, 2, 2);
+    r(feather, 18, 12, 2, 2);
+    // Body and the blood-red barred breast
+    r(feather, 10, 6, 8, 10);
+    r(breast, 12, 9, 4, 7);
+    r(dark, 12, 11, 4, 1);
+    r(dark, 12, 13, 4, 1);
+    // Tail fanned below, barred
+    r(feather, 11, 16, 6, 4);
+    r(feather, 10, 19, 8, 2);
+    r(dark, 11, 18, 6, 1);
+    r(dark, 10, 20, 8, 1);
+    // Head, hooked beak down, fierce eyes
+    r(feather, 11, 1, 6, 5);
+    r(lit, 11, 1, 6, 1);
+    r(dark, 11, 1, 1, 5);
+    r(eye, 12, 2, 2, 2);
+    r(eye, 15, 2, 2, 2);
+    r(flash || '#1a0e04', 13, 2, 1, 2);
+    r(flash || '#1a0e04', 15, 2, 1, 2);
+    r(flash || '#e8c020', 13, 4, 2, 2);
+    r(flash || '#a88420', 13, 6, 2, 1);
+    // Talons tucked under the tail
+    r(flash || '#e8c860', 11, 21, 2, 2);
+    r(flash || '#e8c860', 15, 21, 2, 2);
+    r(dark, 10, 23, 1, 1);
+    r(dark, 12, 23, 1, 1);
+    r(dark, 15, 23, 1, 1);
+    r(dark, 17, 23, 1, 1);
   }
 
   /**
@@ -9588,26 +9956,50 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.52, s * 0.58, s * 0.1, s * 0.14);
   }
 
+  /**
+   * A darkmantle hangs from the cavern roof by a stalk: a small dome, a
+   * fanged mouth on its underside and a fringe of tentacles below. Half its
+   * size and twice as tall as the cloaker, which is a flat sheet. The old
+   * one was a filled path whose antialiased edge blocked the rim pass.
+   */
   private drawDarkmantle(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // hooded diving cloak hung from the cavern roof
-    ctx.fillStyle = flash || '#2a2b33'; // leather-black mantle body
-    ctx.beginPath();
-    ctx.moveTo(s * 0.2, s * 0.06);
-    ctx.lineTo(s * 0.6, s * 0.06);
-    ctx.lineTo(s * 0.72, s * 0.42);
-    ctx.lineTo(s * 0.5, s * 0.62);
-    ctx.lineTo(s * 0.28, s * 0.42);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#4a3bdd'; // creepy glow eyes
-    ctx.fillRect(s * 0.32, s * 0.12, s * 0.06, s * 0.06);
-    ctx.fillRect(s * 0.62, s * 0.12, s * 0.06, s * 0.06);
-    ctx.fillStyle = '#181920'; // fanged under-maw
-    ctx.fillRect(s * 0.42, s * 0.46, s * 0.16, s * 0.12);
-    ctx.fillStyle = '#dcdcdc'; // needle teeth
-    ctx.fillRect(s * 0.44, s * 0.46, s * 0.03, s * 0.06);
-    ctx.fillRect(s * 0.5, s * 0.46, s * 0.03, s * 0.06);
-    ctx.fillRect(s * 0.56, s * 0.46, s * 0.03, s * 0.06);
+    const r = this.grid(ctx, s);
+    const body = flash || '#3c3d4c';
+    const lit = flash || '#5a5c74';
+    const dark = flash || '#252630';
+    const eye = flash || '#6a5aff';
+    const maw = flash || '#4a1a24';
+    const tooth = flash || '#dcdce4';
+    // Stalk to the ceiling
+    r(dark, 12, 0, 4, 3);
+    // The mantle, a dome with stepped shoulders
+    r(body, 9, 2, 10, 2);
+    r(body, 7, 4, 14, 3);
+    r(body, 5, 7, 18, 5);
+    r(lit, 9, 2, 10, 1);
+    r(lit, 7, 4, 2, 1);
+    r(lit, 19, 4, 2, 1);
+    r(dark, 5, 11, 18, 1);
+    // Eye-spots along the rim
+    r(eye, 8, 8, 2, 2);
+    r(eye, 18, 8, 2, 2);
+    r(eye, 13, 5, 2, 1);
+    // Underside: the fanged maw, tentacles hanging from the rim
+    r(maw, 10, 12, 8, 3);
+    for (const x of [11, 13, 15, 17]) r(tooth, x, 12, 1, 2);
+    for (const x of [12, 14, 16]) r(tooth, x, 14, 1, 1);
+    r(body, 5, 12, 2, 7);
+    r(body, 8, 13, 2, 8);
+    r(body, 11, 15, 1, 6);
+    r(body, 13, 15, 2, 9);
+    r(body, 16, 15, 1, 6);
+    r(body, 18, 13, 2, 8);
+    r(body, 21, 12, 2, 7);
+    r(dark, 5, 18, 2, 1);
+    r(dark, 8, 20, 2, 1);
+    r(dark, 13, 23, 2, 1);
+    r(dark, 18, 20, 2, 1);
+    r(dark, 21, 18, 2, 1);
   }
 
   private drawPiercer(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -10394,29 +10786,43 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.78, s * 0.4, s * 0.04, s * 0.05);
   }
 
+  /**
+   * An orca is its markings: black over white, the eye patch, the grey
+   * saddle behind a dorsal fin taller than any shark's. Drawn side-on with
+   * the flukes turned to the viewer, which is the one pose the sharks do
+   * not use.
+   */
   private drawKillerWhale(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // black-and-white breach leviathan
-    ctx.fillStyle = flash || '#10151c'; // great black body
-    ctx.fillRect(s * 0.1, s * 0.34, s * 0.78, s * 0.3);
-    ctx.fillStyle = '#eef0f2'; // white saddle flank
-    ctx.fillRect(s * 0.5, s * 0.42, s * 0.24, s * 0.12);
-    ctx.fillStyle = '#eef0f2'; // white chin
-    ctx.fillRect(s * 0.76, s * 0.52, s * 0.12, s * 0.08);
-    ctx.fillStyle = '#10151c'; // tall curved dorsal
-    ctx.beginPath();
-    ctx.moveTo(s * 0.42, s * 0.34);
-    ctx.lineTo(s * 0.5, s * 0.12);
-    ctx.lineTo(s * 0.58, s * 0.34);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#10151c'; // fluke tail
-    ctx.fillRect(s * 0.08, s * 0.38, s * 0.04, s * 0.1);
-    ctx.fillRect(s * 0.06, s * 0.32, s * 0.04, s * 0.06);
-    ctx.fillRect(s * 0.06, s * 0.46, s * 0.04, s * 0.06);
-    ctx.fillStyle = '#eef0f2'; // eye patch
-    ctx.fillRect(s * 0.8, s * 0.4, s * 0.06, s * 0.04);
-    ctx.fillStyle = '#0a0e14'; // eye
-    ctx.fillRect(s * 0.82, s * 0.4, s * 0.02, s * 0.04);
+    const r = this.grid(ctx, s);
+    const blk = flash || '#171c24';
+    const lit = flash || '#2f3844';
+    const white = flash || '#eef0f2';
+    const grey = flash || '#8d97a3';
+    // Flukes and tail stock
+    r(blk, 1, 10, 2, 3);
+    r(blk, 1, 18, 2, 3);
+    r(blk, 2, 13, 3, 5);
+    r(lit, 1, 10, 2, 1);
+    // Body: a torpedo, the belly white, the snout rounded off
+    r(blk, 5, 11, 20, 9);
+    r(blk, 24, 12, 3, 5);
+    r(lit, 6, 11, 18, 1);
+    r(white, 8, 17, 17, 3);
+    r(white, 24, 17, 3, 2);
+    r(grey, 20, 16, 7, 1);
+    // Eye patch, the eye a glint ahead of it; saddle behind the fin
+    r(white, 19, 13, 4, 2);
+    r(grey, 23, 14, 1, 1);
+    r(grey, 7, 12, 4, 1);
+    r(grey, 17, 12, 3, 1);
+    // Dorsal fin, tall and leaning back
+    r(blk, 11, 2, 2, 3);
+    r(blk, 11, 5, 4, 3);
+    r(blk, 11, 8, 6, 3);
+    r(lit, 11, 2, 1, 9);
+    // Pectoral fin, a paddle out below the chest
+    r(blk, 17, 19, 5, 2);
+    r(blk, 18, 21, 3, 2);
   }
 
   private drawGiantStrider(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -10730,52 +11136,77 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.12, s * 0.08, s * 0.08, s * 0.08);
   }
 
+  /**
+   * Built on the dragonshield's kobold — same snout, tail and stance — with
+   * the gear doing the telling: brass goggles pushed up on the brow, a
+   * leather apron with a pocket of tools, a wrench in one hand and a
+   * sparking rod held out in the other. Sparks are solid pixels kept inside
+   * the box so the rim can find them.
+   */
   private drawKoboldInventor(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // tinker-scaled contraption-builder with goggles and a sparking wand
-    ctx.fillStyle = flash || '#8a4a2a'; // scaled head
-    ctx.fillRect(s * 0.36, s * 0.22, s * 0.28, s * 0.2);
-    ctx.fillStyle = '#5a2c14'; // snout
-    ctx.fillRect(s * 0.46, s * 0.3, s * 0.14, s * 0.12);
-    ctx.fillStyle = '#20282c'; // bulky brass goggles
-    ctx.fillRect(s * 0.34, s * 0.24, s * 0.12, s * 0.1);
-    ctx.fillRect(s * 0.54, s * 0.24, s * 0.12, s * 0.1);
-    ctx.fillStyle = '#d8b43a'; // gleaming lenses
-    ctx.fillRect(s * 0.36, s * 0.26, s * 0.06, s * 0.06);
-    ctx.fillRect(s * 0.58, s * 0.26, s * 0.06, s * 0.06);
-    ctx.fillStyle = '#5a3a20'; // leather straps
-    ctx.fillRect(s * 0.32, s * 0.24, s * 0.3, s * 0.03);
-    ctx.fillStyle = '#3a2c18'; // smock and belts
-    ctx.fillRect(s * 0.32, s * 0.42, s * 0.36, s * 0.28);
-    ctx.fillStyle = '#96503a'; // tool pouch
-    ctx.fillRect(s * 0.6, s * 0.46, s * 0.12, s * 0.12);
-    ctx.fillStyle = '#c04818'; // sparking wand tip
-    ctx.fillRect(s * 0.78, s * 0.38, s * 0.08, s * 0.06);
-    ctx.fillStyle = '#6a4418'; // wand
-    ctx.fillRect(s * 0.74, s * 0.32, s * 0.04, s * 0.16);
-    ctx.fillStyle = '#e0c040'; // electric sparks
-    ctx.fillRect(s * 0.84, s * 0.36, s * 0.03, s * 0.03);
-    ctx.fillRect(s * 0.82, s * 0.42, s * 0.03, s * 0.03);
-  }
-
-  private drawLizardfolkBaron(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // scaled swamp-warlord with a great thrashing axe
-    ctx.fillStyle = flash || '#3f8a47'; // crested head
-    ctx.fillRect(s * 0.34, s * 0.18, s * 0.32, s * 0.24);
-    ctx.fillStyle = '#2c6733'; // brow ridge + jaw frill
-    ctx.fillRect(s * 0.32, s * 0.14, s * 0.36, s * 0.06);
-    ctx.fillRect(s * 0.36, s * 0.4, s * 0.28, s * 0.06);
-    ctx.fillStyle = '#d8d8a0'; // slitted predator eyes
-    ctx.fillRect(s * 0.4, s * 0.24, s * 0.06, s * 0.06);
-    ctx.fillRect(s * 0.54, s * 0.24, s * 0.06, s * 0.06);
-    ctx.fillStyle = '#22301c'; // heavy scaled torso
-    ctx.fillRect(s * 0.3, s * 0.42, s * 0.4, s * 0.3);
-    ctx.fillStyle = '#8a6a3a'; // bone-beaded pauldron
-    ctx.fillRect(s * 0.26, s * 0.42, s * 0.12, s * 0.14);
-    ctx.fillStyle = '#6a4420'; // thrashing axe haft
-    ctx.fillRect(s * 0.7, s * 0.2, s * 0.05, s * 0.52);
-    ctx.fillStyle = '#a8b8cc'; // stone-blade axe head
-    ctx.fillRect(s * 0.62, s * 0.16, s * 0.14, s * 0.1);
-    ctx.fillRect(s * 0.7, s * 0.12, s * 0.06, s * 0.12);
+    const r = this.grid(ctx, s);
+    const scale = flash || '#9a5030';
+    const lit = flash || '#bd6c46';
+    const dark = flash || '#5e2c18';
+    const brass = flash || '#c8a040';
+    const brassDk = flash || '#8a6a20';
+    const lens = flash || '#7ad8e0';
+    const apron = flash || '#5a4030';
+    const apronLit = flash || '#7a5a44';
+    const steel = flash || '#b0b8c0';
+    const spark = flash || '#ffe040';
+    // Tail out behind, legs planted
+    r(scale, 19, 19, 5, 2);
+    r(scale, 23, 17, 3, 2);
+    r(scale, 11, 19, 3, 6);
+    r(scale, 16, 19, 3, 6);
+    r(dark, 10, 24, 4, 2);
+    r(dark, 16, 24, 4, 2);
+    // Body under a leather apron with a tool pocket
+    r(scale, 10, 11, 10, 9);
+    r(lit, 10, 11, 10, 1);
+    r(apron, 11, 13, 8, 7);
+    r(apronLit, 11, 13, 8, 1);
+    r(dark, 12, 16, 2, 2);
+    r(dark, 16, 16, 2, 2);
+    r(steel, 13, 15, 1, 2);
+    // Left arm with a wrench
+    r(scale, 7, 12, 3, 6);
+    r(dark, 7, 12, 1, 6);
+    r(scale, 6, 17, 3, 2);
+    r(steel, 4, 15, 2, 5);
+    r(steel, 3, 14, 4, 2);
+    r(dark, 4, 14, 2, 1);
+    // Right arm out with the sparking rod
+    r(scale, 20, 12, 3, 5);
+    r(scale, 22, 15, 3, 2);
+    r(brass, 24, 8, 2, 8);
+    r(brassDk, 25, 8, 1, 8);
+    r(flash || '#d06a30', 23, 6, 4, 3);
+    r(flash || '#f0a060', 23, 6, 4, 1);
+    r(spark, 22, 4, 1, 1);
+    r(spark, 25, 4, 1, 1);
+    r(spark, 21, 7, 1, 1);
+    r(spark, 26, 10, 1, 1);
+    // Head, snout to the right, eyes lit
+    r(scale, 10, 4, 9, 7);
+    r(lit, 10, 4, 9, 1);
+    r(dark, 10, 4, 1, 7);
+    r(scale, 17, 7, 5, 3);
+    r(dark, 17, 9, 5, 1);
+    r(dark, 20, 7, 1, 1);
+    r(flash || '#f0ece0', 20, 9, 1, 1);
+    r(flash || '#ff5a1a', 12, 6, 2, 2);
+    r(flash || '#ff5a1a', 15, 6, 2, 2);
+    r(flash || '#2a0a04', 13, 6, 1, 2);
+    r(flash || '#2a0a04', 15, 6, 1, 2);
+    // Goggles pushed up on the brow: brass rims, glass, a strap
+    r(brassDk, 10, 3, 9, 1);
+    r(brass, 10, 0, 4, 4);
+    r(brass, 15, 0, 4, 4);
+    r(lens, 11, 1, 2, 2);
+    r(lens, 16, 1, 2, 2);
+    r(brassDk, 14, 2, 1, 1);
   }
 
   private drawMerrowChamp(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -11434,25 +11865,6 @@ export class SpriteRenderer {
     r(flash || '#fff0b0', 24, 18, 2, 2);
   }
 
-  private drawWerebear(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // guardian lycanthrope in a bear's great frame
-    ctx.fillStyle = flash || '#6a4a38'; // massive ursine chest-hide
-    ctx.fillRect(s * 0.26, s * 0.36, s * 0.48, s * 0.34);
-    ctx.fillStyle = '#8a624a'; // lighter pelt flank
-    ctx.fillRect(s * 0.3, s * 0.42, s * 0.2, s * 0.05);
-    ctx.fillStyle = '#5a3c2a'; // broad bear head
-    ctx.fillRect(s * 0.32, s * 0.18, s * 0.36, s * 0.26);
-    ctx.fillStyle = '#402a1a'; // small calm bear eyes
-    ctx.fillRect(s * 0.38, s * 0.26, s * 0.05, s * 0.04);
-    ctx.fillRect(s * 0.56, s * 0.26, s * 0.05, s * 0.04);
-    ctx.fillStyle = '#2a1a10'; // blunt muzzle
-    ctx.fillRect(s * 0.42, s * 0.36, s * 0.16, s * 0.08);
-    ctx.fillStyle = '#e8e8e8'; // formidable claws
-    ctx.fillRect(s * 0.3, s * 0.66, s * 0.06, s * 0.08);
-    ctx.fillRect(s * 0.4, s * 0.66, s * 0.06, s * 0.08);
-    ctx.fillRect(s * 0.58, s * 0.66, s * 0.06, s * 0.08);
-  }
-
 
   private drawHobgoblinIronShadow(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
     // silent martial shadow of the legions, shortsword glided
@@ -11564,28 +11976,64 @@ export class SpriteRenderer {
     r(flash || '#160c04', 23, 7, 1, 2);
   }
 
+  /**
+   * The gloom weaver is not a spider — it is the thing that spins the web
+   * the spiders live in: a gaunt, bald figure with two pairs of arms, the
+   * upper pair reaching up and out, the lower pair holding a strand of
+   * solid gloom-silk between the hands. Tall and thin where the spider lord
+   * beside it is squat on eight legs.
+   */
   private drawGloomWeaver(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // long-limbed spider-fiend weaving strands of gloom
-    ctx.fillStyle = flash || '#3a2444'; // hunched weaver torso
-    ctx.fillRect(s * 0.3, s * 0.3, s * 0.4, s * 0.3);
-    ctx.fillStyle = '#5a3a6a'; // mottled thorax vein
-    ctx.fillRect(s * 0.34, s * 0.36, s * 0.32, s * 0.06);
-    ctx.fillStyle = '#241430'; // many long legs
-    ctx.fillRect(s * 0.12, s * 0.44, s * 0.12, s * 0.05);
-    ctx.fillRect(s * 0.08, s * 0.32, s * 0.12, s * 0.05);
-    ctx.fillRect(s * 0.76, s * 0.44, s * 0.12, s * 0.05);
-    ctx.fillRect(s * 0.8, s * 0.32, s * 0.12, s * 0.05);
-    ctx.fillStyle = '#2a1a36'; // bald horror head
-    ctx.fillRect(s * 0.38, s * 0.16, s * 0.24, s * 0.18);
-    ctx.fillStyle = '#c050d0'; // glaring violet eyes
-    ctx.fillRect(s * 0.42, s * 0.2, s * 0.05, s * 0.05);
-    ctx.fillRect(s * 0.54, s * 0.2, s * 0.05, s * 0.05);
-    ctx.fillStyle = '#181222'; // thread of pure gloom silk
-    ctx.fillRect(s * 0.2, s * 0.7, s * 0.6, s * 0.02);
-    ctx.fillStyle = '#5a2a7a'; // hanging strand glints
-    ctx.fillRect(s * 0.28, s * 0.68, s * 0.03, s * 0.06);
-    ctx.fillRect(s * 0.48, s * 0.68, s * 0.03, s * 0.06);
-    ctx.fillRect(s * 0.68, s * 0.68, s * 0.03, s * 0.06);
+    const r = this.grid(ctx, s);
+    const skin = flash || '#43325a';
+    const lit = flash || '#614c7e';
+    const dark = flash || '#281d38';
+    const eye = flash || '#d060ff';
+    const silk = flash || '#a48cc4';
+    const silkLit = flash || '#d0c0e8';
+    // Lower arms out and down, the strand hung between the hands
+    r(skin, 6, 13, 5, 2);
+    r(skin, 3, 15, 3, 3);
+    r(skin, 1, 18, 2, 5);
+    r(skin, 17, 13, 5, 2);
+    r(skin, 22, 15, 3, 3);
+    r(skin, 25, 18, 2, 5);
+    r(silk, 3, 22, 22, 1);
+    r(silkLit, 8, 22, 1, 1);
+    r(silkLit, 19, 22, 1, 1);
+    r(silk, 6, 23, 1, 2);
+    r(silk, 13, 23, 1, 3);
+    r(silk, 20, 23, 1, 2);
+    // Upper arms reaching up and out, clawed
+    r(skin, 7, 8, 4, 2);
+    r(skin, 4, 5, 3, 3);
+    r(skin, 2, 1, 2, 4);
+    r(dark, 1, 1, 1, 2);
+    r(skin, 17, 8, 4, 2);
+    r(skin, 21, 5, 3, 3);
+    r(skin, 24, 1, 2, 4);
+    r(dark, 26, 1, 1, 2);
+    // Legs, thin, feet splayed
+    r(skin, 11, 17, 2, 8);
+    r(skin, 15, 17, 2, 8);
+    r(dark, 10, 25, 3, 2);
+    r(dark, 15, 25, 3, 2);
+    // Torso, hunched, ribs showing through
+    r(skin, 10, 7, 8, 10);
+    r(lit, 10, 7, 8, 1);
+    r(dark, 10, 7, 1, 10);
+    r(dark, 11, 10, 6, 1);
+    r(dark, 11, 12, 6, 1);
+    r(dark, 11, 14, 6, 1);
+    // Bald head, eyes glaring violet, a lipless mouth
+    r(skin, 11, 0, 6, 7);
+    r(lit, 11, 0, 6, 1);
+    r(dark, 11, 0, 1, 7);
+    r(eye, 12, 2, 2, 2);
+    r(eye, 15, 2, 2, 2);
+    r(dark, 12, 5, 4, 1);
+    r(silkLit, 13, 5, 1, 1);
+    r(silkLit, 15, 5, 1, 1);
   }
 
   private drawDireWasp(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -12055,25 +12503,50 @@ export class SpriteRenderer {
     r(flash || '#140c02', 24, 14, 1, 2);
   }
 
+  /**
+   * The plesiosaur is the neck: an S rising out of a barrel body to a small
+   * head held high, four paddles below. The old one lay flat and read as a
+   * fish with a lump on it.
+   */
   private drawPlesiosaurus(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // long-necked sea reptile paddling icy tides
-    ctx.fillStyle = flash || '#5a7a8a'; // broad flippered hull body
-    ctx.fillRect(s * 0.2, s * 0.4, s * 0.4, s * 0.22);
-    ctx.fillStyle = '#46626e'; // belly keel
-    ctx.fillRect(s * 0.24, s * 0.54, s * 0.32, s * 0.06);
-    ctx.fillStyle = '#5a7a8a'; // enormously long serpent neck
-    ctx.fillRect(s * 0.58, s * 0.28, s * 0.22, s * 0.14);
-    ctx.fillRect(s * 0.78, s * 0.2, s * 0.18, s * 0.12);
-    ctx.fillStyle = '#5a7a8a'; // small bobbing head
-    ctx.fillRect(s * 0.92, s * 0.16, s * 0.06, s * 0.1);
-    ctx.fillStyle = '#1a2a32'; // narrow surface-gazing eye
-    ctx.fillRect(s * 0.94, s * 0.2, s * 0.02, s * 0.03);
-    ctx.fillStyle = '#4a5f6a'; // great flippers
-    ctx.fillRect(s * 0.16, s * 0.5, s * 0.14, s * 0.12);
-    ctx.fillRect(s * 0.6, s * 0.5, s * 0.14, s * 0.12);
-    ctx.fillStyle = '#6a8a9a'; // trailing wake droplets
-    ctx.fillRect(s * 0.12, s * 0.62, s * 0.04, s * 0.04);
-    ctx.fillRect(s * 0.3, s * 0.64, s * 0.04, s * 0.04);
+    const r = this.grid(ctx, s);
+    const hide = flash || '#5b7d8c';
+    const lit = flash || '#7fa0ac';
+    const dark = flash || '#3c5460';
+    const belly = flash || '#aabfc6';
+    // Tail
+    r(hide, 2, 17, 4, 3);
+    r(hide, 1, 16, 2, 2);
+    // Body, an oval hull with a pale keel
+    r(hide, 5, 15, 15, 8);
+    r(hide, 4, 17, 17, 4);
+    r(lit, 6, 15, 13, 1);
+    r(dark, 5, 16, 1, 6);
+    r(belly, 6, 21, 13, 2);
+    // Paddles, the near pair angled down and away
+    r(hide, 6, 22, 4, 2);
+    r(hide, 3, 24, 5, 2);
+    r(dark, 3, 25, 5, 1);
+    r(hide, 15, 22, 4, 2);
+    r(hide, 17, 24, 5, 2);
+    r(dark, 17, 25, 5, 1);
+    // Neck rising in an S
+    r(hide, 17, 12, 4, 4);
+    r(hide, 19, 8, 4, 4);
+    r(hide, 20, 4, 3, 4);
+    r(dark, 17, 12, 1, 4);
+    r(dark, 19, 8, 1, 4);
+    r(dark, 20, 4, 1, 4);
+    r(lit, 20, 12, 1, 3);
+    r(lit, 22, 8, 1, 4);
+    // Small head, jaw line, a dark eye
+    r(hide, 20, 1, 7, 4);
+    r(lit, 20, 1, 7, 1);
+    r(dark, 23, 4, 4, 1);
+    r(flash || '#e8e4d8', 24, 4, 1, 1);
+    r(flash || '#e8e4d8', 26, 4, 1, 1);
+    r(flash || '#101c20', 22, 2, 2, 2);
+    r(flash || '#e0e8e0', 22, 2, 1, 1);
   }
 
 
@@ -14123,31 +14596,6 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.5, s * 0.66, s * 0.12, s * 0.12);
   }
 
-  private drawWereshark(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    // salt-furred terror with dorsal crest and predator bulk
-    ctx.fillStyle = flash || '#4a5a6a'; // salt-gray lean bulk
-    ctx.fillRect(s * 0.26, s * 0.36, s * 0.48, s * 0.3);
-    ctx.fillStyle = '#39464f'; // wet hide seam
-    ctx.fillRect(s * 0.28, s * 0.44, s * 0.44, s * 0.05);
-    ctx.fillStyle = '#d8e0e8'; // pale shark under-jaw
-    ctx.fillRect(s * 0.28, s * 0.56, s * 0.44, s * 0.06);
-    ctx.fillStyle = '#4a5a6a'; // wedge shark-ape head
-    ctx.fillRect(s * 0.56, s * 0.2, s * 0.3, s * 0.2);
-    ctx.fillStyle = '#2c3842'; // single sliticide eye
-    ctx.fillRect(s * 0.7, s * 0.24, s * 0.05, s * 0.04);
-    ctx.fillStyle = '#e8e8e8'; // many pointed shark teeth
-    ctx.fillRect(s * 0.62, s * 0.36, s * 0.03, s * 0.05);
-    ctx.fillRect(s * 0.7, s * 0.36, s * 0.03, s * 0.05);
-    ctx.fillRect(s * 0.78, s * 0.36, s * 0.03, s * 0.05);
-    ctx.fillStyle = '#2c3842'; // dorsal fin
-    ctx.beginPath();
-    ctx.moveTo(s * 0.4, s * 0.36);
-    ctx.lineTo(s * 0.48, s * 0.2);
-    ctx.lineTo(s * 0.56, s * 0.36);
-    ctx.closePath();
-    ctx.fill();
-  }
-
   private drawWeretigerAlpha(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
     // striped apex with bracer-claws of moonlight
     ctx.fillStyle = flash || '#c08830'; // strong tawny body
@@ -14806,23 +15254,59 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.34, s * 0.58, s * 0.1, s * 0.08); // feebly twitching leg
   }
 
+  /**
+   * A maw demon is a mouth that grew a body: a barrel on stubby legs whose
+   * whole front is open jaws, two rows of teeth around a tongue, a pair of
+   * pig eyes squeezed in above. It fills the box; the old one was nine
+   * pixels of teeth in the middle of it.
+   */
   private drawMawDemon(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    const c = flash || '#7a4a2a'; // toothy gullet
-    ctx.fillStyle = '#000'; ctx.fillRect(s * 0.15, s * 0.6, s * 0.7, s * 0.05);
-    ctx.fillStyle = c;
-    ctx.fillRect(s * 0.34, s * 0.34, s * 0.26, s * 0.2); // barrel body
-    ctx.fillRect(s * 0.3, s * 0.3, s * 0.34, s * 0.14); // great open maw
-    ctx.fillStyle = '#2a1010'; // inside mouth
-    ctx.fillRect(s * 0.34, s * 0.32, s * 0.26, s * 0.1);
-    ctx.fillStyle = '#f0f0e0'; // teeth
-    ctx.fillRect(s * 0.34, s * 0.32, s * 0.04, s * 0.06);
-    ctx.fillRect(s * 0.56, s * 0.32, s * 0.04, s * 0.06);
-    ctx.fillRect(s * 0.38, s * 0.38, s * 0.04, s * 0.06);
-    ctx.fillRect(s * 0.52, s * 0.38, s * 0.04, s * 0.06);
-    ctx.fillStyle = c; ctx.fillRect(s * 0.28, s * 0.52, s * 0.1, s * 0.1); // front leg
-    ctx.fillRect(s * 0.56, s * 0.52, s * 0.1, s * 0.1); // front leg
-    ctx.fillStyle = '#d0a050'; ctx.fillRect(s * 0.38, s * 0.3, s * 0.06, s * 0.04); // small piggy eye
-    ctx.fillStyle = '#6a3a1a'; ctx.fillRect(s * 0.2, s * 0.5, s * 0.08, s * 0.08); // short tail
+    const r = this.grid(ctx, s);
+    const hide = flash || '#7c4a2c';
+    const lit = flash || '#9e6640';
+    const dark = flash || '#4e2c16';
+    const maw = flash || '#4a1216';
+    const tongue = flash || '#b0384a';
+    const tooth = flash || '#f0ece0';
+    const eye = flash || '#f0c040';
+    // Stubby legs and claws, short arms at the sides
+    r(hide, 6, 22, 5, 4);
+    r(hide, 17, 22, 5, 4);
+    r(dark, 6, 25, 5, 1);
+    r(dark, 17, 25, 5, 1);
+    for (const x of [6, 8, 10, 17, 19, 21]) r(tooth, x, 26, 1, 1);
+    r(hide, 3, 14, 3, 6);
+    r(hide, 22, 14, 3, 6);
+    r(dark, 3, 14, 1, 6);
+    for (const x of [3, 5, 22, 24]) r(tooth, x, 20, 1, 1);
+    // Body: a barrel that is mostly mouth
+    r(hide, 6, 5, 16, 17);
+    r(hide, 5, 8, 18, 11);
+    r(lit, 7, 5, 14, 1);
+    r(dark, 6, 21, 16, 1);
+    r(dark, 5, 9, 1, 9);
+    // Spines on the crown
+    r(dark, 7, 3, 2, 3);
+    r(dark, 11, 2, 2, 3);
+    r(dark, 15, 2, 2, 3);
+    r(dark, 19, 3, 2, 3);
+    // Pig eyes above the maw
+    r(eye, 9, 7, 2, 2);
+    r(eye, 17, 7, 2, 2);
+    r(flash || '#2a1006', 10, 7, 1, 2);
+    r(flash || '#2a1006', 17, 7, 1, 2);
+    // The maw: gullet, tongue, teeth above and below
+    r(maw, 7, 10, 14, 9);
+    r(tongue, 11, 15, 6, 3);
+    r(flash || '#7a2432', 11, 15, 6, 1);
+    r(tooth, 8, 10, 2, 3);
+    r(tooth, 11, 10, 2, 2);
+    r(tooth, 14, 10, 2, 2);
+    r(tooth, 17, 10, 2, 3);
+    r(tooth, 8, 16, 2, 3);
+    r(tooth, 12, 17, 2, 2);
+    r(tooth, 15, 17, 2, 2);
+    r(tooth, 19, 16, 2, 3);
   }
 
   private drawGoristroAlpha(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -15010,25 +15494,73 @@ export class SpriteRenderer {
     r(flame, 25, 13, 2, 2);
   }
 
+  /**
+   * A crone under a wide pointed hat, in a robe belted with living vine,
+   * leaning on a gnarled staff that has sprouted. The hat is the outline:
+   * the hags beside her are bareheaded, and nothing else in the set wears
+   * one.
+   */
   private drawForestWitch(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    const c = flash || '#5c4a2a'; // oak-barked crone
-    ctx.fillStyle = '#000'; ctx.fillRect(s * 0.15, s * 0.6, s * 0.7, s * 0.05);
-    ctx.fillStyle = c;
-    ctx.fillRect(s * 0.36, s * 0.3, s * 0.2, s * 0.3); // robed body
-    ctx.fillStyle = '#4a3a20'; // bark texture
-    ctx.fillRect(s * 0.4, s * 0.36, s * 0.06, s * 0.06);
-    ctx.fillRect(s * 0.46, s * 0.44, s * 0.06, s * 0.06);
-    ctx.fillStyle = '#6a5520'; // pointed hat
-    ctx.fillRect(s * 0.4, s * 0.14, s * 0.12, s * 0.16);
-    ctx.fillRect(s * 0.36, s * 0.2, s * 0.2, s * 0.08); // hat brim
-    ctx.fillStyle = c; ctx.fillRect(s * 0.39, s * 0.24, s * 0.14, s * 0.08); // face
-    ctx.fillStyle = '#e0c040'; // witch eyes
-    ctx.fillRect(s * 0.41, s * 0.26, s * 0.04, s * 0.04);
-    ctx.fillRect(s * 0.48, s * 0.26, s * 0.04, s * 0.04);
-    ctx.fillStyle = '#2a6a20'; // vine staff
-    ctx.fillRect(s * 0.58, s * 0.2, s * 0.05, s * 0.4);
-    ctx.fillStyle = '#8a5a2a'; // crook bulb
-    ctx.fillRect(s * 0.56, s * 0.18, s * 0.08, s * 0.08);
+    const r = this.grid(ctx, s);
+    const robe = flash || '#2f4a2c';
+    const robeLit = flash || '#476a42';
+    const robeDk = flash || '#1e321c';
+    const skin = flash || '#a89060';
+    const skinDk = flash || '#7c6a40';
+    const hat = flash || '#3a2f22';
+    const hatLit = flash || '#5a4a34';
+    const hair = flash || '#b8b4a4';
+    const leaf = flash || '#5fae3a';
+    const leafLit = flash || '#8fd85a';
+    const eye = flash || '#ffe040';
+    // Gnarled staff with a living sprout, held out on the left
+    r(flash || '#6a4a2a', 3, 5, 2, 21);
+    r(flash || '#8a6a3e', 3, 5, 1, 21);
+    r(flash || '#6a4a2a', 2, 9, 1, 3);
+    r(leaf, 1, 2, 5, 3);
+    r(leafLit, 2, 1, 3, 1);
+    r(leafLit, 1, 2, 1, 1);
+    // Robe, flaring to the hem, vine belt, leaves caught in it
+    r(robe, 8, 14, 12, 8);
+    r(robe, 6, 22, 16, 5);
+    r(robeLit, 8, 14, 12, 1);
+    r(robeDk, 6, 26, 16, 1);
+    r(robeDk, 8, 14, 1, 8);
+    r(robeDk, 6, 22, 1, 5);
+    r(leaf, 8, 18, 12, 1);
+    r(leafLit, 10, 18, 1, 1);
+    r(leafLit, 15, 18, 1, 1);
+    r(leaf, 9, 23, 2, 2);
+    r(leaf, 17, 24, 2, 2);
+    // Arms: left to the staff, right clutching a bundle of herbs
+    r(robe, 5, 15, 3, 5);
+    r(skin, 4, 20, 3, 2);
+    r(robe, 20, 15, 3, 6);
+    r(skin, 20, 21, 3, 2);
+    r(leaf, 21, 23, 4, 2);
+    r(flash || '#d05a8a', 22, 23, 1, 1);
+    // Head: grey hair falling either side, hooked nose, yellow eyes
+    r(hair, 9, 9, 10, 2);
+    r(hair, 8, 10, 2, 7);
+    r(hair, 18, 10, 2, 7);
+    r(skin, 10, 10, 8, 5);
+    r(skinDk, 10, 10, 1, 5);
+    r(eye, 11, 11, 2, 2);
+    r(eye, 15, 11, 2, 2);
+    r(flash || '#1a1408', 12, 11, 1, 2);
+    r(flash || '#1a1408', 15, 11, 1, 2);
+    r(skinDk, 13, 12, 2, 2);
+    r(skinDk, 12, 14, 4, 1);
+    // Pointed hat with a wide brim and a band
+    r(hat, 6, 7, 16, 2);
+    r(hatLit, 6, 7, 16, 1);
+    r(hat, 10, 4, 8, 3);
+    r(hat, 11, 2, 5, 2);
+    r(hat, 12, 0, 3, 2);
+    r(hatLit, 10, 4, 1, 3);
+    r(hatLit, 11, 2, 1, 2);
+    r(hatLit, 12, 0, 1, 2);
+    r(flash || '#8a6a2a', 10, 6, 8, 1);
   }
 
   private drawLunarRevenant(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
@@ -15784,28 +16316,62 @@ export class SpriteRenderer {
     ctx.fillRect(s * 0.65, s * 0.23, s * 0.03, s * 0.03);
   }
 
+  /**
+   * The giant spider faces the viewer with its legs bunched to the sides; the
+   * widow is seen from above, the way you find one — a small head, thin legs
+   * reaching fore and aft, and the great glossy abdomen behind with the
+   * hourglass on it. Same animal, a different view, so the two never share
+   * an outline.
+   */
   private drawGloomWidow(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
-    const c = flash || '#2a2438'; // shadow-purple chitin
-    ctx.fillStyle = c;
-    ctx.fillRect(s * 0.34, s * 0.4, s * 0.32, s * 0.28); // bulbous abdomen
-    ctx.fillRect(s * 0.4, s * 0.26, s * 0.2, s * 0.16); // head
-    ctx.fillStyle = '#4a3a6a'; // eight crawling legs
-    ctx.fillRect(s * 0.22, s * 0.34, s * 0.16, s * 0.04);
-    ctx.fillRect(s * 0.22, s * 0.44, s * 0.16, s * 0.04);
-    ctx.fillRect(s * 0.62, s * 0.34, s * 0.16, s * 0.04);
-    ctx.fillRect(s * 0.62, s * 0.44, s * 0.16, s * 0.04);
-    ctx.fillRect(s * 0.26, s * 0.52, s * 0.14, s * 0.04);
-    ctx.fillRect(s * 0.6, s * 0.52, s * 0.14, s * 0.04);
-    ctx.fillStyle = '#c040ff'; // hourglass marking
-    ctx.fillRect(s * 0.46, s * 0.46, s * 0.08, s * 0.05);
-    ctx.fillRect(s * 0.48, s * 0.52, s * 0.04, s * 0.05);
-    ctx.fillStyle = '#ff4aff'; // cluster of eyes
-    ctx.fillRect(s * 0.42, s * 0.3, s * 0.04, s * 0.04);
-    ctx.fillRect(s * 0.48, s * 0.3, s * 0.04, s * 0.04);
-    ctx.fillRect(s * 0.54, s * 0.3, s * 0.04, s * 0.04);
-    ctx.fillStyle = '#1a1428'; // fangs
-    ctx.fillRect(s * 0.44, s * 0.4, s * 0.04, s * 0.06);
-    ctx.fillRect(s * 0.52, s * 0.4, s * 0.04, s * 0.06);
+    const r = this.grid(ctx, s);
+    const chitin = flash || '#2a2238';
+    const lit = flash || '#4c4066';
+    const dark = flash || '#120e1a';
+    const mark = flash || '#c040ff';
+    const eye = flash || '#ff4aff';
+    const fang = flash || '#cfc6dc';
+    const m = (x: number, w: number) => 28 - x - w;
+    // Four pairs of thin legs, five rows apart so the rim leaves floor
+    // between them: two reaching forward off the head, two back off the
+    // abdomen
+    const legs: [number, number, number, number][][] = [
+      [[8, 5, 3, 2], [5, 3, 3, 2], [3, 1, 2, 3]],
+      [[3, 10, 8, 2], [1, 6, 2, 5]],
+      [[3, 15, 8, 2], [1, 16, 2, 5]],
+      [[8, 20, 3, 2], [5, 21, 3, 2], [3, 22, 2, 4]],
+    ];
+    for (const limb of legs) {
+      for (const [x, y, w, h] of limb) {
+        r(chitin, x, y, w, h);
+        r(chitin, m(x, w), y, w, h);
+      }
+      const [fx, fy, fw, fh] = limb[limb.length - 1];
+      r(dark, fx, fy + fh - 2, fw, 2);
+      r(dark, m(fx, fw), fy + fh - 2, fw, 2);
+    }
+    // Abdomen, round and glossy, the hourglass on it
+    r(chitin, 9, 14, 10, 11);
+    r(chitin, 8, 16, 12, 7);
+    r(lit, 10, 14, 8, 1);
+    r(lit, 8, 16, 1, 7);
+    r(dark, 9, 24, 10, 1);
+    r(mark, 12, 16, 4, 2);
+    r(mark, 13, 18, 2, 1);
+    r(mark, 12, 19, 4, 2);
+    // Cephalothorax and the head, fangs forward, eyes in a cluster
+    r(chitin, 11, 8, 6, 6);
+    r(lit, 11, 8, 6, 1);
+    r(chitin, 11, 4, 6, 4);
+    r(lit, 11, 4, 6, 1);
+    r(eye, 12, 5, 2, 2);
+    r(eye, 15, 5, 2, 2);
+    r(dark, 13, 6, 1, 1);
+    r(dark, 15, 6, 1, 1);
+    r(eye, 13, 7, 1, 1);
+    r(eye, 14, 7, 1, 1);
+    r(fang, 12, 2, 1, 2);
+    r(fang, 15, 2, 1, 2);
   }
 
   private drawFireSnake(ctx: CanvasRenderingContext2D, s: number, flash?: string) {
