@@ -110,7 +110,21 @@ export class SpriteRenderer {
     return data;
   }
 
-  getMonsterSprite(monster: Monster): ImageData {
+  /**
+   * A monster's sprite, mirrored when asked so it faces the party. Side-view
+   * monsters are drawn facing left; the mirror is cached beside the original
+   * under its own key, flash and all.
+   */
+  getMonsterSprite(monster: Monster, mirrored = false): ImageData {
+    if (mirrored) {
+      const flash = monster.flashTimer > 0;
+      const mkey = `${monster.template.id}\u0000${flash ? 'hit' : ''}\u0000mirror`;
+      const hit = this.cache.get(mkey);
+      if (hit) return hit;
+      const flipped = mirrorImageData(this.monsterCtx, this.getMonsterSprite(monster));
+      this.cache.set(mkey, flipped);
+      return flipped;
+    }
     // The struck monster is drawn white, so the flash has to be part of the
     // key. Keyed on the template alone, the first goblin ever drawn decided
     // for every goblin after it: the hit flash the combat code has always set

@@ -51,7 +51,7 @@
 
 import { getAudio } from './Audio';
 
-export type MusicMood = 'overworld' | 'overworld_night' | 'town' | 'dungeon' | 'battle' | 'boss' | 'none';
+export type MusicMood = 'title' | 'overworld' | 'overworld_night' | 'town' | 'dungeon' | 'battle' | 'boss' | 'none';
 
 // ── Tunables ──
 
@@ -447,7 +447,54 @@ const BOSS: Piece = {
   drums: { kick: [0, 4, 6, 8, 12, 14], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12], openHat: [14], gain: 1 },
 };
 
+/**
+ * Title: the game before it begins. F major at a walk, a long sine under
+ * each bar, sevenths in the pad, and a triangle lead that mostly climbs
+ * through the chord like a harp being tried rather than played. No drums.
+ */
+const TITLE: Piece = {
+  seed: 0x717e,
+  bpm: 72,
+  stepsPerBeat: 4,
+  beatsPerBar: 4,
+  root: 53,
+  scale: MAJOR,
+  //           I  vi IV V   I  iii IV V   vi IV I  V   IV V  I  I
+  progression: [0, 5, 3, 4, 0, 2, 3, 4, 5, 3, 0, 4, 3, 4, 0, 0],
+  bass: {
+    type: 'sine',
+    octave: -12,
+    gain: 0.14,
+    lowpass: 420,
+    pattern: [[0, 16, 0]],
+  },
+  lead: {
+    type: 'triangle',
+    octave: 12,
+    gain: 0.085,
+    lowpass: 2600,
+    attack: 0.02,
+    vibrato: 6,
+    density: 0.75,
+    phrases: [
+      [[0, 2, 0], [2, 2, 2], [4, 2, 4], [6, 2, 7], [8, 8, 9]],
+      [[0, 2, 4], [2, 2, 2], [4, 2, 0], [6, 2, 2], [8, 4, 4], [12, 4, 2]],
+      [[0, 4, 7], [4, 2, 4], [6, 2, 2], [8, 8, 4]],
+      [[0, 2, 0], [2, 2, 4], [4, 2, 7], [6, 2, 4], [8, 2, 0], [10, 2, 4], [12, 4, 2]],
+      [[0, 12, 2], [12, 4, 4]],
+      [[2, 2, 2], [4, 2, 4], [6, 2, 5], [8, 8, 4]],
+      [[0, 6, 4], [6, 2, 2], [8, 4, 0], [12, 4, 4]],
+    ],
+    cadence: [
+      [[0, 4, 4], [4, 4, 2], [8, 8, 0]],
+      [[0, 2, 2], [2, 2, 4], [4, 4, 2], [8, 8, 0]],
+    ],
+  },
+  pad: { type: 'triangle', octave: 0, gain: 0.03, lowpass: 1400, attack: 0.6, detune: 6, sevenths: true },
+};
+
 export const PIECES: Readonly<Record<Exclude<MusicMood, 'none'>, Piece>> = {
+  title: TITLE,
   overworld: OVERWORLD,
   overworld_night: OVERWORLD_NIGHT,
   town: TOWN,

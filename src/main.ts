@@ -77,7 +77,7 @@ import { LOCATIONS, getRandomElement, LocationTemplate, getLocation, MAGIC_ITEMS
 import { getLLM } from './ai/LLMService';
 import { sfx } from './audio/Sfx';
 import { getAudio } from './audio/Audio';
-import { Music, type MusicMood } from './audio/Music';
+import { getMusic, type MusicMood } from './audio/Music';
 
 // ── Context-aware compendium content ────────────────
 
@@ -2114,7 +2114,7 @@ class Game {
   private flash = 0;
 
   /** The score. It follows where the party is and what they are doing, and crossfades between. */
-  private readonly music = new Music();
+  private readonly music = getMusic();
 
   /**
    * Which piece the moment wants. Asked every simulation step; the music
@@ -2122,7 +2122,7 @@ class Game {
    * crossfade, so this can be blunt about it.
    */
   private musicMood(): MusicMood {
-    if (!this.running) return 'none';
+    if (!this.running) return 'title';
     if (this.phase === GamePhase.Combat) {
       return this.combatEngine.getBosses().length > 0 ? 'boss' : 'battle';
     }
@@ -2716,7 +2716,7 @@ class Game {
     this.saveGame();
     this.hud.closeOverlays();
     this.running = false;
-    this.music.play('none');
+    this.music.play('title');
     this.hud.showStartScreen(listSaves(), this.activeSlot);
   }
 
@@ -5478,6 +5478,18 @@ function startGame() {
   game.hud.onStartChoice = (choice, slot) => game.handleStartChoice(choice, slot);
   game.hud.onMainMenu = () => game.returnToMainMenu();
   game.hud.showStartScreen(saves);
+
+  // The title theme waits for the first touch, since the browser will not
+  // let a page make a sound before one. By then the player may already be
+  // starting a run, in which case the game's own step takes the music over
+  // on its next tick and the theme is a two-second overture.
+  const titleTheme = () => {
+    if (!game.runStarted) getMusic().play('title');
+    window.removeEventListener('pointerdown', titleTheme);
+    window.removeEventListener('keydown', titleTheme);
+  };
+  window.addEventListener('pointerdown', titleTheme, { once: true });
+  window.addEventListener('keydown', titleTheme, { once: true });
 
   // Bring the renderer up before the first frame. A backend that fails to
   // start is not fatal: the game falls back to the canvas it has always used.

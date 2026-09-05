@@ -653,7 +653,10 @@ export class MapRenderer {
         ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, TILE_SIZE + 4, TILE_SIZE + 4);
       }
 
-      const sprite = this.sprites.getMonsterSprite(monster);
+      // Side-view monsters are drawn facing left; one with the party on its
+      // right turns to face them.
+      const leader = party[0];
+      const sprite = this.sprites.getMonsterSprite(monster, !!leader && leader.tile.x > monster.tile.x);
       ctx.putImageData(sprite, Math.floor(sx), Math.floor(sy));
 
       // Condition glow + status dots
@@ -2723,7 +2726,8 @@ export class MapRenderer {
       const pulse = Math.sin(this.time * 5 + monster.tile.x) * 0.2 + 0.5;
       ctx.fillStyle = `rgba(255,60,40,${0.08 + pulse * 0.1})`;
       ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, TILE_SIZE + 4, TILE_SIZE + 4);
-      const sprite = this.sprites.getMonsterSprite(monster);
+      const leader = party[0];
+      const sprite = this.sprites.getMonsterSprite(monster, !!leader && leader.tile.x > monster.tile.x);
       ctx.putImageData(sprite, Math.floor(sx), Math.floor(sy));
       this.drawHpBar(ctx, sx, sy - 4, TILE_SIZE - 4, monster.hp, monster.maxHp, '#c33');
       ctx.fillStyle = '#faa';
