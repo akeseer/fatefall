@@ -173,6 +173,8 @@ export class BattleView {
   private spoilsEl: HTMLElement | null = null;
   /** Timeout handle for the summary's auto-dismiss. */
   private spoilsTimer: number | null = null;
+  /** Seconds the victory card stays before the fight moves on by itself. */
+  private static readonly SPOILS_AUTO_S = 4;
   /** Set when close() was requested while the summary is still up. */
   private pendingClose: boolean = false;
   /** Guards the close() → dismissSpoils() → close() recursion. */
@@ -1270,6 +1272,53 @@ export class BattleView {
             case 'arcane_jolt':
               if (actor) this.fxNode(actor.fig, 'bv-zap', FX_COLORS.lightning, 380);
               sfx.force();
+              break;
+            case 'divine_smite':
+              if (actor) this.pulseClass(actor.card, actor.hero ? 'bv-lunge-left' : 'bv-lunge-right', 320);
+              if (target) this.fxNode(target.fig, 'bv-column', FX_COLORS.radiant, 720);
+              sfx.radiant();
+              break;
+            case 'channel_divinity': {
+              this.fieldFlash(FX_COLORS.radiant);
+              if (actor) this.fxNode(actor.fig, 'bv-wave', FX_COLORS.radiant, 720);
+              const side = actor && !actor.hero ? this.heroRow : this.enemyRow;
+              (Array.from(side.querySelectorAll('.battle-card:not(.bv-down)')) as HTMLElement[]).forEach((c, i) => {
+                const fig = c.querySelector('.bv-figure') as HTMLElement | null;
+                if (fig) this.elementBurst(fig, c, 'radiant', 100 + i * 60);
+              });
+              sfx.radiant();
+              break;
+            }
+            case 'chaos_surge': {
+              if (actor) this.fxNode(actor.fig, 'bv-aura', FX_COLORS.force, 1400);
+              const side = actor && !actor.hero ? this.heroRow : this.enemyRow;
+              const foes = (Array.from(side.querySelectorAll('.battle-card:not(.bv-down)')) as HTMLElement[]).slice(0, 2);
+              foes.forEach((c, i) => {
+                const fig = c.querySelector('.bv-figure') as HTMLElement | null;
+                if (fig && actor) { this.projectile(actor.fig, fig, FX_COLORS.force, true, i * 120); this.elementBurst(fig, c, 'force', 280 + i * 120); }
+              });
+              sfx.darts();
+              window.setTimeout(() => sfx.force(), 300);
+              break;
+            }
+            case 'wild_shape':
+              if (actor) { this.fxNode(actor.fig, 'bv-aura', '#6fbf4a', 1400); this.pulseClass(actor.card, 'bv-shake', 400); this.elementBurst(actor.fig, actor.card, 'heal'); }
+              sfx.roar();
+              break;
+            case 'bardic_inspiration':
+              for (const c of Array.from(this.heroRow.querySelectorAll('.battle-card')) as HTMLElement[]) {
+                const fig = c.querySelector('.bv-figure') as HTMLElement | null;
+                if (fig) for (let i = 0; i < 5; i++) { const n = this.fxNode(fig, 'bv-zee', FX_COLORS.psychic, 1700); n.textContent = '♪'; n.style.left = `${20 + i * 15}%`; n.style.animationDelay = `${i * 0.12}s`; }
+              }
+              sfx.bless();
+              break;
+            case 'arcane_recovery':
+              if (actor) this.fxNode(actor.fig, 'bv-hexring', FX_COLORS.arcane, 1200);
+              sfx.arcane();
+              break;
+            case 'eldritch_hex':
+              if (target) { this.fxNode(target.fig, 'bv-mark', FX_COLORS.necrotic, 1000); target.card.classList.add('bv-tint-cursed'); window.setTimeout(() => target.card.classList.remove('bv-tint-cursed'), 2500); }
+              sfx.necrotic();
               break;
           }
           break;
@@ -2887,9 +2936,22 @@ export class BattleView {
     // are up; `dismissSpoils` puts it back so combat rolls stay visible.
     this.root.style.zIndex = '96';
 
-    // Auto-dismiss so an idle window never blocks the flow.
-    if (this.spoilsTimer !== null) window.clearTimeout(this.spoilsTimer);
-    this.spoilsTimer = window.setTimeout(() => this.dismissSpoils(), 14000);
+    // Auto-continue after a few seconds, counted down on the button so the
+    // player knows it will move on. The mouse over the card holds it, since
+    // someone reading the loot should not have it pulled away.
+    if (this.spoilsTimer !== null) window.clearInterval(this.spoilsTimer);
+    const btn = this.spoilsEl.querySelector('#spoils-continue') as HTMLElement;
+    let left = BattleView.SPOILS_AUTO_S;
+    let held = false;
+    this.spoilsEl.addEventListener('mouseenter', () => { held = true; btn.textContent = 'Continue ▸'; });
+    this.spoilsEl.addEventListener('mouseleave', () => { held = false; });
+    btn.textContent = `Continue ▸ ${left}`;
+    this.spoilsTimer = window.setInterval(() => {
+      if (held) return;
+      left--;
+      if (left <= 0) { this.dismissSpoils(); return; }
+      btn.textContent = `Continue ▸ ${left}`;
+    }, 1000);
   }
 
   /** Defeat sting: no spoils, just a quiet dirge over the banner. */
@@ -2901,7 +2963,7 @@ export class BattleView {
   /** Remove the summary panel (also fired by close()). */
   private dismissSpoils(): void {
     if (this.spoilsTimer !== null) {
-      window.clearTimeout(this.spoilsTimer);
+      window.clearInterval(this.spoilsTimer);
       this.spoilsTimer = null;
     }
     if (this.spoilsEl) {

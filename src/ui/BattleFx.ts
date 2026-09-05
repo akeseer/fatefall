@@ -46,7 +46,8 @@ export interface FxEvent {
   target?: string;
   element?: Element;
   spell?: string;
-  ability?: 'rage' | 'second_wind' | 'hunters_mark' | 'sneak_attack' | 'flurry' | 'arcane_jolt' | 'blood_mite';
+  ability?: 'rage' | 'second_wind' | 'hunters_mark' | 'sneak_attack' | 'flurry' | 'arcane_jolt' | 'blood_mite'
+    | 'divine_smite' | 'channel_divinity' | 'arcane_recovery' | 'wild_shape' | 'bardic_inspiration' | 'chaos_surge' | 'eldritch_hex';
   condition?: 'poisoned' | 'stunned' | 'frightened' | 'held' | 'asleep' | 'entangled' | 'slowed' | 'cursed' | 'blinded';
   buff?: 'bless' | 'shield' | 'haste' | 'invisible' | 'aid' | 'sanctuary' | 'faerie_fire';
   projectile?: boolean;
@@ -130,8 +131,17 @@ export function classifyFx(line: string): FxEvent[] {
   // Abilities, by the engine's own phrasing.
   let m: RegExpExecArray | null;
   if ((m = /^(.{2,60}?) enters a Rage/i.exec(text))) return [{ kind: 'ability', actor: m[1], ability: 'rage' }];
-  if ((m = /^(.{2,60}?) (?:marks|curses with a crimson rite) (.{2,60}?) —/u.exec(text))) {
-    return [{ kind: 'ability', actor: m[1], target: m[2], ability: /crimson/.test(text) ? 'blood_mite' : 'hunters_mark' }];
+  if ((m = /^(.{2,60}?) (?:marks|curses with a crimson rite|hexes) (.{2,60}?) —/u.exec(text))) {
+    return [{ kind: 'ability', actor: m[1], target: m[2], ability: /crimson/.test(text) ? 'blood_mite' : /hexes/.test(text) ? 'eldritch_hex' : 'hunters_mark' }];
+  }
+  if ((m = /^(.{2,60}?) smites (.{2,60}?) —/u.exec(text))) return [{ kind: 'ability', actor: m[1], target: m[2], ability: 'divine_smite', element: 'radiant' }];
+  if ((m = /^(.{2,60}?) channels divinity/i.exec(text))) return [{ kind: 'ability', actor: m[1], ability: 'channel_divinity', element: 'radiant', aoe: true }];
+  if ((m = /^(.{2,60}?) lets loose a Chaos Surge — raw magic leaps between (.{2,80}?)!/u.exec(text))) {
+    return [{ kind: 'ability', actor: m[1], ability: 'chaos_surge', element: 'force', target: m[2].split(' and ')[0] }];
+  }
+  if ((m = /^(.{2,60}?) takes a Wild Shape/.exec(text))) return [{ kind: 'ability', actor: m[1], ability: 'wild_shape' }];
+  if ((m = /^(.{2,60}?) uses (Arcane Recovery|Bardic Inspiration)/.exec(text))) {
+    return [{ kind: 'ability', actor: m[1], ability: m[2].startsWith('Arcane') ? 'arcane_recovery' : 'bardic_inspiration' }];
   }
   if ((m = /^(.{2,60}?) uses (Second Wind|Flurry of Blows|Arcane Jolt|Hunter's Mark|Blood Mite)/i.exec(text))) {
     const name = m[2].toLowerCase();

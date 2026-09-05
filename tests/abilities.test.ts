@@ -26,10 +26,20 @@ describe('combat abilities registry', () => {
     expect(getAbilityForClass('rogue', 1)?.id).toBe('sneak_attack');
   });
 
-  it('gives casters nothing — their decision space is the spell list', () => {
-    for (const cls of ['wizard', 'cleric', 'sorcerer', 'bard', 'warlock', 'druid']) {
-      expect(getAbilityForClass(cls, 5)).toBeNull();
+  it('gives every class one active ability of its own', () => {
+    const expected: Record<string, string> = {
+      fighter: 'second_wind', barbarian: 'rage', monk: 'flurry_of_blows', ranger: 'hunters_mark',
+      artificer: 'arcane_jolt', blood_hunter: 'blood_mite', paladin: 'divine_smite', cleric: 'channel_divinity',
+      wizard: 'arcane_recovery', druid: 'wild_shape', bard: 'bardic_inspiration', sorcerer: 'chaos_surge', warlock: 'eldritch_hex',
+    };
+    for (const [cls, id] of Object.entries(expected)) {
+      const a = getAbilityForClass(cls, 5);
+      expect(a?.id, cls).toBe(id);
+      expect(a?.effect, cls).toBeDefined();
+      expect(a!.usesPerRest(5), cls).toBeGreaterThan(0);
     }
+    // The rogue's is a passive that rides its strikes.
+    expect(getAbilityForClass('rogue', 5)?.id).toBe('sneak_attack');
   });
 
   it('respects minLevel gating', () => {

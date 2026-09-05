@@ -28,7 +28,7 @@ import { manhattan, Vector2 } from '../engine/types';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
 import { chooseMonsterTarget, choosePartyFocus, shouldMonsterFlee, chooseHealTarget, pickLegendaryAction, advanceToward, isFlanking } from './TargetAI';
-import { getAbilityForClass, sneakAttackDice, type CombatAbility } from './Abilities';
+import { getAbilityForClass, sneakAttackDice, MARK_ABILITIES, type CombatAbility } from './Abilities';
 
 export interface CombatLog {
   round: number;
@@ -304,7 +304,13 @@ export class CombatEngine {
         if (this.rageRounds[id] <= 0) {
           delete this.rageRounds[id];
           const rager = this.party.members.find(m => m.id === id);
-          if (rager) this.log.messages.push(`${rager.name}'s rage gutters out — breath heaving, fists still clenched.`);
+          const label = this.furyLabel[id];
+          delete this.furyLabel[id];
+          if (rager) {
+            this.log.messages.push(label === 'wild_shape'
+              ? `${rager.name}'s beast shape falls away — fur to skin, claws to hands.`
+              : `${rager.name}'s rage gutters out — breath heaving, fists still clenched.`);
+          }
         }
       }
       for (const id of Object.keys(this.marks)) {
@@ -482,6 +488,8 @@ export class CombatEngine {
   private vendettaNarrationUsed: Set<string> = new Set();
   /** Raging heroes: character id → rounds of fury remaining. */
   private rageRounds: Record<string, number> = {};
+  /** What each fury is called when it ends: a rage, or a beast's shape. */
+  private furyLabel: Record<string, string> = {};
   /** Marks & rites: character id → quarry, rounds, and bonus dice. */
   private marks: Record<string, { monsterId: string; rounds: number; dice: { count: number; size: number } }> = {};
 
@@ -856,11 +864,19 @@ export class CombatEngine {
         const focus = this.roundFocusMonsterId
           ? this.monsters.find(m => m.id === this.roundFocusMonsterId && m.isAlive)
           : undefined;
-        const strikeAbility = ability.id === 'flurry_of_blows' || ability.id === 'arcane_jolt';
+        const strikeAbility = ability.id === 'flurry_of_blows' || ability.id === 'arcane_jolt' || ability.id === 'divine_smite';
+        const foesUp = this.monsters.filter(m => m.isAlive).length;
+        const hasSpentSlot = Object.keys(character.maxSpellSlots).some(l => (character.spellSlots[Number(l)] ?? 0) < (character.maxSpellSlots[Number(l)] ?? 0));
         const shouldUse =
           (ability.effect === 'heal' && (hpPct < 0.45 || this.party.alive.some(m => m.hp <= 0))) ||
           (ability.effect === 'rage' && this.log.round <= 1) ||
-          (ability.effect === 'attack' && !!focus && (strikeAbility || !this.marks[character.id]));
+          (ability.effect === 'attack' && !!focus && (strikeAbility || !this.marks[character.id])) ||
+          // A burst is worth a turn when there is a crowd, or a big undead for the cleric.
+          (ability.effect === 'burst' && (foesUp >= 2 || (ability.burst?.doubleAgainst?.includes(focus?.template.type ?? '') ?? false))) ||
+          // Recovery when a slot has been spent and there is no spell to spend anyway.
+          (ability.effect === 'recover' && hasSpentSlot && affordableSpells.length === 0) ||
+          // Inspiration at the top of a fight, or when the last verse has faded.
+          (ability.effect === 'inspire' && this.partyBlessRounds <= 0);
         if (shouldUse && this.useClassAbility(character)) return;
       }
       if (affordableSpells.length > 0) {
@@ -972,7 +988,53 @@ export class CombatEngine {
     if (ability.effect === 'rage') {
       hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
       this.rageRounds[hero.id] = ability.buff!.rounds;
-      this.log.messages.push(`😤 ${hero.name} enters a ${ability.name} — the fury burns for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
+      this.furyLabel[hero.id] = ability.id;
+      if (ability.id === 'wild_shape') {
+        const healDiceCfg = ability.healDice!(hero.level);
+        const mended = rollDice(healDiceCfg.count, healDiceCfg.size);
+        this.log.messages.push(`🐾 ${hero.name} takes a Wild Shape — bone and sinew remade, claws for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
+        this.log.messages.push(hero.heal(mended));
+      } else {
+        this.log.messages.push(`😤 ${hero.name} enters a ${ability.name} — the fury burns for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
+      }
+      return true;
+    }
+
+    if (ability.effect === 'burst') {
+      const alive = this.monsters.filter(m => m.isAlive);
+      if (alive.length === 0) return false;
+      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
+      const dice = ability.bonusDamageDice!(hero.level);
+      const focus = alive.find(m => m.id === this.roundFocusMonsterId);
+      let targets = alive;
+      if (ability.burst?.targets) {
+        targets = [...(focus ? [focus] : []), ...alive.filter(m => m !== focus)].slice(0, ability.burst.targets);
+      }
+      this.log.messages.push(ability.id === 'chaos_surge'
+        ? `🌀 ${hero.name} lets loose a Chaos Surge — raw magic leaps between ${targets.map(t => t.template.name).join(' and ')}!`
+        : `✨ ${hero.name} channels divinity — a burst of radiance scours the field!`);
+      for (const target of targets) {
+        let dmg = rollDice(dice.count, dice.size);
+        if (ability.burst?.doubleAgainst?.includes(target.template.type)) dmg *= 2;
+        this.log.messages.push(`${target.template.name} takes ${dmg} damage (${Math.max(0, target.hp - dmg)}/${target.maxHp} HP)`);
+        this.log.messages.push(target.takeDamage(dmg));
+      }
+      return true;
+    }
+
+    if (ability.effect === 'recover') {
+      const lvl = hero.restoreSpellSlot();
+      if (lvl === null) return false;
+      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
+      this.log.messages.push(`📖 ${hero.name} uses ${ability.name} — a ${ordinal(lvl)}-level slot returns, the formula re-read from memory.`);
+      return true;
+    }
+
+    if (ability.effect === 'inspire') {
+      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
+      this.partyBlessRounds = Math.max(this.partyBlessRounds, ability.buff!.rounds);
+      this.blessSourceId = `${hero.id}:inspire`;
+      this.log.messages.push(`🎵 ${hero.name} uses ${ability.name} — a rousing verse, and the party's blades find their nerve (+1d4 on attack rolls, ${ability.buff!.rounds} rounds)!`);
       return true;
     }
 
@@ -983,15 +1045,16 @@ export class CombatEngine {
         ?? this.monsters.find(m => m.isAlive);
       if (!target) return false;
       hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      if (ability.id === 'hunters_mark' || ability.id === 'blood_mite') {
+      if (MARK_ABILITIES.has(ability.id)) {
         const diceCfg = ability.bonusDamageDice!(hero.level);
         const isRite = ability.id === 'blood_mite';
+        const isHex = ability.id === 'eldritch_hex';
         this.marks[hero.id] = {
           monsterId: target.id,
-          rounds: isRite ? 5 : 3,
+          rounds: isRite || isHex ? 5 : 3,
           dice: diceCfg,
         };
-        const label = isRite ? 'curses with a crimson rite' : 'marks';
+        const label = isRite ? 'curses with a crimson rite' : isHex ? 'hexes' : 'marks';
         this.log.messages.push(`🎯 ${hero.name} ${label} ${target.template.name} — every hit against it bites for +${diceCfg.count}d${diceCfg.size}!`);
         return true;
       }
@@ -1000,6 +1063,14 @@ export class CombatEngine {
         this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
         this.weaponAttack(hero, target);
         if (target.isAlive) this.weaponAttack(hero, target);
+        return true;
+      }
+      // Divine Smite: radiant dice on the blow, one more against the unholy.
+      if (ability.id === 'divine_smite') {
+        const dice = ability.bonusDamageDice!(hero.level);
+        const unholy = target.template.type === 'undead' || target.template.type === 'fiend';
+        this.log.messages.push(`✝ ${hero.name} smites ${target.template.name} — holy light pours down the blade${unholy ? ', and the unholy thing screams' : ''}!`);
+        this.weaponAttack(hero, target, { count: dice.count + (unholy ? 1 : 0), size: dice.size });
         return true;
       }
       // Arcane Jolt and any other single-strike rider: one hit with bonus dice.

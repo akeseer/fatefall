@@ -10,6 +10,7 @@ import {
   quatRotate,
   quatToMatrix3d,
 } from './Dice3D';
+import { naturalRollOf } from '../rules/DiceEvents';
 
 const OUTCOME_COLOR: Record<DiceRollEvent['outcome'], string> = {
   crit: '#ffd700',
@@ -153,7 +154,8 @@ export class DiceTray {
     const color = DICE_COLOR[e.diceType] || DICE_COLOR.d20;
     const scene = buildDieScene(faces, color, '50%');
     this.overlay.appendChild(scene);
-    this.animateDieSettle(scene, faces, e.total, () => {
+    // The die shows what the die rolled; the modifier is in the total beside it.
+    this.animateDieSettle(scene, faces, naturalRollOf(e) ?? e.total, () => {
       if (gen === this.bigRollGen) this.revealBigRoll([scene], e, dramatic, pace, gen);
     }, dramatic, pace);
   }
@@ -162,8 +164,9 @@ export class DiceTray {
     this.clearBigRoll();
 
     // Two d10s: tens die + ones die (a roll of 100 reads as 00/0).
-    const tens = Math.floor(e.total / 10) % 10;
-    const ones = e.total % 10;
+    const natural = naturalRollOf(e) ?? e.total;
+    const tens = Math.floor(natural / 10) % 10;
+    const ones = natural % 10;
     this.addCastShadow(true);
     const faces = buildDiceModel('d10');
 

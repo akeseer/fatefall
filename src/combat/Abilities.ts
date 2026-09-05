@@ -19,8 +19,15 @@ export interface CombatAbility {
   description: string;
   /** Dice damage added on top of the weapon strike (passive or rider). */
   bonusDamage?: string;
-  /** Effects that resolve when activated. */
-  effect?: 'attack' | 'heal' | 'rage';
+  /**
+   * Effects that resolve when activated. 'attack' strikes (with the id
+   * deciding rider or mark); 'heal' mends the user; 'rage' is a timed fury;
+   * 'burst' hits every foe; 'recover' gives back a spell slot; 'inspire'
+   * blesses the party.
+   */
+  effect?: 'attack' | 'heal' | 'rage' | 'burst' | 'recover' | 'inspire';
+  /** For 'burst': the damage type, and how many foes it reaches (all when unset). */
+  burst?: { element: 'radiant' | 'force' | 'fire' | 'cold' | 'lightning'; targets?: number; doubleAgainst?: string[] };
   /** Damage dice granted on top of the weapon attack roll. */
   bonusDamageDice?: (level: number) => { count: number; size: number };
   /** Flat healing, scaled by level. */
@@ -105,6 +112,86 @@ export const COMBAT_ABILITIES: CombatAbility[] = [
     minLevel: 1,
   },
 ];
+
+// ── The other seven classes ──
+
+COMBAT_ABILITIES.push(
+  {
+    id: 'divine_smite',
+    name: 'Divine Smite',
+    classId: 'paladin',
+    usesPerRest: (level) => (level >= 5 ? 3 : 2),
+    description: 'Pour holy power into a strike: +2d8 radiant, +1d8 more against undead and fiends.',
+    effect: 'attack',
+    bonusDamageDice: (level) => ({ count: level >= 9 ? 3 : 2, size: 8 }),
+    minLevel: 1,
+  },
+  {
+    id: 'channel_divinity',
+    name: 'Channel Divinity',
+    classId: 'cleric',
+    usesPerRest: (level) => (level >= 6 ? 2 : 1),
+    description: 'A burst of radiance scours every foe for 1d8; the undead take double.',
+    effect: 'burst',
+    bonusDamageDice: (level) => ({ count: level >= 5 ? 2 : 1, size: 8 }),
+    burst: { element: 'radiant', doubleAgainst: ['undead', 'fiend'] },
+    minLevel: 1,
+  },
+  {
+    id: 'arcane_recovery',
+    name: 'Arcane Recovery',
+    classId: 'wizard',
+    usesPerRest: () => 1,
+    description: 'Draw on study to recover an expended spell slot mid-fight.',
+    effect: 'recover',
+    minLevel: 1,
+  },
+  {
+    id: 'wild_shape',
+    name: 'Wild Shape',
+    classId: 'druid',
+    usesPerRest: () => 2,
+    description: 'Take a beast\u2019s form: mend 2 HP per level and strike for +2 damage for 3 rounds.',
+    effect: 'rage',
+    buff: { meleeAttackBonus: 0, damageBonus: 2, rounds: 3 },
+    healDice: (level) => ({ count: Math.max(1, level), size: 2 }),
+    minLevel: 2,
+  },
+  {
+    id: 'bardic_inspiration',
+    name: 'Bardic Inspiration',
+    classId: 'bard',
+    usesPerRest: (level) => (level >= 5 ? 3 : 2),
+    description: 'A rousing verse: the party gains +1d4 on attack rolls for 3 rounds.',
+    effect: 'inspire',
+    buff: { rounds: 3 },
+    minLevel: 1,
+  },
+  {
+    id: 'chaos_surge',
+    name: 'Chaos Surge',
+    classId: 'sorcerer',
+    usesPerRest: (level) => (level >= 5 ? 3 : 2),
+    description: 'Raw magic leaps to two foes for 2d8 force damage each.',
+    effect: 'burst',
+    bonusDamageDice: (level) => ({ count: level >= 9 ? 3 : 2, size: 8 }),
+    burst: { element: 'force', targets: 2 },
+    minLevel: 1,
+  },
+  {
+    id: 'eldritch_hex',
+    name: 'Eldritch Hex',
+    classId: 'warlock',
+    usesPerRest: () => 2,
+    description: 'Hex a foe: every hit against it bites for +1d6 necrotic while the hex holds (5 rounds).',
+    effect: 'attack',
+    bonusDamageDice: (level) => ({ count: level >= 9 ? 2 : 1, size: 6 }),
+    minLevel: 1,
+  },
+);
+
+/** Abilities that lay a lasting mark on one foe rather than striking it. */
+export const MARK_ABILITIES = new Set(['hunters_mark', 'blood_mite', 'eldritch_hex']);
 
 /** Look up the active (non-passive) ability for a class, if any. */
 export function getAbilityForClass(classId: string, level: number): CombatAbility | null {

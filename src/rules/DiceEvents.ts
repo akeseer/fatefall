@@ -28,6 +28,23 @@ export interface DiceRollEvent {
   time: number;
 }
 
+/**
+ * The number the die itself showed, before modifiers: what the 3D die must
+ * land on. A "d20+4" that totals 17 rolled a 13. Null for a roll of several
+ * dice, whose total is no single face.
+ */
+export function naturalRollOf(e: Pick<DiceRollEvent, 'expression' | 'total' | 'rolls'>): number | null {
+  const m = /^(\d*)d(\d+)([+-]\d+)?/.exec(e.expression.replace(/\s+/g, ''));
+  if (!m) return e.rolls.length === 1 ? e.rolls[0] : null;
+  const count = Number(m[1] || 1);
+  if (count !== 1) return null;
+  const sides = Number(m[2]);
+  const mod = Number(m[3] || 0);
+  const natural = e.total - mod;
+  if (natural >= 1 && natural <= sides) return natural;
+  return e.rolls.length >= 1 ? e.rolls[e.rolls.length - 1] : null;
+}
+
 const MAX_HISTORY = 60;
 let history: DiceRollEvent[] = [];
 
