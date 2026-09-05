@@ -77,6 +77,7 @@ import { LOCATIONS, getRandomElement, LocationTemplate, getLocation, MAGIC_ITEMS
 import { getLLM } from './ai/LLMService';
 import { sfx } from './audio/Sfx';
 import { getAudio } from './audio/Audio';
+import { Music, type MusicMood } from './audio/Music';
 
 // ── Context-aware compendium content ────────────────
 
@@ -1024,6 +1025,7 @@ class Game {
 
   private update(dt: number) {
     if (this.errorHalt) return;
+    this.music.play(this.musicMood());
     // Persist the run every few seconds (also on tab hide / page unload).
     this.saveTimer += dt;
     if (this.saveTimer >= 8000) {
@@ -2111,6 +2113,24 @@ class Game {
   /** The white hit of a critical, 0..1, gone in about a seventh of a second. */
   private flash = 0;
 
+  /** The score. It follows where the party is and what they are doing, and crossfades between. */
+  private readonly music = new Music();
+
+  /**
+   * Which piece the moment wants. Asked every simulation step; the music
+   * treats the same answer twice as nothing to do, and a new answer as a
+   * crossfade, so this can be blunt about it.
+   */
+  private musicMood(): MusicMood {
+    if (!this.running) return 'none';
+    if (this.phase === GamePhase.Combat) {
+      return this.combatEngine.getBosses().length > 0 ? 'boss' : 'battle';
+    }
+    if (this.mode === GameMode.Town) return 'town';
+    if (this.mode === GameMode.Dungeon) return 'dungeon';
+    return this.clock.light < 0.34 ? 'overworld_night' : 'overworld';
+  }
+
   /** The transition in flight. Advanced in render(), since it is a property of the picture. */
   private transition: { kind: 'fade' | 'blinds'; ms: number; total: number } | null = null;
 
@@ -2696,6 +2716,7 @@ class Game {
     this.saveGame();
     this.hud.closeOverlays();
     this.running = false;
+    this.music.play('none');
     this.hud.showStartScreen(listSaves(), this.activeSlot);
   }
 

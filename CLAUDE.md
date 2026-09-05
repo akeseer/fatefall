@@ -73,8 +73,11 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   with separate effects and music buses, and remembered volume and mute
   (`fatefall.audio`). `Sfx.ts` is the effect bank: each effect is a few lines of
   oscillator and filtered-noise synthesis behind a per-kind rate limit, and every one
-  returns silently when the engine is unavailable or muted. `ui/DiceSounds.ts` is a
-  client of the engine. Never create a second AudioContext; browsers cap them and it
+  returns silently when the engine is unavailable or muted. `Music.ts` is the score:
+  one `Piece` per `MusicMood`, a lookahead scheduler on the audio clock, and a
+  two-second crossfade between moods; `Game.musicMood()` picks the mood from mode,
+  phase and daylight every step and `Music.play` treats a repeat as a no-op.
+  `ui/DiceSounds.ts` is a client of the engine. Never create a second AudioContext; browsers cap them and it
   would break the single mute. Wire a new sound at the event that makes it, next to
   the picture of it. `window.__audio` is exposed alongside `__game` for inspection.
 - **`src/ui/HUD.ts`** — builds the DOM overlay from a template string. The log is
