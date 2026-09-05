@@ -16,6 +16,7 @@
  */
 
 import { SPELLS } from '../data/gameData';
+import { COMBAT_ABILITIES } from '../combat/Abilities';
 
 export type Element =
   | 'fire' | 'cold' | 'lightning' | 'thunder' | 'necrotic' | 'radiant' | 'force' | 'psychic' | 'poison' | 'acid' | 'arcane' | 'heal';
@@ -46,8 +47,8 @@ export interface FxEvent {
   target?: string;
   element?: Element;
   spell?: string;
-  ability?: 'rage' | 'second_wind' | 'hunters_mark' | 'sneak_attack' | 'flurry' | 'arcane_jolt' | 'blood_mite'
-    | 'divine_smite' | 'channel_divinity' | 'arcane_recovery' | 'wild_shape' | 'bardic_inspiration' | 'chaos_surge' | 'eldritch_hex';
+  /** A skill id from the ability table, or one of the older names the window draws by hand. */
+  ability?: string;
   condition?: 'poisoned' | 'stunned' | 'frightened' | 'held' | 'asleep' | 'entangled' | 'slowed' | 'cursed' | 'blinded';
   buff?: 'bless' | 'shield' | 'haste' | 'invisible' | 'aid' | 'sanctuary' | 'faerie_fire';
   projectile?: boolean;
@@ -140,13 +141,14 @@ export function classifyFx(line: string): FxEvent[] {
     return [{ kind: 'ability', actor: m[1], ability: 'chaos_surge', element: 'force', target: m[2].split(' and ')[0] }];
   }
   if ((m = /^(.{2,60}?) takes a Wild Shape/.exec(text))) return [{ kind: 'ability', actor: m[1], ability: 'wild_shape' }];
-  if ((m = /^(.{2,60}?) uses (Arcane Recovery|Bardic Inspiration)/.exec(text))) {
-    return [{ kind: 'ability', actor: m[1], ability: m[2].startsWith('Arcane') ? 'arcane_recovery' : 'bardic_inspiration' }];
-  }
-  if ((m = /^(.{2,60}?) uses (Second Wind|Flurry of Blows|Arcane Jolt|Hunter's Mark|Blood Mite)/i.exec(text))) {
-    const name = m[2].toLowerCase();
-    const ability: FxEvent['ability'] = name.startsWith('second') ? 'second_wind' : name.startsWith('flurry') ? 'flurry' : name.startsWith('arcane') ? 'arcane_jolt' : name.startsWith('hunter') ? 'hunters_mark' : 'blood_mite';
-    return [{ kind: 'ability', actor: m[1], ability }];
+  // "X uses Skill!" / "X uses Skill on Y!" / "X uses Skill — ...": any skill in the table, by name.
+  if ((m = /^(.{2,60}?) uses ([\w'’ ]+?)(?:\s+on\s+(.{2,60}?))?(?:!|\.|\s+—|$)/u.exec(text))) {
+    const name = m[2].trim().toLowerCase();
+    const skill = COMBAT_ABILITIES.find(a => a.name.toLowerCase() === name);
+    if (skill) {
+      const legacy: Record<string, string> = { second_wind: 'second_wind', flurry_of_blows: 'flurry', arcane_jolt: 'arcane_jolt', hunters_mark: 'hunters_mark', blood_mite: 'blood_mite', arcane_recovery: 'arcane_recovery', bardic_inspiration: 'bardic_inspiration' };
+      return [{ kind: 'ability', actor: m[1], target: m[3]?.trim(), ability: legacy[skill.id] ?? skill.id, element: skill.element as FxEvent['element'], aoe: skill.effect === 'burst' && !skill.burst?.targets }];
+    }
   }
   if ((m = /^Sneak Attack! (.{2,60}?) finds the gaps/i.exec(text))) return [{ kind: 'ability', actor: m[1], ability: 'sneak_attack' }];
   if (/^The infused strike cracks/i.test(text)) return [{ kind: 'ability', ability: 'arcane_jolt' }];

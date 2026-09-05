@@ -28,7 +28,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 
 export interface SavedCharacter {
   id: string;
@@ -63,6 +63,8 @@ export interface SavedCharacter {
   vendettas?: Record<string, number>;
   /** Combat-ability uses remaining this rest (v6+). */
   abilityUses?: Record<string, number>;
+  /** The class resource pool (mana, stamina, ki, focus). Absent means full. v14+. */
+  resource?: number;
   personality: Personality;
   subclass?: string;
   deity?: string;
@@ -314,7 +316,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 11) current = migrateV11toV12(current);
   if (!current) return null;
   if (current.version === 12) current = migrateV12toV13(current);
+  if (!current) return null;
+  if (current.version === 13) current = migrateV13toV14(current);
   return current;
+}
+
+/** v13 → v14: skill resource pools. Absent means full, which is what a rest would give. */
+function migrateV13toV14(data: SaveData): SaveData | null {
+  return { ...data, version: 14 };
 }
 
 /** v12 → v13: the story. An older run has none, and begins the tale where it stands. */

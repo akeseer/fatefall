@@ -260,6 +260,7 @@ export class SaveSerializer {
           pendingConcentrationBreak: m.pendingConcentrationBreak,
           vendettas: m.vendettas,
           abilityUses: m.abilityUses,
+          resource: m.resource,
           bonusAttackBonus: m.bonusAttackBonus,
           equipment: m.equipment,
           personality: m.personality,
@@ -454,6 +455,7 @@ export class SaveSerializer {
       char.pendingConcentrationBreak = s.pendingConcentrationBreak;
       char.vendettas = { ...(s.vendettas ?? {}) };
       char.abilityUses = { ...(s.abilityUses ?? {}) };
+      if (typeof s.resource === 'number') char.resource = s.resource;
       char.personality = { ...s.personality };
       char.subclass = s.subclass;
       char.deity = s.deity;

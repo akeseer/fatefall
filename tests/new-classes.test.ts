@@ -58,8 +58,8 @@ describe('new classes', () => {
     expect(COMBAT_ABILITIES.some(a => a.classId === 'artificer')).toBe(true);
     expect(COMBAT_ABILITIES.some(a => a.classId === 'blood_hunter')).toBe(true);
     expect(getAbilityForClass('artificer', 2)).not.toBeNull();
-    // Artificer's Arcane Jolt unlocks at level 2, like the source material.
-    expect(getAbilityForClass('artificer', 1)).toBeNull();
+    // Every class starts with something: the artificer's Arcane Jolt is there from level 1.
+    expect(getAbilityForClass('artificer', 1)?.id).toBe('arcane_jolt');
     expect(getAbilityForClass('blood_hunter', 1)).not.toBeNull();
   });
 

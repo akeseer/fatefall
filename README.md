@@ -63,7 +63,9 @@ local preview of a build opened with `?debug`.
   the list the party understands, though you do not have to stick to it — see below.
 - Speed controls run the world from 0.25× to 4×; Pause freezes it.
 - Combat opens a battle screen. It runs automatically, or flip it to manual and
-  command each hero.
+  command each hero. Every class has a ladder of skills that unlock as it levels, paid
+  from its own pool (mana, stamina, ki, focus, or the blood hunter's own blood) with
+  cooldowns on the strongest; the pool refills a little each round and fully on a rest.
 - Typing `roll d20` banks a **Luck die**: the party's next d20 roll is fated to that
   result, for better or worse.
 - Everything you hear is synthesised in the browser: a score per place and mood, a

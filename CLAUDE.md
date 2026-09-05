@@ -56,6 +56,14 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   rides in the save (`story`, v13). Never call `Math.random` in `Story.ts`.
 - **`src/ai/AIDirector.ts`** — the party's tactical planner. Returns an `AIAction`
   union that `Game.aiTick` dispatches on. Combat decisions live in `CombatEngine`.
+- **`src/combat/Abilities.ts`** — class skills as data: a ladder of three or four per class
+  unlocked by `minLevel`, each with a `cost` from the class's resource pool (`CLASS_RESOURCE`:
+  mana, stamina, ki, focus, or the blood hunter's hit points) and a `cooldown` in rounds.
+  `Character` owns the pool (`resource`, refilled by rests, saved as `resource`); the engine owns
+  cooldowns and regen (`resourceRegen` at each round wrap), chooses for the AI in
+  `chooseAbility`, and resolves by `effect` in `useClassAbility`. Adding a skill is a data
+  entry plus, if its wording is new, a line in `BattleFx`; a new `effect` kind needs an arm in
+  `useClassAbility`, the chooser, and the battle view's generic drawer.
 - **`src/combat/CombatEngine.ts`** — DOM-free. `step()` returns a `CombatLog` whose
   messages the game feeds to the HUD. Mutates the `Party`/`Monster` objects it is given.
 - **`src/world/`** — `Overworld` (towns, entrances, POIs), `TownLife` (rumors,

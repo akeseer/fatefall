@@ -1,7 +1,7 @@
 import { Ability, CharacterClass, Race, abilityModifier, getCasterType, maxSlotsFor, ordinal, rollDice } from '../data/gameData';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
-import { getAbilityForClass } from '../combat/Abilities';
+import { getAbilitiesForClass, resourceKindOf, resourceMax, type CombatAbility, type ResourceKind } from '../combat/Abilities';
 import { Vector2 } from '../engine/types';
 import {
   ActiveCondition,
@@ -173,26 +173,41 @@ export class GameCharacter {
   public pendingConcentrationBreak: boolean = false;
   /** Vendetta ledger: monster template ids this hero was downed by → times. Survives between fights. */
   public vendettas: Record<string, number> = {};
-  /** Combat-ability uses remaining this rest, keyed by ability id. */
+  /** Kept for old saves; skills are paid from the resource pool now. */
   public abilityUses: Record<string, number> = {};
 
-  /** Restore all class-ability uses (short rest). */
-  rechargeAbilities(): void {
-    const ability = getAbilityForClass(this.charClass.id, this.level);
-    if (ability && ability.effect) {
-      this.abilityUses[ability.id] = ability.usesPerRest(this.level);
-    }
+  /** The class's pool (mana, stamina, ki, focus), full until first spent. Blood hunters pay in hit points. */
+  private _resource: number | null = null;
+  get resourceKind(): ResourceKind { return resourceKindOf(this.charClass.id); }
+  get resourceMax(): number { return resourceMax(this.charClass.id, this.level); }
+  get resource(): number { return this._resource === null ? this.resourceMax : Math.max(0, Math.min(this.resourceMax, this._resource)); }
+  set resource(v: number) { this._resource = Math.max(0, Math.min(this.resourceMax, v)); }
+
+  /** Every skill unlocked at this level. */
+  get skills(): CombatAbility[] { return getAbilitiesForClass(this.charClass.id, this.level); }
+
+  /** Whether the pool (or, for a blood hunter, the body) can pay for a skill. */
+  canAfford(a: CombatAbility): boolean {
+    if (a.cost === 0) return true;
+    if (this.resourceKind === 'blood') return this.hp > a.cost;
+    return this.resource >= a.cost;
   }
 
-  /** Whether this hero can use their class ability right now. */
+  /** Pay for a skill. Blood is taken from hit points, never below one. */
+  spendAbility(a: CombatAbility): void {
+    if (a.cost === 0) return;
+    if (this.resourceKind === 'blood') this.hp = Math.max(1, this.hp - a.cost);
+    else this.resource = this.resource - a.cost;
+  }
+
+  /** A rest refills the pool. */
+  rechargeAbilities(): void {
+    this.resource = this.resourceMax;
+  }
+
+  /** Whether this hero could pay for any skill right now (cooldowns are the engine's to know). */
   canUseAbility(): boolean {
-    const ability = getAbilityForClass(this.charClass.id, this.level);
-    if (!ability || !ability.effect) return false;
-    // Lazy init: a fresh hero starts with their full allotment.
-    if (this.abilityUses[ability.id] === undefined) {
-      this.abilityUses[ability.id] = ability.usesPerRest(this.level);
-    }
-    return this.abilityUses[ability.id] > 0;
+    return this.skills.some(a => this.canAfford(a));
   }
 
   // AI personality
@@ -889,6 +904,7 @@ export class GameCharacter {
 
   /** Spend up to `maxDice` remaining hit dice to heal (die + CON mod each). */
   shortRest(maxDice: number = 2): string {
+    this.rechargeAbilities();
     const notes: string[] = [];
     // Pact Magic: a warlock's spell slots return on a short rest.
     if (getCasterType(this.charClass.id) === 'pact') {
@@ -927,6 +943,7 @@ export class GameCharacter {
 
   /** Full recovery: HP, half total hit dice, spell uses, conditions, concentration. */
   longRest(): string[] {
+    this.rechargeAbilities();
     const messages: string[] = [];
     this.hp = this.maxHp;
     this.hitDiceRemaining = Math.min(this.level, Math.max(1, Math.floor(this.level / 2)) + this.hitDiceRemaining);

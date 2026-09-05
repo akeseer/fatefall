@@ -11,6 +11,8 @@ import type { PartyCommand } from '../combat/CombatEngine';
 import type { DiceSounds } from './DiceSounds';
 import { battleSceneCss, type BattleScene } from './BattleScenes';
 import { classifyFx, ELEMENT_COLORS as FX_COLORS, type FxEvent } from './BattleFx';
+import { costLabel, getAbilityById, resourceRegen, RESOURCE_COLOR, RESOURCE_LABEL } from '../combat/Abilities';
+import type { MenuSkill } from '../combat/CombatEngine';
 import { sfx } from '../audio/Sfx';
 import { T, classColor, hpColor } from './Theme';
 
@@ -146,9 +148,9 @@ export class BattleView {
   /** Spells the acting hero can afford, provided by the game each pause. */
   private menuSpells: Spell[] = [];
   /** The acting hero's usable class ability, if any. */
-  private menuAbility: CombatAbility | null = null;
+  private menuSkills: MenuSkill[] = [];
   /** Which submenu pane is showing. */
-  private menuPane: 'root' | 'spell' | 'item' = 'root';
+  private menuPane: 'root' | 'spell' | 'item' | 'skill' = 'root';
   /** Numbered buttons of the current menu pane, in order — keyboard 1-9 targets. */
   private menuButtons: { el: HTMLElement; onClick: () => void; key?: string; danger?: boolean }[] = [];
   /** Keyboard cursor index within menuButtons (classic FF selection). */
@@ -587,6 +589,7 @@ export class BattleView {
           padding: 3px 4px; border-radius: ${T.r1}; font-size: 11.5px;
         }
         .bv-status-row.active { background: rgba(232,197,106,0.10); }
+        .bv-status-row .bar.res { height: 2px; margin-top: 1px; border-color: rgba(255,255,255,0.08); }
         .bv-status-row .cur { color: ${T.gold}; font-size: 9px; opacity: 0; animation: menu-cursor-blink 0.9s steps(1) infinite; }
         .bv-status-row.active .cur { opacity: 1; }
         .bv-status-row .nm { font-family: ${T.titleFont}; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1320,6 +1323,70 @@ export class BattleView {
               if (target) { this.fxNode(target.fig, 'bv-mark', FX_COLORS.necrotic, 1000); target.card.classList.add('bv-tint-cursed'); window.setTimeout(() => target.card.classList.remove('bv-tint-cursed'), 2500); }
               sfx.necrotic();
               break;
+            default: {
+              // Any other skill draws from its own data: what it is and what colour it is.
+              const data = ev.ability ? getAbilityById(ev.ability) : undefined;
+              if (!data) break;
+              const el = (data.element ?? 'arcane') as FxEvent['element'];
+              const c = this.fxColor(el);
+              if (actor) this.fxNode(actor.fig, 'bv-aura', c, 1400);
+              switch (data.effect) {
+                case 'burst':
+                case 'drain': {
+                  const side = actor && !actor.hero ? this.heroRow : this.enemyRow;
+                  const foes = (Array.from(side.querySelectorAll('.battle-card:not(.bv-down)')) as HTMLElement[]).slice(0, data.burst?.targets ?? 99);
+                  if (!data.burst?.targets) this.fieldFlash(c);
+                  foes.forEach((card, i) => {
+                    const fig = card.querySelector('.bv-figure') as HTMLElement | null;
+                    if (!fig) return;
+                    if (actor && (data.burst?.targets ?? 99) <= 2) this.projectile(actor.fig, fig, c, false, i * 100);
+                    this.elementBurst(fig, card, el, 200 + i * 80);
+                  });
+                  if (data.effect === 'drain' && actor) window.setTimeout(() => this.elementBurst(actor.fig, actor.card, 'heal'), 500);
+                  window.setTimeout(() => this.elementSound(el), 200);
+                  if (el === 'fire') window.setTimeout(() => sfx.fire(), 200);
+                  if (el === 'lightning') window.setTimeout(() => sfx.shock(), 200);
+                  break;
+                }
+                case 'heal':
+                case 'heal_ally':
+                  if (target ?? actor) this.elementBurst((target ?? actor)!.fig, (target ?? actor)!.card, 'heal');
+                  sfx.heal();
+                  break;
+                case 'heal_all':
+                  for (const card of Array.from(this.heroRow.querySelectorAll('.battle-card')) as HTMLElement[]) {
+                    const fig = card.querySelector('.bv-figure') as HTMLElement | null;
+                    if (fig) this.elementBurst(fig, card, 'heal');
+                  }
+                  sfx.heal();
+                  break;
+                case 'ward':
+                  if (actor) this.fxNode(actor.fig, 'bv-hexring', c, 1200);
+                  sfx.shield();
+                  break;
+                case 'inspire':
+                  for (const card of Array.from(this.heroRow.querySelectorAll('.battle-card')) as HTMLElement[]) {
+                    const fig = card.querySelector('.bv-figure') as HTMLElement | null;
+                    if (fig) for (let i = 0; i < 5; i++) this.fxNode(fig, 'bv-mote', FX_COLORS.radiant, 1150, { '--dx': `${-20 + i * 8}px` });
+                  }
+                  sfx.bless();
+                  break;
+                case 'attack':
+                  if (actor) this.pulseClass(actor.card, actor.hero ? 'bv-lunge-left' : 'bv-lunge-right', 320);
+                  if (data.strikes && data.strikes > 1) sfx.flurry();
+                  else if (data.element) this.elementSound(el);
+                  break;
+                case 'recover':
+                  if (actor) this.fxNode(actor.fig, 'bv-hexring', FX_COLORS.arcane, 1200);
+                  sfx.arcane();
+                  break;
+                case 'rage':
+                  if (actor) this.pulseClass(actor.card, 'bv-shake', 400);
+                  sfx.rage();
+                  break;
+              }
+              break;
+            }
           }
           break;
         }
@@ -1825,6 +1892,7 @@ export class BattleView {
           <span class="hp" style="color:${hpColor(frac)};">${Math.max(0, Math.round(hero.hp))}<span style="color:${T.faint};">/${hero.maxHp}</span></span>
           <span class="pips">${pips}</span>
           <div class="bar"><div style="width:${(frac * 100).toFixed(1)}%; background:${hpColor(frac)};"></div></div>
+          ${hero.resourceKind !== 'blood' ? `<div class="bar res" title="${RESOURCE_LABEL[hero.resourceKind]} ${hero.resource}/${hero.resourceMax}"><div style="width:${((hero.resource / Math.max(1, hero.resourceMax)) * 100).toFixed(1)}%; background:${RESOURCE_COLOR[hero.resourceKind]};"></div></div>` : ''}
           ${conds ? `<div class="conds">${conds}</div>` : ''}
           ${chip ? `<div class="chipwrap">${chip}</div>` : ''}
         </div>`);
@@ -1999,11 +2067,11 @@ export class BattleView {
    * Show the command menu paused on a hero's turn. The game supplies the
    * castable spells and usable consumables; the DM picks and the game runs it.
    */
-  showCommandMenu(hero: GameCharacter, spells: Spell[], items: MenuConsumable[], ability: CombatAbility | null = null): void {
+  showCommandMenu(hero: GameCharacter, spells: Spell[], items: MenuConsumable[], skills: MenuSkill[] = []): void {
     this.menuHero = hero;
     this.menuSpells = spells;
     this.menuItems = items;
-    this.menuAbility = ability;
+    this.menuSkills = skills;
     this.menuPane = 'root';
     this.parkedHeroId = hero.id;
     this.menuIsQueued = false;
@@ -2190,7 +2258,7 @@ export class BattleView {
       ? `<div style="font-size:10px; color:${T.info}; margin-bottom:4px;">Queued: ${[...this.queuedOrders.entries()].map(([id, c]) => {
           const m = this.partyRoster.find(x => x.id === id);
           const name = m ? m.name : '?';
-          const label = c.type === 'attack' ? 'Attack' : c.type === 'flee' ? 'Flee' : c.type === 'item' ? 'Item' : this.lastSpellByHero.get(id)?.spellName ?? 'Spell';
+          const label = c.type === 'attack' ? 'Attack' : c.type === 'flee' ? 'Flee' : c.type === 'item' ? 'Item' : c.type === 'ability' ? (getAbilityById(c.abilityId ?? '')?.name ?? 'Skill') : this.lastSpellByHero.get(id)?.spellName ?? 'Spell';
           return `${name} → ${label}`;
         }).join(', ')}</div>`
       : '';
@@ -2213,10 +2281,12 @@ export class BattleView {
       this.menuEl.appendChild(menuBtn('🧪 Item', this.menuItems.length > 0 ? `${this.menuItems.length} usable` : 'pack empty', () => {
         if (this.menuItems.length > 0) { this.menuPane = 'item'; this.renderMenu(); }
       }, false, labelFor(this.binds.item)));
-      if (this.menuAbility) {
-        const usesLeft = this.menuHero.abilityUses[this.menuAbility.id] ?? 0;
-        this.menuEl.appendChild(menuBtn(`⚡ ${this.menuAbility.name}`, `${this.menuAbility.description} (${usesLeft} use${usesLeft === 1 ? '' : 's'} left)`, () =>
-          this.pickCommand({ type: 'ability' }), false, 'E'));
+      if (this.menuSkills.length > 0) {
+        const ready = this.menuSkills.filter(k => k.ready).length;
+        const pool = hero.resourceKind === 'blood' ? `${hero.hp} HP to spend` : `${hero.resource}/${hero.resourceMax} ${RESOURCE_LABEL[hero.resourceKind].toLowerCase()}`;
+        this.menuEl.appendChild(menuBtn('⚡ Skills', `${ready} of ${this.menuSkills.length} ready · ${pool}`, () => {
+          this.menuPane = 'skill'; this.renderMenu();
+        }, false, ''));
       }
       this.menuEl.appendChild(menuBtn('🏃 Flee', 'disengage the fight', () =>
         this.pickCommand({ type: 'flee' }), true, labelFor(this.binds.flee)));
@@ -2238,6 +2308,28 @@ export class BattleView {
         presetRow.appendChild(p);
       }
       this.menuEl.appendChild(presetRow);
+    } else if (this.menuPane === 'skill') {
+      this.menuEl.innerHTML = header;
+      this.menuEl.appendChild(backBtn);
+      const kind = hero.resourceKind;
+      const poolColor = RESOURCE_COLOR[kind];
+      const poolLine = document.createElement('div');
+      poolLine.style.cssText = `font-size:10.5px; color:${T.muted}; margin:2px 0 6px;`;
+      poolLine.innerHTML = kind === 'blood'
+        ? `<span style="color:${poolColor};">Blood</span> — skills are paid in hit points (${hero.hp}/${hero.maxHp})`
+        : `<span style="color:${poolColor};">${RESOURCE_LABEL[kind]}</span> ${hero.resource}/${hero.resourceMax} · +${resourceRegen(kind)} a round`;
+      this.menuEl.appendChild(poolLine);
+      for (const k of this.menuSkills) {
+        const a = k.ability;
+        const el = a.element ? BattleView.ELEMENT_COLORS[a.element] ?? BattleView.DEFAULT_ELEMENT : poolColor;
+        const dot = `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${el}; margin-right:6px; box-shadow:0 0 5px ${el};"></span>`;
+        const state = k.ready ? costLabel(a) : k.cooldown > 0 ? `cooling: ${k.reason}` : k.reason;
+        const btn = menuBtn(`${dot}${a.name}`, `${a.description} <span style="color:${k.ready ? T.gold : T.bad};">(${state}${a.cooldown > 0 && k.ready ? `, ${a.cooldown}-round cooldown` : ''})</span>`, () => {
+          if (k.ready) this.pickCommand({ type: 'ability', abilityId: a.id });
+        }, false, '');
+        if (!k.ready) btn.style.opacity = '0.5';
+        this.menuEl.appendChild(btn);
+      }
     } else if (this.menuPane === 'spell') {
       this.menuEl.innerHTML = header;
       const menuEl = this.menuEl;

@@ -28,7 +28,7 @@ import { manhattan, Vector2 } from '../engine/types';
 import { DiceType, pushDiceRoll } from '../rules/DiceEvents';
 import { consumeLuckDieIfAny } from '../rules/LuckDie';
 import { chooseMonsterTarget, choosePartyFocus, shouldMonsterFlee, chooseHealTarget, pickLegendaryAction, advanceToward, isFlanking } from './TargetAI';
-import { getAbilityForClass, sneakAttackDice, MARK_ABILITIES, type CombatAbility } from './Abilities';
+import { sneakAttackDice, MARK_ABILITIES, resourceRegen, type CombatAbility } from './Abilities';
 
 export interface CombatLog {
   round: number;
@@ -48,11 +48,14 @@ export interface CombatAction {
  * A DM command chosen from the FF-style battle menu. The AI executes it —
  * target selection, rolls and narration stay engine-side.
  */
+/** A skill as the command menu sees it: the skill, and whether it can be used this turn. */
+export interface MenuSkill { ability: CombatAbility; ready: boolean; cooldown: number; reason: string }
+
 export type PartyCommand =
   | { type: 'attack'; targetMonsterId?: string }
   | { type: 'spell'; spellId: string; targetMonsterId?: string; targetAllyId?: string }
   | { type: 'item'; itemId: string; holderId: string; itemName?: string }
-  | { type: 'ability' }
+  | { type: 'ability'; abilityId?: string }
   | { type: 'flee' };
 
 export class CombatEngine {
@@ -288,6 +291,13 @@ export class CombatEngine {
     if (this.currentTurnIndex >= this.initiativeOrder.length) {
       this.currentTurnIndex = 0;
       this.log.round++;
+      // Pools refill a little each round and skills come off cooldown.
+      for (const m of this.party.members) {
+        if (!m.isAlive) continue;
+        if (m.resourceKind !== 'blood') m.resource = Math.min(m.resourceMax, m.resource + resourceRegen(m.resourceKind));
+        const cds = this.cooldowns[m.id];
+        if (cds) for (const k of Object.keys(cds)) { cds[k]--; if (cds[k] <= 0) delete cds[k]; }
+      }
       // The party re-reads the field at the top of each round and designates
       // a focus target so everyone gangs up on one foe instead of scattering.
       const live = this.monsters.filter(m => m.isAlive && !m.fled);
@@ -467,11 +477,73 @@ export class CombatEngine {
 
   /** The paused hero's class ability, if usable right now (drives the menu). */
   getDecisionAbility(hero: GameCharacter): CombatAbility | null {
-    const ability = getAbilityForClass(hero.charClass.id, hero.level);
-    if (!ability || !ability.effect) return null;
-    // Peek at uses without lazy-initializing: an untouched record means full.
-    const uses = hero.abilityUses[ability.id];
-    return (uses === undefined || uses > 0) ? ability : null;
+    const ready = this.getDecisionAbilities(hero).filter(x => x.ready);
+    return ready.length > 0 ? ready[ready.length - 1].ability : null;
+  }
+
+  /** Every skill the hero has, with whether it can be used this turn and why not. */
+  getDecisionAbilities(hero: GameCharacter): MenuSkill[] {
+    return hero.skills.map(ability => {
+      const cd = this.cooldowns[hero.id]?.[ability.id] ?? 0;
+      const affordable = hero.canAfford(ability);
+      return {
+        ability,
+        cooldown: cd,
+        ready: cd <= 0 && affordable,
+        reason: cd > 0 ? `${cd} round${cd === 1 ? '' : 's'}` : !affordable ? (hero.resourceKind === 'blood' ? 'too little blood' : `needs ${ability.cost} ${hero.resourceKind}`) : 'ready',
+      };
+    });
+  }
+
+  private isReady(hero: GameCharacter, a: CombatAbility): boolean {
+    return (this.cooldowns[hero.id]?.[a.id] ?? 0) <= 0 && hero.canAfford(a);
+  }
+
+  /**
+   * Which skill, if any, the hero's own judgement reaches for this turn. Each
+   * usable skill is scored against the moment; nothing scores means a plain
+   * attack or a spell.
+   */
+  private chooseAbility(hero: GameCharacter, focus: Monster | null, spellsAffordable: number): CombatAbility | null {
+    const foes = this.monsters.filter(m => m.isAlive);
+    if (foes.length === 0) return null;
+    const hpPct = hero.hp / Math.max(1, hero.maxHp);
+    const hurtAlly = this.party.alive.filter(m => m.hp / Math.max(1, m.maxHp) < 0.5).length;
+    const worstAlly = Math.min(...this.party.alive.map(m => m.hp / Math.max(1, m.maxHp)));
+    const hasSpentSlot = Object.keys(hero.maxSpellSlots).some(l => (hero.spellSlots[Number(l)] ?? 0) < (hero.maxSpellSlots[Number(l)] ?? 0));
+    let best: CombatAbility | null = null;
+    let bestScore = 0;
+    for (const a of hero.skills) {
+      if (!this.isReady(hero, a)) continue;
+      let score = 0;
+      switch (a.effect) {
+        case 'heal': score = hpPct < 0.45 ? 8 : 0; break;
+        case 'heal_ally': score = worstAlly < 0.4 ? 9 : worstAlly < 0.6 ? 4 : 0; break;
+        case 'heal_all': score = hurtAlly >= 2 ? 9 : 0; break;
+        case 'rage': score = this.log.round <= 1 || (this.rageRounds[hero.id] ?? 0) <= 0 ? 6 : 0; break;
+        case 'inspire': score = this.partyBlessRounds <= 0 ? 6 : 0; break;
+        case 'recover': score = hasSpentSlot && spellsAffordable === 0 ? 7 : 0; break;
+        case 'ward': score = hpPct < 0.5 && !hero.conditions.some(c => c.id === (a.ward?.condition ?? 'invisible')) ? 5 : 0; break;
+        case 'burst':
+        case 'drain': {
+          const reach = a.burst?.targets ?? foes.length;
+          const hits = Math.min(reach, foes.length);
+          score = hits >= 2 ? 3 + hits : focus ? 3 : 0;
+          if (a.effect === 'drain' && hpPct < 0.6) score += 3;
+          if (a.burst?.doubleAgainst && foes.some(f => a.burst!.doubleAgainst!.includes(f.template.type))) score += 3;
+          break;
+        }
+        case 'attack':
+          if (!focus) break;
+          if (MARK_ABILITIES.has(a.id)) score = this.marks[hero.id] ? 0 : 5;
+          else score = (a.strikes ?? 1) > 1 ? 5 : 4;
+          break;
+      }
+      // Newer skills are the stronger ones; a tie goes to them.
+      score += a.minLevel * 0.1;
+      if (score > bestScore) { bestScore = score; best = a; }
+    }
+    return best;
   }
 
   /**
@@ -490,6 +562,8 @@ export class CombatEngine {
   private rageRounds: Record<string, number> = {};
   /** What each fury is called when it ends: a rage, or a beast's shape. */
   private furyLabel: Record<string, string> = {};
+  /** Rounds until a hero may use a skill again, by hero then skill. */
+  private cooldowns: Record<string, Record<string, number>> = {};
   /** Marks & rites: character id → quarry, rounds, and bonus dice. */
   private marks: Record<string, { monsterId: string; rounds: number; dice: { count: number; size: number } }> = {};
 
@@ -840,7 +914,7 @@ export class CombatEngine {
     // A DM command from the FF battle menu overrides the AI's own choice.
     if (forced) {
       if (forced.type === 'ability') {
-        if (this.useClassAbility(character)) return;
+        if (this.useClassAbility(character, forced.abilityId)) return;
         this.log.messages.push(`${character.name} cannot muster that ability — falls back to their blade.`);
       } else if (forced.type === 'spell') {
         const spell = SPELLS.find(s => s.id === forced.spellId);
@@ -858,26 +932,14 @@ export class CombatEngine {
       // AI ability use: Second Wind when someone is badly hurt, Rage when the
       // fight opens, Hunter's Mark on the round's focus target. Rogues pass —
       // Sneak Attack rides on their normal attacks.
-      const ability = getAbilityForClass(character.charClass.id, character.level);
-      if (ability && character.canUseAbility()) {
-        const hpPct = character.hp / Math.max(1, character.maxHp);
+      // AI skill use: the chooser weighs the situation and the skills that are
+      // paid for and off cooldown. Rogues pass — Sneak Attack rides on their strikes.
+      {
         const focus = this.roundFocusMonsterId
           ? this.monsters.find(m => m.id === this.roundFocusMonsterId && m.isAlive)
           : undefined;
-        const strikeAbility = ability.id === 'flurry_of_blows' || ability.id === 'arcane_jolt' || ability.id === 'divine_smite';
-        const foesUp = this.monsters.filter(m => m.isAlive).length;
-        const hasSpentSlot = Object.keys(character.maxSpellSlots).some(l => (character.spellSlots[Number(l)] ?? 0) < (character.maxSpellSlots[Number(l)] ?? 0));
-        const shouldUse =
-          (ability.effect === 'heal' && (hpPct < 0.45 || this.party.alive.some(m => m.hp <= 0))) ||
-          (ability.effect === 'rage' && this.log.round <= 1) ||
-          (ability.effect === 'attack' && !!focus && (strikeAbility || !this.marks[character.id])) ||
-          // A burst is worth a turn when there is a crowd, or a big undead for the cleric.
-          (ability.effect === 'burst' && (foesUp >= 2 || (ability.burst?.doubleAgainst?.includes(focus?.template.type ?? '') ?? false))) ||
-          // Recovery when a slot has been spent and there is no spell to spend anyway.
-          (ability.effect === 'recover' && hasSpentSlot && affordableSpells.length === 0) ||
-          // Inspiration at the top of a fight, or when the last verse has faded.
-          (ability.effect === 'inspire' && this.partyBlessRounds <= 0);
-        if (shouldUse && this.useClassAbility(character)) return;
+        const pick = this.chooseAbility(character, focus ?? null, affordableSpells.length);
+        if (pick && this.useClassAbility(character, pick.id)) return;
       }
       if (affordableSpells.length > 0) {
       // A cursed ally jumps the queue: the trained hand lifts the binding.
@@ -972,113 +1034,126 @@ export class CombatEngine {
    * Resolve a class combat ability. Returns false when the hero has no uses
    * left or nothing to target — the caller falls back to a weapon attack.
    */
-  private useClassAbility(hero: GameCharacter): boolean {
-    const ability = getAbilityForClass(hero.charClass.id, hero.level);
-    if (!ability || !ability.effect || !hero.canUseAbility()) return false;
+  private useClassAbility(hero: GameCharacter, abilityId?: string): boolean {
+    const focus = this.monsters.find(m => m.isAlive && m.id === this.roundFocusMonsterId) ?? null;
+    const ability = abilityId ? hero.skills.find(a => a.id === abilityId) ?? null : this.chooseAbility(hero, focus, 0);
+    if (!ability || !ability.effect || !this.isReady(hero, ability)) return false;
+    const alive = this.monsters.filter(m => m.isAlive);
+    const target = focus ?? alive[0] ?? null;
+    const pay = () => {
+      hero.spendAbility(ability);
+      if (ability.cooldown > 0) (this.cooldowns[hero.id] ??= {})[ability.id] = ability.cooldown + 1;
+    };
+    const dice = ability.bonusDamageDice?.(hero.level);
 
-    if (ability.effect === 'heal') {
-      const healDiceCfg = ability.healDice!(hero.level);
-      const healing = rollDice(healDiceCfg.count, healDiceCfg.size) + hero.level;
-      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
-      this.log.messages.push(hero.heal(healing));
-      return true;
-    }
-
-    if (ability.effect === 'rage') {
-      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      this.rageRounds[hero.id] = ability.buff!.rounds;
-      this.furyLabel[hero.id] = ability.id;
-      if (ability.id === 'wild_shape') {
-        const healDiceCfg = ability.healDice!(hero.level);
-        const mended = rollDice(healDiceCfg.count, healDiceCfg.size);
-        this.log.messages.push(`🐾 ${hero.name} takes a Wild Shape — bone and sinew remade, claws for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
-        this.log.messages.push(hero.heal(mended));
-      } else {
-        this.log.messages.push(`😤 ${hero.name} enters a ${ability.name} — the fury burns for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
-      }
-      return true;
-    }
-
-    if (ability.effect === 'burst') {
-      const alive = this.monsters.filter(m => m.isAlive);
-      if (alive.length === 0) return false;
-      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      const dice = ability.bonusDamageDice!(hero.level);
-      const focus = alive.find(m => m.id === this.roundFocusMonsterId);
-      let targets = alive;
-      if (ability.burst?.targets) {
-        targets = [...(focus ? [focus] : []), ...alive.filter(m => m !== focus)].slice(0, ability.burst.targets);
-      }
-      this.log.messages.push(ability.id === 'chaos_surge'
-        ? `🌀 ${hero.name} lets loose a Chaos Surge — raw magic leaps between ${targets.map(t => t.template.name).join(' and ')}!`
-        : `✨ ${hero.name} channels divinity — a burst of radiance scours the field!`);
-      for (const target of targets) {
-        let dmg = rollDice(dice.count, dice.size);
-        if (ability.burst?.doubleAgainst?.includes(target.template.type)) dmg *= 2;
-        this.log.messages.push(`${target.template.name} takes ${dmg} damage (${Math.max(0, target.hp - dmg)}/${target.maxHp} HP)`);
-        this.log.messages.push(target.takeDamage(dmg));
-      }
-      return true;
-    }
-
-    if (ability.effect === 'recover') {
-      const lvl = hero.restoreSpellSlot();
-      if (lvl === null) return false;
-      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      this.log.messages.push(`📖 ${hero.name} uses ${ability.name} — a ${ordinal(lvl)}-level slot returns, the formula re-read from memory.`);
-      return true;
-    }
-
-    if (ability.effect === 'inspire') {
-      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      this.partyBlessRounds = Math.max(this.partyBlessRounds, ability.buff!.rounds);
-      this.blessSourceId = `${hero.id}:inspire`;
-      this.log.messages.push(`🎵 ${hero.name} uses ${ability.name} — a rousing verse, and the party's blades find their nerve (+1d4 on attack rolls, ${ability.buff!.rounds} rounds)!`);
-      return true;
-    }
-
-    if (ability.effect === 'attack') {
-      // Strike abilities: Hunter's Mark / Blood Mite lay a lasting mark;
-      // Flurry of Blows strikes twice; Arcane Jolt strikes once with a spark.
-      const target = this.monsters.find(m => m.isAlive && m.id === this.roundFocusMonsterId)
-        ?? this.monsters.find(m => m.isAlive);
-      if (!target) return false;
-      hero.abilityUses[ability.id] = (hero.abilityUses[ability.id] ?? 0) - 1;
-      if (MARK_ABILITIES.has(ability.id)) {
-        const diceCfg = ability.bonusDamageDice!(hero.level);
-        const isRite = ability.id === 'blood_mite';
-        const isHex = ability.id === 'eldritch_hex';
-        this.marks[hero.id] = {
-          monsterId: target.id,
-          rounds: isRite || isHex ? 5 : 3,
-          dice: diceCfg,
-        };
-        const label = isRite ? 'curses with a crimson rite' : isHex ? 'hexes' : 'marks';
-        this.log.messages.push(`🎯 ${hero.name} ${label} ${target.template.name} — every hit against it bites for +${diceCfg.count}d${diceCfg.size}!`);
+    switch (ability.effect) {
+      case 'heal': {
+        const h = ability.healDice!(hero.level);
+        pay();
+        this.log.messages.push(`\u26a1 ${hero.name} uses ${ability.name}!`);
+        this.log.messages.push(hero.heal(rollDice(h.count, h.size) + hero.level));
         return true;
       }
-      if (ability.id === 'flurry_of_blows') {
-        // Flurry of Blows: one extra weapon attack on top of the default strike.
-        this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
-        this.weaponAttack(hero, target);
-        if (target.isAlive) this.weaponAttack(hero, target);
+      case 'heal_ally': {
+        const h = ability.healDice!(hero.level);
+        const ally = this.party.alive.slice().sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0] ?? hero;
+        pay();
+        this.log.messages.push(`\u2728 ${hero.name} uses ${ability.name} on ${ally.name}!`);
+        this.log.messages.push(ally.heal(rollDice(h.count, h.size) + hero.level));
         return true;
       }
-      // Divine Smite: radiant dice on the blow, one more against the unholy.
-      if (ability.id === 'divine_smite') {
-        const dice = ability.bonusDamageDice!(hero.level);
-        const unholy = target.template.type === 'undead' || target.template.type === 'fiend';
-        this.log.messages.push(`✝ ${hero.name} smites ${target.template.name} — holy light pours down the blade${unholy ? ', and the unholy thing screams' : ''}!`);
-        this.weaponAttack(hero, target, { count: dice.count + (unholy ? 1 : 0), size: dice.size });
+      case 'heal_all': {
+        const h = ability.healDice!(hero.level);
+        pay();
+        this.log.messages.push(`\u2728 ${hero.name} uses ${ability.name} — the whole party is mended!`);
+        for (const m of this.party.alive) this.log.messages.push(m.heal(rollDice(h.count, h.size) + hero.level));
         return true;
       }
-      // Arcane Jolt and any other single-strike rider: one hit with bonus dice.
-      this.log.messages.push(`⚡ ${hero.name} uses ${ability.name}!`);
-      this.weaponAttack(hero, target, ability.bonusDamageDice?.(hero.level));
-      return true;
+      case 'rage': {
+        pay();
+        this.rageRounds[hero.id] = ability.buff!.rounds;
+        this.furyLabel[hero.id] = ability.id;
+        if (ability.id === 'wild_shape') {
+          const h = ability.healDice!(hero.level);
+          this.log.messages.push(`\ud83d\udc3e ${hero.name} takes a Wild Shape — bone and sinew remade, claws for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
+          this.log.messages.push(hero.heal(rollDice(h.count, h.size)));
+        } else {
+          this.log.messages.push(`\ud83d\ude24 ${hero.name} enters a ${ability.name} — the fury burns for ${ability.buff!.rounds} rounds! (+${ability.buff!.damageBonus} damage)`);
+        }
+        return true;
+      }
+      case 'inspire': {
+        pay();
+        this.partyBlessRounds = Math.max(this.partyBlessRounds, ability.buff!.rounds);
+        this.blessSourceId = `${hero.id}:inspire`;
+        this.log.messages.push(`\ud83c\udfb5 ${hero.name} uses ${ability.name} — the party's blades find their nerve (+1d4 on attack rolls, ${ability.buff!.rounds} rounds)!`);
+        return true;
+      }
+      case 'recover': {
+        const lvl = hero.restoreSpellSlot();
+        if (lvl === null) return false;
+        pay();
+        this.log.messages.push(`\ud83d\udcd6 ${hero.name} uses ${ability.name} — a ${ordinal(lvl)}-level slot returns.`);
+        return true;
+      }
+      case 'ward': {
+        pay();
+        hero.applyCondition(ability.ward!.condition, ability.ward!.rounds, ability.ward!.name, `${hero.id}:${ability.id}`);
+        this.log.messages.push(`\ud83d\udee1 ${hero.name} uses ${ability.name} — blows will have trouble finding them for ${ability.ward!.rounds} rounds.`);
+        return true;
+      }
+      case 'burst':
+      case 'drain': {
+        if (alive.length === 0) return false;
+        pay();
+        let targets = alive;
+        if (ability.burst?.targets) targets = [...(focus ? [focus] : []), ...alive.filter(m => m !== focus)].slice(0, ability.burst.targets);
+        const names = targets.map(t => t.template.name).join(' and ');
+        this.log.messages.push(ability.id === 'chaos_surge'
+          ? `\ud83c\udf00 ${hero.name} lets loose a Chaos Surge — raw magic leaps between ${names}!`
+          : ability.id === 'channel_divinity'
+            ? `\u2728 ${hero.name} channels divinity — a burst of radiance scours the field!`
+            : `\u26a1 ${hero.name} uses ${ability.name} — ${names}!`);
+        let dealt = 0;
+        for (const t of targets) {
+          let dmg = rollDice(dice!.count, dice!.size);
+          if (ability.burst?.doubleAgainst?.includes(t.template.type)) dmg *= 2;
+          dealt += Math.min(dmg, Math.max(0, t.hp));
+          this.log.messages.push(`${t.template.name} takes ${dmg} damage (${Math.max(0, t.hp - dmg)}/${t.maxHp} HP)`);
+          this.log.messages.push(t.takeDamage(dmg));
+        }
+        if (ability.effect === 'drain' && dealt > 0) {
+          const mended = ability.burst?.targets === 1 ? dealt : Math.ceil(dealt / 2);
+          this.log.messages.push(hero.heal(mended));
+        }
+        return true;
+      }
+      case 'attack': {
+        if (!target) return false;
+        pay();
+        if (MARK_ABILITIES.has(ability.id)) {
+          const isRite = ability.id === 'blood_mite';
+          const isHex = ability.id === 'eldritch_hex';
+          this.marks[hero.id] = { monsterId: target.id, rounds: isRite || isHex ? 5 : 3, dice: dice! };
+          const label = isRite ? 'curses with a crimson rite' : isHex ? 'hexes' : 'marks';
+          this.log.messages.push(`\ud83c\udfaf ${hero.name} ${label} ${target.template.name} — every hit against it bites for +${dice!.count}d${dice!.size}!`);
+          return true;
+        }
+        if (ability.id === 'divine_smite') {
+          const unholy = target.template.type === 'undead' || target.template.type === 'fiend';
+          this.log.messages.push(`\u271d ${hero.name} smites ${target.template.name} — holy light pours down the blade${unholy ? ', and the unholy thing screams' : ''}!`);
+          this.weaponAttack(hero, target, { count: dice!.count + (unholy ? 1 : 0), size: dice!.size });
+          return true;
+        }
+        this.log.messages.push(`\u26a1 ${hero.name} uses ${ability.name}!`);
+        const strikes = ability.strikes ?? 1;
+        for (let n = 0; n < strikes; n++) {
+          if (!target.isAlive) break;
+          this.weaponAttack(hero, target, n === 0 ? dice : undefined);
+        }
+        return true;
+      }
     }
-
     return false;
   }
 

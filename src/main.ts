@@ -1731,7 +1731,7 @@ class Game {
         this.hud.addCombatMessage('That item is gone — pick another command.', '#c88');
         const decider = this.combatEngine.decisionActor;
         if (decider) {
-          this.hud.battleView.showCommandMenu(decider, this.combatEngine.getDecisionSpells(decider), this.buildMenuConsumables(), this.combatEngine.getDecisionAbility(decider));
+          this.hud.battleView.showCommandMenu(decider, this.combatEngine.getDecisionSpells(decider), this.buildMenuConsumables(), this.combatEngine.getDecisionAbilities(decider));
         }
       }
       return;
@@ -1830,7 +1830,7 @@ class Game {
           decider,
           this.combatEngine.getDecisionSpells(decider),
           this.buildMenuConsumables(),
-          this.combatEngine.getDecisionAbility(decider),
+          this.combatEngine.getDecisionAbilities(decider),
         );
       }
 
