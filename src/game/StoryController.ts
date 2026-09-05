@@ -47,7 +47,6 @@ export interface StoryHost {
 
 export class StoryController {
   private pendingCard: { kicker: string; title: string; body: string } | null = null;
-  private lastChip = '';
 
   constructor(private readonly game: StoryHost) {}
 
@@ -78,6 +77,8 @@ export class StoryController {
 
   /** Called once the loop is running, so a card can pause it. */
   afterStart(): void {
+    // The chip should not wait for the first step, which a paused or hidden game never takes.
+    this.refreshChip();
     if (!this.pendingCard) return;
     const card = this.pendingCard;
     this.pendingCard = null;
@@ -203,13 +204,23 @@ export class StoryController {
 
   // ── Presentation ──
 
-  /** Keep the top-strip chip current. Cheap: only touches the DOM on change. */
+  /** Keep the top-strip chip current. The HUD dedupes, so this is cheap to call every step. */
   refreshChip(): void {
     const s = this.game.story;
     const text = s ? storyChip(s, this.partyLevel(), this.game.activeQuestId !== null && isStoryQuest({ id: this.game.activeQuestId })) : '';
-    if (text === this.lastChip) return;
-    this.lastChip = text;
     this.game.hud.setStoryChip(text || null);
+  }
+
+  /** What the Chronicle screen shows. */
+  chronicle(): { acts: string[]; current: string | null; flags: string[]; shards: number; complete: boolean } {
+    const s = this.game.story;
+    if (!s) return { acts: [], current: null, flags: [], shards: 0, complete: false };
+    const acts = s.journal.map(j => j.split('|')[1] ?? j);
+    const act = s.act;
+    const current = act
+      ? `${act.kind === 'epilogue' ? act.title : `Act ${roman(act.index)}, ${act.title}`}: ${act.bossName} holds ${act.shard} on floor ${act.targetFloor} of ${act.entranceName}. ${s.stage === 'choice' ? 'The party weighs a choice.' : readiness(act, this.partyLevel()).ready ? 'The party is ready.' : `The party means to reach level ${act.recommendedLevel} first.`}`
+      : null;
+    return { acts, current, flags: s.flags, shards: Math.min(6, s.complete ? 6 : s.actsDone), complete: s.complete };
   }
 
   journalLines(): string[] {

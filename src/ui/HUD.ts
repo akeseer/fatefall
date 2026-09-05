@@ -37,7 +37,14 @@ export class HUD {
   public onDMCommand?: (text: string) => void;
   public onSave?: () => void;
   /** Where the tale stands, in the top strip. Null hides it. */
+  private storyChipText: string | null = null;
+
+  /** What the Chronicle shows; the game supplies it. */
+  public chronicleProvider: () => { acts: string[]; current: string | null; flags: string[]; shards: number; complete: boolean } = () => ({ acts: [], current: null, flags: [], shards: 0, complete: false });
+
   setStoryChip(text: string | null): void {
+    if (text === this.storyChipText) return;
+    this.storyChipText = text;
     const el = this.overlay.querySelector('#story-chip') as HTMLElement | null;
     if (!el) return;
     if (!text) {
@@ -127,6 +134,38 @@ export class HUD {
     }
   }
 
+  /** The Chronicle: the tale so far, the act in hand, and what the party is known for. */
+  showChronicle(): void {
+    this.overlay.querySelector('#chronicle')?.remove();
+    const c = this.chronicleProvider();
+    const screen = document.createElement('div');
+    screen.id = 'chronicle';
+    screen.style.cssText = `position:absolute; inset:0; z-index:104; background:rgba(5,4,5,0.7); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;
+    const shardRow = Array.from({ length: 6 }, (_, i) => `<span style="display:inline-block; width:14px; height:14px; margin:0 3px; transform:rotate(45deg); border:1px solid ${T.goldDim}; background:${i < c.shards ? T.gold : 'transparent'}; box-shadow:${i < c.shards ? '0 0 8px rgba(232,197,106,0.6)' : 'none'};"></span>`).join('');
+    const acts = c.acts.length
+      ? c.acts.map(a => `<li style="margin:0 0 8px; line-height:1.5;">${a}</li>`).join('')
+      : `<li style="color:${T.faint}; font-style:italic;">No act has ended yet.</li>`;
+    screen.innerHTML = `
+      <div style="width:min(640px, 92%); max-height:86%; overflow:auto; background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; box-shadow:0 0 0 1px ${T.rule} inset, 0 24px 60px rgba(0,0,0,0.75); padding:24px 30px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+          <div class="dp-title" style="font-size:22px; color:${T.gold}; letter-spacing:0.12em;">THE CHRONICLE</div>
+          <div title="Shards of the die held">${shardRow}</div>
+        </div>
+        <div style="font-size:11px; color:${T.muted}; font-style:italic; margin-top:4px;">${c.complete ? 'The tale of the shattered die is told. What follows is the party\u2019s own.' : 'The tale of the shattered die, so far.'}</div>
+        <div style="border-top:1px solid ${T.rule}; margin:14px 0 10px;"></div>
+        <ol style="margin:0; padding-left:20px; font-size:13px;">${acts}</ol>
+        ${c.current ? `<div style="margin-top:14px; padding:10px 12px; border:1px solid ${T.goldDim}; border-radius:${T.r2}; background:${T.row}; font-size:13px; line-height:1.5;"><span style="color:${T.gold}; font-family:${T.titleFont}; letter-spacing:0.08em; font-size:11px;">NOW</span><br>${c.current}</div>` : ''}
+        ${c.flags.length ? `<div style="margin-top:12px; font-size:11px; color:${T.muted};">The party is known for: ${c.flags.map(f => `<span style="color:${T.text}; border:1px solid ${T.line}; border-radius:${T.r1}; padding:1px 6px; margin-right:4px;">${f.replace(/_/g, ' ')}</span>`).join('')}</div>` : ''}
+        <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+          <button id="chronicle-close" class="dp-btn dp-title" style="padding:7px 20px; font-size:12px; letter-spacing:1px; border-radius:${T.r2};">Close</button>
+        </div>
+      </div>`;
+    this.overlay.appendChild(screen);
+    const close = () => { sfx.click(); screen.remove(); };
+    screen.querySelector('#chronicle-close')!.addEventListener('click', close);
+    screen.addEventListener('click', e => { if (e.target === screen) close(); });
+  }
+
   /** The run's standing flags, shown beside the title: Manual and Hardcore. */
   setRunFlags(mode: 'auto' | 'manual', hardcore: boolean): void {
     let strip = this.overlay.querySelector('#run-flags') as HTMLElement | null;
@@ -213,6 +252,7 @@ export class HUD {
   closeOverlays() {
     this.overlay.querySelector('#run-flags')?.remove();
     this.overlay.querySelector('#story-card')?.remove();
+    this.overlay.querySelector('#chronicle')?.remove();
     this.setStoryChip(null);
     this.compendium.close();
     this.townPanel.hide();
@@ -393,7 +433,7 @@ export class HUD {
           Fatefall
         </div>
         <div id="quest-bar" class="dp-chip dp-chip-trunc" style="display:none; flex:1 1 auto; min-width:0; box-shadow:0 2px 10px rgba(0,0,0,0.5); overflow:hidden; text-overflow:ellipsis;"></div>
-        <div id="story-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:${T.goldDim}; color:${T.gold};"></div>
+        <div id="story-chip" class="dp-chip dp-chip-trunc" title="Open the Chronicle" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:${T.goldDim}; color:${T.gold}; pointer-events:auto; cursor:pointer;"></div>
         <div id="weather-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;"></div>
         <div id="error-banner" role="alert" style="display:none; position:absolute; top:34px; left:0; right:0; margin:0 auto; max-width:720px; background:rgba(56,14,12,0.96); border:1px solid #a4574c; border-radius:${T.r2}; padding:8px 12px; font-size:12px; color:#f4c6c6; box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; white-space:normal;"></div>
         <div id="delve-mood-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:#5a4468; color:#e0c8f0; box-shadow:0 0 10px rgba(150,80,200,0.18);"></div>
@@ -505,6 +545,9 @@ export class HUD {
     }
     showRenderer();
     audioBtn.addEventListener('click', showRenderer);
+
+    // The tale's chip opens the Chronicle.
+    (this.overlay.querySelector('#story-chip') as HTMLElement).addEventListener('click', () => { sfx.click(); this.showChronicle(); });
 
     // Update line: filled in when the drawer opens, since the shell's result is
     // attached after the HUD is built.

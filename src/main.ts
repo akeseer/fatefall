@@ -287,7 +287,7 @@ class Game {
 
   /** The main quest: where the tale of the shattered die stands for this run. */
   public story: StoryState | null = null;
-  private readonly storyController = new StoryController(this);
+  readonly storyController = new StoryController(this);
 
   /** Where the fight is, for the battle window's backdrop. */
   private battleScene(): BattleScene {
@@ -5773,6 +5773,7 @@ function startGame() {
   const saves = listSaves();
   game.hud.onStartChoice = (choice, slot) => game.handleStartChoice(choice, slot);
   game.hud.onMainMenu = () => game.returnToMainMenu();
+  game.hud.chronicleProvider = () => game.storyController.chronicle();
   game.hud.onRendererChange = (id) => {
     void game.useBackend(id).catch(err => {
       console.warn('[render] backend switch failed, staying put.', err);
