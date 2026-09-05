@@ -70,6 +70,22 @@ local preview of a build opened with `?debug`.
   sound for every blow and spell, and the weather itself. The **Sound** button opens
   a drawer with master, effects and music levels; `M` mutes.
 
+## The story
+
+Every run tells the tale of the shattered die. The first act is always the same:
+an old woman in a tavern, the First Shard, and the Ashen Warden two floors down
+in the nearest crypt. After that, each act is assembled from the world: an
+antagonist and its lair, a motive, a twist when the boss falls, and a hard choice
+whose consequences shape the acts that follow. Six shards, then the Fatebinder,
+then the ending the party earned; and after the tale is told, the acts go on,
+harder, for as long as the party lasts.
+
+The main quest is a posting like any other, so the party pursues it the way it
+pursues everything. Each act names a level the party should reach first. Below
+it they say so, take side work from the boards, and grow; at it, the act's
+posting is the first one they take. The **Tale** chip under the title shows where
+things stand, and `journal` reads the story back.
+
 ## Talking to the party
 
 You do not have to memorise commands. "Could everyone please push northward",

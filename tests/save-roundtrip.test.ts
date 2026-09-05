@@ -13,6 +13,7 @@ import { grantLuckDie } from '../src/rules/LuckDie';
 import type { HUD } from '../src/ui/HUD';
 import type { Room } from '../src/world/DungeonGenerator';
 import { Direction } from '../src/engine/types';
+import { beginStory } from '../src/story/Story';
 
 /**
  * A round trip through SaveSerializer: a run is captured to a `SaveData`,
@@ -74,6 +75,7 @@ class TestHost implements SaveHost {
   dmDirection: SaveHost['dmDirection'] = undefined;
   runMode: SaveHost['runMode'] = 'auto';
   hardcore = false;
+  story: SaveHost['story'] = null;
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {
@@ -188,6 +190,7 @@ function populatedHost(): TestHost {
   host.dmDirection = Direction.Left;
   host.runMode = 'manual';
   host.hardcore = true;
+  host.story = beginStory(77);
   host.camera.x = 128;
   host.camera.y = 64;
   host.camera.targetX = 130;
@@ -291,6 +294,7 @@ describe('SaveSerializer round trip', () => {
     expect(target.dmDirection).toBe(Direction.Left);
     expect(target.runMode).toBe('manual');
     expect(target.hardcore).toBe(true);
+    expect(target.story?.seed).toBe(77);
 
     // Camera and speed
     expect(target.camera.x).toBe(128);

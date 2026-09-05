@@ -1,0 +1,257 @@
+/**
+ * The story, in the game: the slice of `Game` that turns the pure planner in
+ * `story/Story.ts` into postings, bosses, cards and choices.
+ *
+ * The host is asked only for what the story touches: the world to plan lairs
+ * in, the quest list to post to, the party to judge readiness by, the HUD to
+ * speak through, and a few effects a choice can have. Everything else about
+ * quests keeps working as it did, because the main quest is a quest.
+ */
+
+import type { Overworld, OverworldTown } from '../world/Overworld';
+import type { Quest } from '../quests/Quests';
+import type { Party } from '../entities/Party';
+import type { HUD } from '../ui/HUD';
+import type { MonsterTemplate } from '../entities/Monster';
+import { MONSTER_TEMPLATES, isUnseeableMonster } from '../entities/Monster';
+import type { ChoiceOption } from '../story/StoryContent';
+import {
+  applyChoice, autoPick, beginStory, bossOverride, choiceForAct, completeAct, endingText, isStoryQuest,
+  journalLines, notReadyLine, planNextAct, questForAct, readiness, readyLine, roman, storyChip,
+  type StoryState, type StoryWorld,
+} from '../story/Story';
+import { sfx } from '../audio/Sfx';
+
+/** How long an unattended party mulls a choice before its temperament decides. */
+const AUTO_CHOICE_MS = 25_000;
+
+export interface StoryHost {
+  story: StoryState | null;
+  overworld: Overworld | null;
+  quests: Quest[];
+  party: Party;
+  hud: HUD;
+  activeQuestId: string | null;
+  runMode: 'auto' | 'manual';
+  readonly isPaused: boolean;
+  expeditionJournal: string[];
+  dungeonEntranceId: string | null;
+  acceptQuest(q: Quest): void;
+  addGold(amount: number): void;
+  spendGold(amount: number): boolean;
+  grantXp(amountFor: (member: { level: number }) => number): void;
+  adjustTownReputation(townId: string, delta: number): void;
+  setPaused(paused: boolean): void;
+  inTown: boolean;
+}
+
+export class StoryController {
+  private pendingCard: { kicker: string; title: string; body: string } | null = null;
+  private lastChip = '';
+
+  constructor(private readonly game: StoryHost) {}
+
+  // ── Beginning ──
+
+  /** A fresh run: seed the story and plan the opening. The card waits for the loop to start. */
+  beginNewRun(): void {
+    const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
+    this.game.story = beginStory(seed);
+    this.planAndPost();
+    const act = this.game.story.act!;
+    this.pendingCard = { kicker: 'Act I', title: act.title, body: act.intro };
+  }
+
+  /** A restored run from before the story existed: plan quietly, with no card. */
+  ensureStory(): void {
+    if (this.game.story) {
+      // A save from mid-act keeps its posting; make sure it is on the board.
+      const act = this.game.story.act;
+      if (act && this.game.story.stage === 'seek' && !this.game.quests.some(q => q.id === act.questId)) {
+        this.game.quests.push(questForAct(act));
+      }
+      return;
+    }
+    this.game.story = beginStory(hashSeedNow());
+    this.planAndPost();
+  }
+
+  /** Called once the loop is running, so a card can pause it. */
+  afterStart(): void {
+    if (!this.pendingCard) return;
+    const card = this.pendingCard;
+    this.pendingCard = null;
+    this.showCard(card.kicker, card.title, card.body);
+  }
+
+  // ── The party's mind ──
+
+  /** The board posting the party would take next: the story when ready, otherwise side work. */
+  nextPosting(): Quest | undefined {
+    const open = this.game.quests.filter(q => !q.accepted && !q.turnedIn);
+    const story = open.find(isStoryQuest);
+    if (story && this.game.story?.act && readiness(this.game.story.act, this.partyLevel()).ready) return story;
+    return open.find(q => !isStoryQuest(q));
+  }
+
+  /** In town: the story either calls the party on or tells them to grow. */
+  onTownArrival(town: OverworldTown): void {
+    const s = this.game.story;
+    if (!s || !s.act || s.stage !== 'seek') return;
+    const act = s.act;
+    const level = this.partyLevel();
+    const r = readiness(act, level);
+    const posting = this.game.quests.find(q => q.id === act.questId);
+    if (posting && !posting.accepted && !posting.turnedIn && r.ready && !this.game.activeQuestId) {
+      this.game.hud.addCombatMessage(`⚔ ${readyLine(act)}`, '#e8c56a');
+      this.game.acceptQuest(posting);
+      return;
+    }
+    if (!r.ready && s.hintedAct !== act.index) {
+      s.hintedAct = act.index;
+      this.game.hud.addCombatMessage(`📖 ${notReadyLine(act, level)}`, '#c9b8ff');
+    }
+    // Taverns talk about the act wherever the party goes.
+    if (Math.random() < 0.35) {
+      this.game.hud.addCombatMessage(`Someone at the bar says ${act.rumor}. (${town.name} has heard it too.)`, '#a89');
+    }
+  }
+
+  /** The boss the story puts on a floor, if this is the floor. */
+  bossOverride(floor: number): { template: MonsterTemplate; name: string } | null {
+    const s = this.game.story;
+    if (!s) return null;
+    return bossOverride(s, this.game.dungeonEntranceId, floor, MONSTER_TEMPLATES);
+  }
+
+  /** A quest was turned in. If it was the act's, the act ends: the fall, the twist, the choice. */
+  onQuestTurnedIn(q: Quest): void {
+    const s = this.game.story;
+    if (!s || !s.act || q.id !== s.act.questId) return;
+    const act = s.act;
+    s.stage = 'choice';
+    sfx.levelUp();
+    this.game.expeditionJournal.push(`Took ${act.shard} from ${act.bossName} in ${act.entranceName}`);
+    const kicker = act.kind === 'epilogue' ? act.title : `Act ${roman(act.index)} ends`;
+    this.showCard(kicker, act.kind === 'finale' ? 'The Die, Whole' : `${act.shard.replace(/^the /, 'The ')}`, act.fall, () => this.presentChoice());
+  }
+
+  private presentChoice(): void {
+    const s = this.game.story;
+    if (!s || !s.act) return;
+    const act = s.act;
+    const choice = choiceForAct(act);
+    if (!choice) {
+      this.finishAct(null);
+      return;
+    }
+    const decide = (o: ChoiceOption) => this.finishAct(o);
+    if (this.game.runMode === 'manual') {
+      this.game.hud.showStoryChoice(choice.prompt, choice.options, decide);
+    } else {
+      // Auto: the party is shown thinking, and thinks for itself if nobody steps in.
+      this.game.hud.showStoryChoice(choice.prompt, choice.options, decide, {
+        seconds: AUTO_CHOICE_MS / 1000,
+        fallback: () => autoPick(choice.options, this.temperament()),
+      });
+    }
+  }
+
+  private finishAct(option: ChoiceOption | null): void {
+    const s = this.game.story;
+    if (!s || !s.act) return;
+    const act = s.act;
+    const fx = applyChoice(s, option);
+    if (option) {
+      this.game.hud.addCombatMessage(`⚖ ${option.text}`, '#e8c56a');
+      this.game.expeditionJournal.push(`Chose to ${option.label.toLowerCase()} after ${act.title}`);
+      if (fx.gold > 0) this.game.addGold(fx.gold);
+      else if (fx.gold < 0) this.game.spendGold(-fx.gold);
+      if (fx.xp > 0) this.game.grantXp(() => fx.xp);
+      if (fx.reputation !== 0) this.game.adjustTownReputation(act.giverTownId, fx.reputation);
+    }
+    completeAct(s);
+
+    if (act.kind === 'finale') {
+      const ending = endingText(s);
+      this.game.expeditionJournal.push('The tale of the shattered die was told to its end');
+      this.showCard('The tale is told', 'Fatefall', `${ending}\n\nThe party goes on. The acts that follow are theirs alone, and harder.`, () => this.planAndPost(true));
+      return;
+    }
+    this.planAndPost(true);
+  }
+
+  /** Plan the next act and put it on the board; announce it if asked. */
+  private planAndPost(announce = false): void {
+    const s = this.game.story;
+    const world = this.world();
+    if (!s || !world) return;
+    const act = planNextAct(s, world);
+    s.act = act;
+    s.stage = 'seek';
+    // Retire any older story posting still lying around.
+    for (let i = this.game.quests.length - 1; i >= 0; i--) {
+      const q = this.game.quests[i];
+      if (isStoryQuest(q) && q.id !== act.questId && !q.turnedIn) this.game.quests.splice(i, 1);
+    }
+    if (!this.game.quests.some(q => q.id === act.questId)) this.game.quests.push(questForAct(act));
+    if (announce) {
+      const kicker = act.kind === 'epilogue' ? 'Epilogue' : act.kind === 'finale' ? 'The last act' : `Act ${roman(act.index)}`;
+      this.showCard(kicker, act.title, act.intro);
+    }
+  }
+
+  // ── Presentation ──
+
+  /** Keep the top-strip chip current. Cheap: only touches the DOM on change. */
+  refreshChip(): void {
+    const s = this.game.story;
+    const text = s ? storyChip(s, this.partyLevel(), this.game.activeQuestId !== null && isStoryQuest({ id: this.game.activeQuestId })) : '';
+    if (text === this.lastChip) return;
+    this.lastChip = text;
+    this.game.hud.setStoryChip(text || null);
+  }
+
+  journalLines(): string[] {
+    return this.game.story ? journalLines(this.game.story) : [];
+  }
+
+  private showCard(kicker: string, title: string, body: string, then?: () => void): void {
+    const wasPaused = this.game.isPaused;
+    this.game.setPaused(true);
+    this.game.hud.showStoryCard({ kicker, title, body }, () => {
+      if (!wasPaused) this.game.setPaused(false);
+      then?.();
+    });
+  }
+
+  // ── Readings of the party ──
+
+  private partyLevel(): number {
+    const alive = this.game.party.members.filter(m => !m.isDead);
+    if (alive.length === 0) return 1;
+    return Math.round(alive.reduce((s, m) => s + m.level, 0) / alive.length);
+  }
+
+  private temperament(): { aggression: number; greed: number; loyalty: number } {
+    const alive = this.game.party.members.filter(m => !m.isDead);
+    const avg = (k: 'aggression' | 'greed' | 'loyalty') => alive.length ? alive.reduce((s, m) => s + (m.personality?.[k] ?? 5), 0) / alive.length : 5;
+    return { aggression: avg('aggression'), greed: avg('greed'), loyalty: avg('loyalty') };
+  }
+
+  private world(): StoryWorld | null {
+    const ow = this.game.overworld;
+    if (!ow) return null;
+    return {
+      entrances: ow.entrances.map(e => ({ id: e.id, name: e.name, tile: e.tile, depth: e.depth })),
+      towns: ow.towns.map(t => ({ id: t.id, name: t.name, tile: t.tile })),
+      spawnTownId: ow.spawnTownId,
+      templates: MONSTER_TEMPLATES,
+      unseeable: isUnseeableMonster,
+    };
+  }
+}
+
+function hashSeedNow(): number {
+  return (Date.now() ^ 0x5bd1e995) >>> 0;
+}

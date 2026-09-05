@@ -45,6 +45,15 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   syntax (dice, names, save slots) and otherwise takes the model when it clears its
   confidence bar. Adding an intent means updating `INTENTS` (append only — the
   weights file records the order) and retraining.
+- **`src/story/`** — the main quest. `Story.ts` is a pure, seeded planner: the opening
+  act is fixed content from `StoryContent.ts`, later acts are assembled (antagonist, lair
+  from real entrances, motive, twist, choice) from the run seed plus the flags earlier
+  choices set, so a saved story replans identically. Each act is issued as an ordinary
+  `slay_boss` Quest with a `story_` id, so the quest machinery does the travelling,
+  descending and turning in; `game/StoryController.ts` decides readiness (recommended
+  level per act, side work below it), swaps the act's boss onto the target floor in
+  `populateDungeonFloor`, and runs the cards and choices through the HUD. Story state
+  rides in the save (`story`, v13). Never call `Math.random` in `Story.ts`.
 - **`src/ai/AIDirector.ts`** — the party's tactical planner. Returns an `AIAction`
   union that `Game.aiTick` dispatches on. Combat decisions live in `CombatEngine`.
 - **`src/combat/CombatEngine.ts`** — DOM-free. `step()` returns a `CombatLog` whose

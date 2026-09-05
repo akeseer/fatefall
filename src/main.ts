@@ -79,6 +79,8 @@ import { sfx } from './audio/Sfx';
 import { getAudio } from './audio/Audio';
 import { getMusic, type MusicMood } from './audio/Music';
 import { getAmbience, NIGHT_BELOW } from './audio/Ambience';
+import { StoryController } from './game/StoryController';
+import { STORY_BOSS_HP_SCALE, type StoryState } from './story/Story';
 
 // ── Context-aware compendium content ────────────────
 
@@ -281,6 +283,23 @@ class Game {
 
   /** Hardcore: a dead adventurer is gone for good; a dead party ends the run. */
   public hardcore = false;
+
+  /** The main quest: where the tale of the shattered die stands for this run. */
+  public story: StoryState | null = null;
+  private readonly storyController = new StoryController(this);
+
+  /** Pause or resume from outside the toggle, keeping the button honest. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.hud.setPausedIndicator(paused);
+  }
+
+  /** A town's regard for the party shifts: gratitude or fear. */
+  adjustTownReputation(townId: string, delta: number): void {
+    const tl = this.townLife?.byTown[townId];
+    if (!tl) return;
+    tl.townReputation = Math.max(-100, Math.min(100, tl.townReputation + delta));
+  }
 
   private paused: boolean = false;
   private saveTimer: number = 0;
@@ -589,14 +608,20 @@ class Game {
       const themedBosses = themeId && THEME_MONSTERS[themeId]
         ? bossTemplates.filter(m => THEME_MONSTERS[themeId].includes(m.id))
         : [];
-      const bossTemplate = themedBosses.length > 0
+      let bossTemplate = themedBosses.length > 0
         ? themedBosses[Math.floor(Math.random() * themedBosses.length)]
         : bossTemplates.length > 0
           ? bossTemplates[Math.floor(Math.random() * bossTemplates.length)]
           : getRandomMonster(bossCr, themeId);
+      // The story's antagonist takes the last room on the act's floor.
+      const storyBoss = this.storyController.bossOverride(this.dungeonLevel);
+      if (storyBoss) {
+        bossTemplate = storyBoss.template;
+        this.hud.addCombatMessage(`\u2620 ${storyBoss.name} is here. The air knows it.`, '#e0705f');
+      }
 
       const boss = this.spawnMonster(bossTemplate, { x: bossRoom.cx, y: bossRoom.cy });
-      boss.maxHp = Math.floor(boss.maxHp * 1.5);
+      boss.maxHp = Math.floor(boss.maxHp * (storyBoss ? 1.5 * STORY_BOSS_HP_SCALE : 1.5));
       boss.hp = boss.maxHp;
       boss.template = { ...boss.template, name: `💀 ${boss.template.name} (Boss)`, xp: boss.template.xp * 3 };
 
@@ -935,6 +960,8 @@ class Game {
     this.running = true;
     this.runStarted = true;
     this.applyRunMode();
+    this.storyController.ensureStory();
+    this.storyController.afterStart();
     // Both are armed here, not just the frame request. A window that is
     // visible but never painted (occluded, or a host that withholds frames)
     // gets no first animation frame at all, and the watchdog cannot rescue a
@@ -1039,6 +1066,7 @@ class Game {
   private update(dt: number) {
     if (this.errorHalt) return;
     this.music.play(this.musicMood());
+    this.storyController.refreshChip();
     this.ambience.update({
       weather: this.weather?.type ?? null,
       underground: this.mode === GameMode.Dungeon,
@@ -1129,7 +1157,7 @@ class Game {
       // they eventually accept the first quest and head out on their own.
       this.townWaitTimer += dt;
       if (this.townWaitTimer > 45000 && this.activeQuestId === null) {
-        const available = this.quests.find(q => !q.accepted && !q.turnedIn);
+        const available = this.storyController.nextPosting();
         if (available) {
           this.hud.addCombatMessage('With no orders, the party takes the first posting off the quest board...', '#9a9');
           this.acceptQuest(available);
@@ -3423,6 +3451,7 @@ class Game {
     this.combatEngine.blessSourceId = '';
     this.generateOverworld();
     this.combatEngine.monsters = this.monsters;
+    this.storyController.beginNewRun();
     this.hud.addCombatMessage('A fresh run begins — the old tale is erased.', '#ffd700');
   }
 
@@ -4681,6 +4710,7 @@ class Game {
 
     // The party autonomously handles town business after a brief pause.
     setTimeout(() => this.autoTownActions(), 3500);
+    this.storyController.onTownArrival(town);
     this.manualHold(`the gates of ${town.name}`);
   }
 
@@ -5035,7 +5065,7 @@ class Game {
 
     // 5. Accept a quest if none is active.
     if (!this.activeQuestId) {
-      const available = this.quests.find(q => !q.accepted && !q.turnedIn);
+      const available = this.storyController.nextPosting();
       if (available) {
         this.hud.addCombatMessage('The party reviews the quest board and picks a posting...', '#9a9');
         this.acceptQuest(available);
@@ -5103,6 +5133,8 @@ class Game {
     if (q.turnedIn) return;
     q.turnedIn = true;
     if (this.activeQuestId === q.id) this.activeQuestId = null;
+    // The act ends after the reward, so the card comes over a settled ledger.
+    queueMicrotask(() => this.storyController.onQuestTurnedIn(q));
     this.hud.addCombatMessage(`💰 ${q.title} — complete! ${q.rewardGold} gp and ${q.rewardXp} XP per member.`, '#ffd700');
     this.addGold(q.rewardGold);
     for (const m of this.party.members) {
@@ -5510,7 +5542,7 @@ class Game {
     else if (has(/combat|victory|defeat|ambush|slay|kill|cleared/)) include = mood(['ambush','slay','defeat','victory','cleared','battle']);
     else if (has(/spell|scroll|magic|arcane|learned/)) include = mood(['spell','scroll','magic','arcane','learned']);
 
-    const all = this.expeditionJournal.filter(include);
+    const all = [...this.storyController.journalLines().map(l => `Tale: ${l}`), ...this.expeditionJournal].filter(include);
     // Whether a theme actually narrowed the listing. This used to be written as
     // `include !== (() => true)`, comparing a function against a freshly made
     // arrow, which is never equal — so every listing claimed to be filtered.

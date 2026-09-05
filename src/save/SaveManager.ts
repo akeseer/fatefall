@@ -1,3 +1,4 @@
+import type { StoryState } from '../story/Story';
 /**
  * Save / load — persists runs between sessions in up to three named slots.
  *
@@ -27,7 +28,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 
 export interface SavedCharacter {
   id: string;
@@ -130,6 +131,8 @@ export interface SaveData {
   runMode?: 'auto' | 'manual';
   /** Hardcore: a dead adventurer is gone for good, and a dead party ends the run. v12+. */
   hardcore?: boolean;
+  /** The main quest: seed, act, flags and journal. Absent on older runs, which begin the tale on load. v13+. */
+  story?: StoryState | null;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -309,7 +312,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 10) current = migrateV10toV11(current);
   if (!current) return null;
   if (current.version === 11) current = migrateV11toV12(current);
+  if (!current) return null;
+  if (current.version === 12) current = migrateV12toV13(current);
   return current;
+}
+
+/** v12 → v13: the story. An older run has none, and begins the tale where it stands. */
+function migrateV12toV13(data: SaveData): SaveData | null {
+  return { ...data, version: 13 };
 }
 
 /** v11 → v12: the run mode and hardcore flag. Older runs were auto and forgiving, which is what the absent fields mean. */

@@ -36,6 +36,97 @@ export class HUD {
   public onCompendiumAction?: (entry: CompendiumEntry, mode: 'encounter' | 'legend') => void;
   public onDMCommand?: (text: string) => void;
   public onSave?: () => void;
+  /** Where the tale stands, in the top strip. Null hides it. */
+  setStoryChip(text: string | null): void {
+    const el = this.overlay.querySelector('#story-chip') as HTMLElement | null;
+    if (!el) return;
+    if (!text) {
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    el.style.display = 'inline-block';
+    el.textContent = `\ud83d\udcd6 ${text}`;
+    el.title = text;
+  }
+
+  /**
+   * A story card: a kicker, a title and a passage, over everything, until the
+   * player reads it and clicks. The game pauses behind it.
+   */
+  showStoryCard(card: { kicker: string; title: string; body: string }, onClose: () => void): void {
+    this.overlay.querySelector('#story-card')?.remove();
+    const screen = document.createElement('div');
+    screen.id = 'story-card';
+    screen.style.cssText = `position:absolute; inset:0; z-index:105; background:rgba(5,4,5,0.78); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;
+    const paragraphs = card.body.split(/\n\n+/).map(p => `<p style="margin:0 0 12px; line-height:1.6; font-size:14px;">${p}</p>`).join('');
+    screen.innerHTML = `
+      <div style="width:min(620px, 92%); background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; box-shadow:0 0 0 1px ${T.rule} inset, 0 24px 60px rgba(0,0,0,0.75); padding:26px 30px 22px; text-align:left;">
+        <div style="font-size:10.5px; letter-spacing:0.22em; color:${T.goldDim}; text-transform:uppercase;">${card.kicker}</div>
+        <div class="dp-title" style="font-size:24px; color:${T.gold}; margin:6px 0 14px; letter-spacing:0.06em;">${card.title}</div>
+        <div style="border-top:1px solid ${T.rule}; padding-top:14px;">${paragraphs}</div>
+        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+          <button id="story-card-ok" class="dp-btn-gold dp-title" style="padding:8px 22px; font-size:13px; letter-spacing:1px; border-radius:${T.r2};">Continue</button>
+        </div>
+      </div>`;
+    this.overlay.appendChild(screen);
+    screen.querySelector('#story-card-ok')!.addEventListener('click', () => {
+      sfx.click();
+      screen.remove();
+      onClose();
+    });
+  }
+
+  /**
+   * A choice card: the prompt and two or three roads. In Auto the party is
+   * given a countdown and decides for itself if nobody steps in.
+   */
+  showStoryChoice<O extends { id: string; label: string; text: string }>(
+    prompt: string,
+    options: O[],
+    onPick: (option: O) => void,
+    auto?: { seconds: number; fallback: () => O },
+  ): void {
+    this.overlay.querySelector('#story-card')?.remove();
+    const screen = document.createElement('div');
+    screen.id = 'story-card';
+    screen.style.cssText = `position:absolute; inset:0; z-index:105; background:rgba(5,4,5,0.78); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;
+    screen.innerHTML = `
+      <div style="width:min(640px, 92%); background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; box-shadow:0 0 0 1px ${T.rule} inset, 0 24px 60px rgba(0,0,0,0.75); padding:26px 30px 22px; text-align:left;">
+        <div style="font-size:10.5px; letter-spacing:0.22em; color:${T.goldDim}; text-transform:uppercase;">A choice</div>
+        <p style="margin:8px 0 16px; line-height:1.6; font-size:14px;">${prompt}</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${options.map(o => `<button data-choice="${o.id}" class="dp-btn dp-slot-btn" style="text-align:left; padding:10px 14px; border-radius:${T.r2};"><div class="dp-title" style="color:${T.gold}; font-size:13px;">${o.label}</div><div style="color:${T.muted}; font-size:11.5px; margin-top:3px; line-height:1.4;">${o.text}</div></button>`).join('')}
+        </div>
+        <div id="story-choice-note" style="color:${T.faint}; font-size:10.5px; margin-top:12px; text-align:right;"></div>
+      </div>`;
+    this.overlay.appendChild(screen);
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const finish = (o: O) => {
+      if (timer !== null) clearInterval(timer);
+      screen.remove();
+      onPick(o);
+    };
+    for (const b of Array.from(screen.querySelectorAll<HTMLElement>('[data-choice]'))) {
+      b.addEventListener('click', () => {
+        sfx.order();
+        const o = options.find(x => x.id === b.dataset.choice);
+        if (o) finish(o);
+      });
+    }
+    if (auto) {
+      let left = auto.seconds;
+      const note = screen.querySelector('#story-choice-note') as HTMLElement;
+      const tick = () => {
+        note.textContent = `The party talks it over; they will decide in ${left}s if you do not.`;
+        if (left <= 0) finish(auto.fallback());
+        left--;
+      };
+      tick();
+      timer = setInterval(tick, 1000);
+    }
+  }
+
   /** The run's standing flags, shown beside the title: Manual and Hardcore. */
   setRunFlags(mode: 'auto' | 'manual', hardcore: boolean): void {
     let strip = this.overlay.querySelector('#run-flags') as HTMLElement | null;
@@ -121,6 +212,8 @@ export class HUD {
   /** Close every floating panel and unpause — called before returning to the menu. */
   closeOverlays() {
     this.overlay.querySelector('#run-flags')?.remove();
+    this.overlay.querySelector('#story-card')?.remove();
+    this.setStoryChip(null);
     this.compendium.close();
     this.townPanel.hide();
     this.battleView.close();
@@ -300,6 +393,7 @@ export class HUD {
           Fatefall
         </div>
         <div id="quest-bar" class="dp-chip dp-chip-trunc" style="display:none; flex:1 1 auto; min-width:0; box-shadow:0 2px 10px rgba(0,0,0,0.5); overflow:hidden; text-overflow:ellipsis;"></div>
+        <div id="story-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:${T.goldDim}; color:${T.gold};"></div>
         <div id="weather-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;"></div>
         <div id="error-banner" role="alert" style="display:none; position:absolute; top:34px; left:0; right:0; margin:0 auto; max-width:720px; background:rgba(56,14,12,0.96); border:1px solid #a4574c; border-radius:${T.r2}; padding:8px 12px; font-size:12px; color:#f4c6c6; box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; white-space:normal;"></div>
         <div id="delve-mood-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:#5a4468; color:#e0c8f0; box-shadow:0 0 10px rgba(150,80,200,0.18);"></div>
