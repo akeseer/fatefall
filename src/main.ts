@@ -39,7 +39,7 @@ import { MapRenderer } from './rendering/MapRenderer';
 import type { FloaterKind, EffectKind } from './rendering/MapRenderer';
 import { CombatEngine } from './combat/CombatEngine';
 import type { PartyCommand } from './combat/CombatEngine';
-import type { MenuConsumable } from './ui/BattleView';
+import { BattleView, type MenuConsumable } from './ui/BattleView';
 import { AIDirector, planDyingRescue } from './ai/AIDirector';
 import { HUD, GameSpeed } from './ui/HUD';
 import { createParty, createCharacter } from './game/CharacterFactory';
@@ -259,7 +259,7 @@ class Game {
   private tickTimer: number = 0;
   public tickInterval: number = 800; // ms between AI actions
   private combatTickTimer: number = 0;
-  private combatTickInterval: number = 150; // ms between combat steps
+  private combatTickInterval: number = BattleView.TURN_MS; // ms between combat turns at 1x
   public monsterIdCounter: number = 0;
   private stuckDirCount: number = 0;
   private lastActionDir: string = '';
@@ -1608,7 +1608,7 @@ class Game {
     };
     // FF command menu: Manual mode pauses every hero's turn until the DM
     // picks; Auto lets the AI resolve. The toggle lives in the battle window.
-    this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
+    this.combatEngine.setDecisionPause(this.runMode === 'manual');
     this.wireBattleModeToggle();
     // A fresh fight starts with a clean order queue.
     this.combatEngine.queuedOrders.clear();
@@ -1637,7 +1637,7 @@ class Game {
     this.refreshBossBar();
     // Bring up the Final-Fantasy-style battle window for the fight.
     // Its in-window speed control rescales the combat tick directly.
-    this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
+    this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = BattleView.TURN_MS / speed; };
     this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
     // Held back long enough for the blinds to close over the map first. The
     // window covers the canvas entirely, so opened at once it would hide the
@@ -2379,7 +2379,7 @@ class Game {
 
   private setSpeed(speed: GameSpeed) {
     this.tickInterval = 800 / speed;
-    this.combatTickInterval = 150 / speed;
+    this.combatTickInterval = BattleView.TURN_MS / speed;
   }
 
   /**
@@ -2687,9 +2687,9 @@ class Game {
 
   /** Re-open the battle window for a save taken mid-fight. */
   reopenBattleView(): void {
-    this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = 150 / speed; };
+    this.hud.battleView.onSpeedChange = (speed) => { this.combatTickInterval = BattleView.TURN_MS / speed; };
     this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
-    this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
+    this.combatEngine.setDecisionPause(this.runMode === 'manual');
     this.wireBattleModeToggle();
     this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
     this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites, this.battleScene());
@@ -2880,6 +2880,8 @@ class Game {
    */
   private applyRunMode(): void {
     this.hud.battleView.setMode(this.runMode === 'manual' ? 'manual' : 'auto');
+    // A restored fight must not sit waiting on a decision Auto will never ask for.
+    if (this.phase === GamePhase.Combat) this.combatEngine.setDecisionPause(this.runMode === 'manual');
     this.hud.setRunFlags(this.runMode, this.hardcore);
   }
 

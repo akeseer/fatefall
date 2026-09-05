@@ -949,6 +949,14 @@ export class BattleView {
   }
 
   /** Every kinetic class a stand can carry; cleared before each batch. */
+  /**
+   * Milliseconds between combat turns at 1x. One turn's lunge, hit flash and
+   * damage pop take about seven hundred milliseconds to play out; a shorter
+   * beat than this had the next actor moving before the last had landed, and
+   * the fight read as everyone acting at once.
+   */
+  static readonly TURN_MS = 900;
+
   private static readonly FX_CLASSES = ['bv-shake', 'bv-lunge-left', 'bv-lunge-right', 'bv-hit', 'bv-crit', 'bv-heal-glow', 'bv-dodge', 'bv-shiver'];
   /** Effects read from the log this batch, drawn by applyEffects. */
   private pendingFx: FxEvent[] = [];
@@ -2293,7 +2301,7 @@ export class BattleView {
    * silently snapping back to 1x.
    */
   syncSpeedFromInterval(intervalMs: number): void {
-    const match = BattleView.SPEEDS.find(s => Math.abs(150 / s - intervalMs) < 2);
+    const match = BattleView.SPEEDS.find(s => Math.abs(BattleView.TURN_MS / s - intervalMs) < 2);
     if (match && match !== this.speed) this.setSpeed(match);
   }
 

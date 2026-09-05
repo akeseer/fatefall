@@ -139,9 +139,12 @@ export class DiceTray {
     // chain must never hold the game hostage. The budget covers the full
     // tumble + reveal + panel dwell + fade with margin; if it fires, the
     // slot is force-released and the game resumes (the roll already counted).
-    const tumble = dramatic ? 2600 : pace === 'combat' ? 950 : 1500;
-    const revealDelay = dramatic ? 900 : pace === 'combat' ? 300 : 550;
-    const dwell = dramatic ? 3200 : pace === 'combat' ? 1800 : 2600;
+    // Combat rolls are brisk: the die is one beat of a turn, not the turn.
+    // A fight with a three-second die on every swing read as a slideshow, and
+    // when the die finally cleared the queued turns tumbled out on top of each other.
+    const tumble = dramatic ? 2600 : pace === 'combat' ? 650 : 1500;
+    const revealDelay = dramatic ? 900 : pace === 'combat' ? 200 : 550;
+    const dwell = dramatic ? 3200 : pace === 'combat' ? 650 : 2600;
     this.watchdogTimer = window.setTimeout(() => this.forceFinishBigRoll(), tumble + revealDelay + dwell + 1200);
 
     if (e.diceType === 'd100') {
@@ -243,7 +246,7 @@ export class DiceTray {
     // and the "camera" zooms in on the landing face. Combat rolls are
     // snappier so the queue keeps moving.
     const theta0 = (dramatic ? 4.5 + Math.random() * 1.5 : pace === 'combat' ? 2 + Math.random() * 1.5 : 2.5 + Math.random() * 2) * Math.PI * 2;
-    const duration = dramatic ? 2600 : pace === 'combat' ? 950 : 1500;
+    const duration = dramatic ? 2600 : pace === 'combat' ? 650 : 1500;
     const decay = dramatic ? 3.4 : pace === 'combat' ? 1.9 : 2.2;
     const start = performance.now();
 
