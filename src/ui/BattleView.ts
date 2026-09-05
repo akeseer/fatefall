@@ -267,10 +267,7 @@ export class BattleView {
         .battle-card.bv-hero.bv-down .bv-sprite { transform: rotate(90deg) translateY(12%); opacity: 0.5; }
         .battle-card.bv-down .bv-shadow { opacity: 0.4; }
         .bv-tag {
-          font-family: ${T.titleFont
-          /* Legible on a sunlit dune as well as a black floor. */
-          text-shadow: 0 1px 2px #000, 0 0 5px rgba(0,0,0,0.85);
-        }; font-weight: bold; letter-spacing: 0.4px;
+          font-family: ${T.titleFont}; font-weight: bold; letter-spacing: 0.4px;
           text-align: center; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           max-width: 100%; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.8);
         }
