@@ -522,6 +522,123 @@ export const sfx = {
     tone('sawtooth', 400, 60, t, 0.45, 0.1, { lowpass: 1200 });
   },
 
+  // ── The rest of the spell list ──
+
+  /** A blink out of the world and back: a whoosh reversed onto itself. */
+  blink(): void {
+    if (!gate('blink')) return;
+    const t = now();
+    tone('sine', 1200, 300, t, 0.14, 0.1, { sweep: 'exp' });
+    hiss('bandpass', 2000, t, 0.1, 0.1, 1.2);
+    tone('sine', 300, 1400, t + 0.16, 0.14, 0.1, { sweep: 'exp' });
+    hiss('highpass', 5000, t + 0.2, 0.08, 0.08);
+  },
+
+  /** A spiritual weapon landing: a bell-bright clang. */
+  hammer(): void {
+    if (!gate('hammer')) return;
+    const t = now();
+    tone('square', 620, 590, t, 0.25, 0.1, { lowpass: 2600 });
+    tone('sine', 1240, 1240, t, 0.4, 0.09, { attack: 0.003 });
+    hiss('highpass', 3500, t, 0.06, 0.18);
+    tone('sine', 90, 60, t, 0.14, 0.24);
+  },
+
+  /** A whip of thorns: a crack and the hiss of the lash. */
+  lash(): void {
+    if (!gate('lash')) return;
+    const t = now();
+    hiss('bandpass', 2600, t, 0.12, 0.1, 1.0);
+    hiss('highpass', 4000, t + 0.1, 0.04, 0.3);
+    tone('sine', 700, 200, t + 0.1, 0.1, 0.12);
+  },
+
+  /** Small magic: a tinkle of three high notes. */
+  sparkle(): void {
+    if (!gate('sparkle')) return;
+    const t = now();
+    [2093, 2637, 3136].forEach((f, i) => tone('sine', f, f, t + i * 0.06, 0.16, 0.06));
+  },
+
+  /** A spell unmade: a rising tone cut off, and the air closing. */
+  counter(): void {
+    if (!gate('counter')) return;
+    const t = now();
+    tone('sawtooth', 400, 1600, t, 0.18, 0.08, { sweep: 'exp', lowpass: 2500 });
+    hiss('bandpass', 1200, t + 0.16, 0.06, 0.2, 0.8);
+    tone('sine', 220, 110, t + 0.2, 0.2, 0.1);
+  },
+
+  /** Vicious mockery: a jeer with a buzz in it. */
+  mock(): void {
+    if (!gate('mock')) return;
+    const t = now();
+    tone('square', 330, 260, t, 0.12, 0.07, { lowpass: 1600 });
+    tone('square', 392, 300, t + 0.11, 0.16, 0.07, { lowpass: 1600 });
+    tone('sine', 900, 1300, t + 0.02, 0.2, 0.05, { sweep: 'lin' });
+  },
+
+  /** Webs and vines: something sticky spreading. */
+  web(): void {
+    if (!gate('web')) return;
+    const t = now();
+    hiss('bandpass', 700, t, 0.3, 0.12, 2);
+    for (let i = 0; i < 4; i++) tone('sine', 500 - i * 60, 380 - i * 60, t + i * 0.06, 0.1, 0.06);
+  },
+
+  /** A pattern that bends the mind: a slow warble. */
+  warble(): void {
+    if (!gate('warble')) return;
+    const t = now();
+    tone('sine', 440, 520, t, 0.25, 0.09, { sweep: 'lin', attack: 0.03 });
+    tone('sine', 520, 440, t + 0.25, 0.25, 0.09, { sweep: 'lin' });
+    tone('triangle', 1100, 900, t + 0.1, 0.4, 0.04, { sweep: 'lin' });
+  },
+
+  /** A wall of force going up: a hum that stays. */
+  wall(): void {
+    if (!gate('wall')) return;
+    const t = now();
+    tone('triangle', 110, 110, t, 0.9, 0.12, { attack: 0.08 });
+    tone('sine', 220, 220, t + 0.05, 0.8, 0.07, { attack: 0.08 });
+    hiss('highpass', 6000, t, 0.1, 0.06);
+  },
+
+  /** An ice storm: hail on stone under a rumble. */
+  storm(): void {
+    if (!gate('storm')) return;
+    const t = now();
+    for (let i = 0; i < 7; i++) hiss('highpass', 4000 + i * 300, t + i * 0.05, 0.05, 0.12);
+    tone('sine', 80, 45, t, 0.5, 0.3);
+    hiss('lowpass', 300, t, 0.5, 0.2);
+  },
+
+  /** A curse or an enchantment coming undone: a fizzle downward. */
+  fizzle(): void {
+    if (!gate('fizzle')) return;
+    const t = now();
+    hiss('bandpass', 3000, t, 0.3, 0.1, 1.5);
+    tone('triangle', 800, 200, t, 0.3, 0.06, { sweep: 'exp' });
+  },
+
+  /** Quiet holy or druidic magic: a low chord under breath. */
+  chant(): void {
+    if (!gate('chant')) return;
+    const t = now();
+    tone('sine', 262, 262, t, 0.5, 0.06, { attack: 0.08 });
+    tone('sine', 392, 392, t + 0.03, 0.5, 0.05, { attack: 0.08 });
+    hiss('lowpass', 900, t, 0.4, 0.05);
+  },
+
+  /** Rolling flames: a longer roar than a single bolt. */
+  flames(): void {
+    if (!gate('flames')) return;
+    const t = now();
+    hiss('lowpass', 600, t, 0.55, 0.3);
+    hiss('bandpass', 2200, t + 0.05, 0.4, 0.12, 2);
+    tone('sawtooth', 100, 70, t, 0.5, 0.14, { lowpass: 700 });
+  },
+
   /** A menu or button: a tiny blip. */
   click(): void {
     if (!gate('click')) return;

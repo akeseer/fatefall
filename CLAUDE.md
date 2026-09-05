@@ -114,7 +114,9 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   the picture of it. `window.__audio` is exposed alongside `__game` for inspection.
 - **`src/ui/BattleFx.ts`** — the battle window's reading of the combat log, pure: one line in,
   effects out (cast with element and delivery, ability, miss, kill, condition, legendary,
-  special, potion, scroll). Elements come from the spell table's damage strings. `BattleView`
+  special, potion, scroll). Elements come from the spell table's damage strings. `ui/SpellFx.ts`
+  gives every spell by name its delivery, motif, element and sound, and a test insists no spell
+  in the data is missing from it, so a new spell needs an entry there. `BattleView`
   draws each kind as one-shot DOM nodes and plays the sound for it; fire, lightning, arcane and
   healing sounds stay in `Game` (they predate this), so a new element's sound belongs in the
   battle view and nowhere else. Changing an engine sentence means updating the regex and its test.
