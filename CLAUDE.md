@@ -12,7 +12,11 @@ npm run build    # typecheck then vite build
 npm test         # vitest run; tests live in tests/**/*.test.ts
 ```
 
-Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
+Keep `dependencies` in `package.json` empty. Pixi and Phaser are devDependencies that
+Vite bundles behind dynamic imports; nothing is installed at runtime. Dev-only tooling is fine.
+`electron/main.cjs` wraps the built `dist/` as a desktop app (`npm run app`, `npm run app:build`);
+it serves the build from a loopback HTTP server rather than `file://`, so the game code needs no
+knowledge of where it runs.
 
 ## Architecture map
 
@@ -47,7 +51,9 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
 - **`src/rendering/`** — the frame is *recorded*, not drawn. `RecordingContext` is a
   canvas-shaped shim that `MapRenderer` and `Sprites` are handed instead of a real
   context; it appends `DrawCommand`s. A `RenderBackend` replays the `Frame`.
-  `CanvasBackend` is the reference; `PixiBackend` (the default) adds `pixi/Lighting`
+  `CanvasBackend` is the reference; `phaser/Mood.ts` gives the Phaser backend the same
+  weather, light and lens from camera filters and a few rectangles, reading the Canvas
+  backend's exported constants so the coarse backends agree; `PixiBackend` (the default) adds `pixi/Lighting`
   (multiply-blended torch and night), `pixi/Atmosphere` (colour grade, vignette,
   bloom), `pixi/Weather` (particle rain, snow, fog, sandstorm), `pixi/Ambience`
   (dust, pollen, fireflies) and `pixi/Transition` (fade, blinds, crit flash), all

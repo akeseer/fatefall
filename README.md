@@ -21,6 +21,18 @@ npm test           # Vitest unit tests
 Saves live in `localStorage` (three slots) and are written automatically every few
 seconds, on tab hide, and on close.
 
+## Running as a desktop app
+
+The same build runs as its own window, with no browser and its own save slots:
+
+```bash
+npm run app        # build, then open Fatefall in an Electron window
+npm run app:build  # build a Windows installer and a portable .exe into release/
+```
+
+The packaged app serves the built files from a loopback-only local server inside
+the window, so nothing about the game changes between the browser and the app.
+
 ## Playing
 
 - Pick a save slot on the start screen. The party leaves town for its first quest on
@@ -68,5 +80,6 @@ for how the model is built and retrained.
 | `src/rendering/`, `src/engine/` | Recorded-frame map renderer, Pixi and Canvas backends with lighting, weather and mood effects, camera, shared types |
 | `tests/` | Vitest suites (run with `npm test`) |
 | `tools/train/` | Training pipeline for the DM command-understanding model |
+| `electron/` | The desktop shell: a window around the built game |
 
 See `CLAUDE.md` for architecture notes and conventions.

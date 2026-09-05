@@ -13,6 +13,7 @@
 
 import * as Phaser from 'phaser';
 import type { BakedImage, Frame, RenderBackend } from '../DrawCommand';
+import { Mood } from './phaser/Mood';
 
 /** A CSS colour taken apart once: packed RGB for Phaser, alpha kept separate. */
 interface Paint {
@@ -69,6 +70,9 @@ export class PhaserBackend implements RenderBackend {
 
   private game: Phaser.Game | null = null;
   private scene: FrameScene | null = null;
+  /** Weather, light and lens, read from the frame's mood. */
+  private mood: Mood | null = null;
+  private lastSubmitMs = 0;
 
   /**
    * Batching strategy. Rectangles are over ninety-five per cent of a frame and
@@ -147,6 +151,8 @@ export class PhaserBackend implements RenderBackend {
     }
 
     this.scene = scene;
+    this.mood = new Mood(scene, width, height);
+    this.lastSubmitMs = performance.now();
 
     // From here the game drives the clock. Sleeping the TimeStep stops Phaser's
     // requestAnimationFrame; `submit` advances it exactly one step per frame.
@@ -324,6 +330,11 @@ export class PhaserBackend implements RenderBackend {
     for (let i = usedImages; i < this.imagePool.length; i++) this.imagePool[i].setVisible(false);
     for (let i = usedTexts; i < this.textPool.length; i++) this.textPool[i].setVisible(false);
 
+    // The mood goes on over the frame's own objects, at depths above them all.
+    const now = performance.now();
+    this.mood?.update(frame.mood, now - this.lastSubmitMs);
+    this.lastSubmitMs = now;
+
     // One Phaser step: update the (empty) scene, clear to the camera background,
     // and render the display list. The canvas holds this frame when it returns.
     game.loop.tick();
@@ -333,6 +344,8 @@ export class PhaserBackend implements RenderBackend {
     const game = this.game;
     this.game = null;
     this.scene = null;
+    this.mood?.destroy();
+    this.mood = null;
 
     if (game) {
       for (const key of this.textures.values()) {

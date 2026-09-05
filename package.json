@@ -13,17 +13,69 @@
     "export-vocab": "esbuild tools/train/export_vocab.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.export_vocab.mjs && node tools/train/data/.export_vocab.mjs",
     "label-data": "esbuild tools/train/label.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.label.mjs && node tools/train/data/.label.mjs",
     "probe": "esbuild tools/train/probe.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.probe.mjs && node tools/train/data/.probe.mjs",
-    "model-report": "esbuild tools/train/report.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.report.mjs && node tools/train/data/.report.mjs"
+    "model-report": "esbuild tools/train/report.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.report.mjs && node tools/train/data/.report.mjs",
+    "app": "npm run build && electron .",
+    "app:start": "electron .",
+    "app:build": "npm run build && electron-builder --win --publish never"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "phaser": "^4.2.1",
+    "pixi.js": "^8.20.1",
     "typescript": "^5.4.0",
     "vite": "^5.4.0",
     "vitest": "^4.1.11"
   },
-  "dependencies": {
-    "phaser": "^4.2.1",
-    "pixi.js": "^8.20.1"
+  "main": "electron/main.cjs",
+  "description": "Fatefall: an autonomous-party tabletop RPG where you are the Dungeon Master.",
+  "author": "Reese",
+  "build": {
+    "appId": "com.fatefall.game",
+    "productName": "Fatefall",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Fatefall"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.games"
+    }
   }
 }

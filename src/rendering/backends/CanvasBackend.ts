@@ -12,20 +12,20 @@ import { transitionShape } from '../DrawCommand';
 import { themeLight } from '../ThemeLight';
 
 /** How far the world is crushed underground, where the party's torch is the only light. */
-const UNDERGROUND_DARKNESS = 0.78;
+export const UNDERGROUND_DARKNESS = 0.78;
 
 /** How far it is crushed outdoors at true midnight. */
-const OUTDOOR_NIGHT_DARKNESS = 0.55;
+export const OUTDOOR_NIGHT_DARKNESS = 0.55;
 
 /** A fight must never be harder to read than the walk to it. */
-const COMBAT_RELIEF = 0.82;
+export const COMBAT_RELIEF = 0.82;
 
 /** Reach of the carried torch, and of the moonlight the party keeps about them. */
-const TORCH_RADIUS = 310;
-const GLOW_RADIUS = 380;
+export const TORCH_RADIUS = 310;
+export const GLOW_RADIUS = 380;
 
-/** A wash per weather, matched to the ids the game actually sets. */
-const WEATHER_TINTS: Record<string, { c: string; a: number }> = {
+/** A wash per weather, matched to the ids the game actually sets. Shared with the Phaser backend. */
+export const WEATHER_TINTS: Record<string, { c: string; a: number }> = {
   cloudy: { c: '#8a93a8', a: 0.10 },
   rain: { c: '#23374f', a: 0.18 },
   heavy_rain: { c: '#1a2a3f', a: 0.28 },

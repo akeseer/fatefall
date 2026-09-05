@@ -10,3 +10,5 @@ tools/train/runs/
 Thumbs.db
 __pycache__/
 *.pyc
+# Packaged desktop builds
+release/
