@@ -81,8 +81,13 @@
   },
   "fatefall": {
     "updates": {
-      "github": "",
-      "manifest": "https://fatefall.example/latest.json"
+      "github": "akeseer/fatefall",
+      "manifest": ""
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akeseer/fatefall.git"
+  },
+  "homepage": "https://github.com/akeseer/fatefall"
 }

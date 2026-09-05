@@ -32,10 +32,17 @@ npm run app:build  # build a Windows installer and a portable .exe into release/
 ```
 
 The packaged app serves the built files from a loopback-only local server inside
-the window. It boots behind a splash that checks for a newer version: set
-`fatefall.updates.github` in `package.json` to `owner/repo` once releases are
-published on GitHub, or point `fatefall.updates.manifest` at a JSON file of the
-form `{ "version": "1.1.0", "url": "https://…/Fatefall Setup 1.1.0.exe", "notes": "…" }`.
+the window. It boots behind a splash that checks the latest GitHub release of
+[akeseer/fatefall](https://github.com/akeseer/fatefall) for a newer version
+(`fatefall.updates` in `package.json`; a JSON manifest URL works too). Pushing a
+version tag builds the installer and publishes the release from
+`.github/workflows/release.yml`:
+
+```bash
+npm version minor
+git push --follow-tags
+```
+
 An unreachable server just means the game opens after a moment. When an update is
 found, the game's log says so and the Sound drawer gets a button to the download.
 
