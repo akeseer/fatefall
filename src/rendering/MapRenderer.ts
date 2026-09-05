@@ -438,7 +438,8 @@ interface VisualSprite {
 
 export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
-  private sprites: SpriteRenderer;
+  /** The sprite bank; the party builder asks it for class portraits. */
+  readonly sprites: SpriteRenderer;
   private time: number = 0;
   private renderTime: number = 0;
 

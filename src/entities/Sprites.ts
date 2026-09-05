@@ -95,18 +95,22 @@ export class SpriteRenderer {
       this.cache.set(mkey, flipped);
       return flipped;
     }
-    const key = character.charClass.id;
-    if (this.cache.has(key)) return this.cache.get(key)!;
+    return this.getClassSprite(character.charClass.id);
+  }
+
+  /** The sprite every character of a class wears; the party builder shows it before anyone exists. */
+  getClassSprite(classId: string): ImageData {
+    if (this.cache.has(classId)) return this.cache.get(classId)!;
 
     const ctx = this.charCtx;
     ctx.clearRect(0, 0, ENTITY_SIZE, ENTITY_SIZE);
     ctx.imageSmoothingEnabled = false;
 
-    this.drawCharacter(pixelSnapped(ctx), character.charClass.id);
+    this.drawCharacter(pixelSnapped(ctx), classId);
     this.applySpriteEffects(ctx, ENTITY_SIZE);
 
     const data = ctx.getImageData(0, 0, ENTITY_SIZE, ENTITY_SIZE);
-    this.cache.set(key, data);
+    this.cache.set(classId, data);
     return data;
   }
 

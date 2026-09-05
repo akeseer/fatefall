@@ -51,8 +51,9 @@ local preview of a build opened with `?debug`.
 
 ## Playing
 
-- Pick a save slot on the start screen. The party leaves town for its first quest on
-  its own if you do nothing for a while.
+- Pick a save slot on the start screen. A new run asks you to choose your party's four
+  classes; the world rolls their names, races, faces and gear. The party leaves town for
+  its first quest on its own if you do nothing for a while.
 - The **DM** button (or the input bar at the bottom) takes orders. Type `help` for
   the list the party understands, though you do not have to stick to it — see below.
 - Speed controls run the world from 0.25× to 4×; Pause freezes it.

@@ -2749,16 +2749,29 @@ class Game {
         );
       }
     } else if (choice === 'new') {
-      // A brand-new run: fresh party, fresh overworld, empty slot.
-      this.startFreshRun();
+      // A brand-new run begins with the player choosing the party's classes;
+      // the run itself starts when they set out.
+      this.hud.partyBuilder.show({
+        portrait: (classId) => this.mapRenderer.sprites.getClassSprite(classId),
+        onBack: () => {
+          this.hud.partyBuilder.hide();
+          this.hud.showStartScreen(listSaves(), slot);
+        },
+        onBegin: (classIds) => {
+          this.hud.partyBuilder.hide();
+          this.startFreshRun(classIds);
+          this.start();
+        },
+      });
+      return;
     }
 
     this.start();
   }
 
-  /** Rebuild the party from scratch (a brand-new run). */
-  private rebuildPartyFromScratch(): void {
-    const members = createParty(4);
+  /** Rebuild the party from scratch (a brand-new run), from the chosen classes where given. */
+  private rebuildPartyFromScratch(classIds: string[] = []): void {
+    const members = createParty(4, classIds);
     this.party.members.length = 0;
     this.party.formation = [];
     this.party.leaderIndex = 0;
@@ -3295,13 +3308,13 @@ class Game {
   }
 
   /** Wipe the active slot and start over: fresh party, fresh floor 1. */
-  startFreshRun(): void {
+  startFreshRun(classIds: string[] = []): void {
     clearSlot(this.activeSlot);
     this.dungeonLevel = 0;
     this.history = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
     this.dungeonTheme = null;
     grantLuckDie(null);
-    this.rebuildPartyFromScratch();
+    this.rebuildPartyFromScratch(classIds);
     this.syncKnownFoes();
     this.dmStance = 'auto';
     this.dmDirection = undefined;

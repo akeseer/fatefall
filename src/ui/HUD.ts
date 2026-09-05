@@ -11,6 +11,7 @@ import { DiceTray } from './DiceTray';
 import { calendarFromElapsed } from '../world/CalendarSystem';
 import { DiceSounds } from './DiceSounds';
 import { getAudio } from '../audio/Audio';
+import { PartyBuilder } from './PartyBuilder';
 import { sfx } from '../audio/Sfx';
 import { buildDieScene, buildDiceModel, normalize3, quatFromAxisAngle, quatToMatrix3d } from './Dice3D';
 import { TownPanel } from './TownPanel';
@@ -69,6 +70,8 @@ export class HUD {
     void orig;
   }
   public onStartChoice?: (choice: 'continue' | 'new', slot: number) => void;
+  /** The screen between New Run and the road, where the classes are chosen. Made once the overlay exists. */
+  public partyBuilder!: PartyBuilder;
 
   /** True while the big 3D die is tumbling — the game freezes until it lands. */
   isDiceRolling(): boolean {
@@ -121,6 +124,7 @@ export class HUD {
     this.diceSounds = new DiceSounds();
     this.townPanel = new TownPanel(this.overlay);
     this.battleView = new BattleView(this.overlay);
+    this.partyBuilder = new PartyBuilder(this.overlay);
     this.bindEvents();
     // Battle end jingles ride the same audio engine as the dice.
     this.battleView.sounds = this.diceSounds;

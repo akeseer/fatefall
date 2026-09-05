@@ -242,17 +242,28 @@ export function createCharacter(
   return character;
 }
 
-export function createParty(size: number = 4): GameCharacter[] {
+/**
+ * A party of `size`. `classIds` are the player's picks in seat order; any
+ * seats left over, or any pick that is not a class, are filled with distinct
+ * random classes as before. Names, races, faces and everything else are
+ * always the generator's.
+ */
+export function createParty(size: number = 4, classIds: string[] = []): GameCharacter[] {
   const classes = ['fighter', 'cleric', 'wizard', 'rogue', 'paladin', 'ranger', 'druid', 'barbarian', 'bard', 'sorcerer', 'warlock', 'monk', 'artificer', 'blood_hunter'];
   const chosenClasses: string[] = [];
   const party: GameCharacter[] = [];
 
   for (let i = 0; i < size; i++) {
-    // Pick unique classes
+    // The player's pick for this seat, or a class no other seat has.
     let classId: string;
-    do {
-      classId = pick(classes);
-    } while (chosenClasses.includes(classId) && chosenClasses.length < classes.length);
+    const wanted = classIds[i];
+    if (wanted && CLASSES.some(c => c.id === wanted)) {
+      classId = wanted;
+    } else {
+      do {
+        classId = pick(classes);
+      } while ((chosenClasses.includes(classId) || classIds.includes(classId)) && chosenClasses.length + classIds.length < classes.length);
+    }
     chosenClasses.push(classId);
 
     // Varied personalities
