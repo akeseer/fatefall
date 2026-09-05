@@ -40,7 +40,7 @@ import type { FloaterKind, EffectKind } from './rendering/MapRenderer';
 import { CombatEngine } from './combat/CombatEngine';
 import type { PartyCommand } from './combat/CombatEngine';
 import type { MenuConsumable } from './ui/BattleView';
-import { AIDirector } from './ai/AIDirector';
+import { AIDirector, planDyingRescue } from './ai/AIDirector';
 import { HUD, GameSpeed } from './ui/HUD';
 import { createParty, createCharacter } from './game/CharacterFactory';
 import { Direction, GAME_HEIGHT, GAME_WIDTH, TILE_SIZE, Vector2, manhattan, vec2 } from './engine/types';
@@ -357,6 +357,7 @@ class Game {
       const e = eventFor(this.townLife, this.currentTown.id);
       return e ? { name: e.name, icon: e.icon, effect: { description: e.effect.description } } : null;
     };
+    this.hud.townPanel.marketDayProvider = () => this.calendar.isMarketday;
     this.hud.townPanel.priceModifierProvider = () => {
       if (!this.currentTown || !this.townLife) return 1;
       const archetype = TOWN_ARCHETYPES[this.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
@@ -1253,20 +1254,17 @@ class Game {
         break;
       }
       case 'rest': {
-        this.hud.addCombatMessage(action.message, '#8cf');
-        // Short rest: heal 1 hit die per member.
-        for (const member of this.party.alive) {
-          const heal = rollDice(1, member.charClass.hitDie) + member.conMod;
-          this.hud.addCombatMessage(member.heal(heal), '#8cf');
-        }
-        // Tend the fallen: dead allies are revived at 1 HP so the party never
-        // pushes deeper with a crippled team.
-        for (const member of this.party.members) {
-          if (member.isDead) {
-            member.revive(1);
-            this.hud.addCombatMessage(`${member.name} is tended to and brought back at 1 HP.`, '#f88');
-          }
-        }
+        this.takeShortRest(action.message);
+        break;
+      }
+      case 'heal':
+      case 'regroup': {
+        // Both mean "someone is dying". Bring them round with a spell or a
+        // potion when the party has one; otherwise the only cure is a rest,
+        // and a party that merely announces its worry stands over the body
+        // forever.
+        this.hud.addCombatMessage(action.message, '#a86');
+        if (!this.rescueDying()) this.takeShortRest('The party closes ranks and tends to the fallen.');
         break;
       }
       case 'revive': {
@@ -1295,13 +1293,6 @@ class Game {
         this.hud.addCombatMessage(action.message, '#cc8');
         this.descending = true;
         setTimeout(() => this.generateNewDungeon(), 500);
-        break;
-      }
-      case 'retreat': {
-        const rmoved = this.moveParty(action.direction);
-        if (rmoved) {
-          this.hud.addCombatMessage(action.message, '#c88');
-        }
         break;
       }
       case 'idle': {
@@ -1377,11 +1368,6 @@ class Game {
         }
         break;
       }
-      case 'heal':
-      case 'regroup': {
-        this.hud.addCombatMessage(action.message, '#a86');
-        break;
-      }
     }
 
     // Remember this position for the breadcrumb trail + square-loop detection.
@@ -1403,6 +1389,15 @@ class Game {
       this.history.roomsVisited = this.visitedRooms.size;
       this.bulletinScoutProgress(1);
       this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
+      // Hearth-blessed delve: "wounds knit quicker" — every new room reached
+      // closes a little of the party's hurts.
+      if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
+        const knit = this.party.alive.filter(m => m.hp < m.maxHp);
+        if (knit.length > 0) {
+          for (const m of knit) m.heal(rollDice(1, 4));
+          this.hud.addCombatMessage(`🌟 A gentle warmth follows the party into the room — wounds knit a little (${knit.map(m => m.name).join(', ')}).`, '#8cf');
+        }
+      }
       // The floor boss's hall: the stated mood speaks a one-line omen before
       // the party walks in, so what waits inside never comes as a surprise.
       if (this.mode === GameMode.Dungeon && roomIdx === this.rooms.length - 1) {
@@ -1511,6 +1506,12 @@ class Game {
         this.combatEngine.tavernBuffFightsLeft = tl.tavernBuffFightsLeft;
       }
     }
+    // The stated delve mood reaches into the fight. Hearth-blessed: the light
+    // the party carries burns the undead. Gloom: dread bites harder, so fear
+    // saves are a point steeper. Both are only true underground.
+    const mood = this.mode === GameMode.Dungeon ? this.delveMood?.label : undefined;
+    this.combatEngine.hearthBlessedUndeadBonus = mood === 'hearth-blessed' ? 2 : 0;
+    this.combatEngine.gloomFearDcBonus = mood === 'gloom-delve' ? 1 : 0;
     // Weather reaches into the fight: stinging rain throws off weapons;
     // an arcane aurora sharpens casting.
     if (this.weather) {
@@ -2943,6 +2944,32 @@ class Game {
   }
 
   /**
+   * Hand out XP through `addXp`, announcing each level earned. A raw `xp +=`
+   * skips the level-up entirely — the bug the bulletin board's rewards once
+   * had — so every grant outside combat goes through here.
+   */
+  grantXp(amountFor: (m: GameCharacter) => number): void {
+    for (const m of this.party.members) {
+      const amount = amountFor(m);
+      if (amount <= 0) continue;
+      if (m.addXp(amount)) {
+        this.hud.addCombatMessage(`⬆ ${m.name} reaches level ${m.level}!`, '#7c7');
+        sfx.levelUp();
+      }
+    }
+  }
+
+  /**
+   * A flat bonus to the party's attack rolls for the next `fights` battles
+   * (the war room's tactical study). Lives on the combat engine and is not
+   * saved: a one-battle edge is not worth a save-schema bump.
+   */
+  grantBattleEdge(attackBonus: number, fights: number): void {
+    this.combatEngine.warRoomAttackBonus = Math.max(this.combatEngine.warRoomAttackBonus, attackBonus);
+    this.combatEngine.warRoomFightsLeft = Math.max(this.combatEngine.warRoomFightsLeft, fights);
+  }
+
+  /**
    * Post-combat auto-equip pass. Scans every living member's pack for gear
    * that beats their currently equipped piece and swaps it on, with a
    * narration line per upgrade. Parties loot as a group, so any member may
@@ -3213,6 +3240,52 @@ class Game {
       if (m.inventory.some(i => i.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(q))) return m;
     }
     return null;
+  }
+
+  /**
+   * The party's own short rest, taken on the AI's initiative: one hit die of
+   * healing per standing member, and the dead carried back to 1 HP so the
+   * party never pushes deeper with a crippled team.
+   */
+  private takeShortRest(message: string): void {
+    this.hud.addCombatMessage(message, '#8cf');
+    for (const member of this.party.alive) {
+      const heal = rollDice(1, member.charClass.hitDie) + member.conMod;
+      this.hud.addCombatMessage(member.heal(heal), '#8cf');
+    }
+    for (const member of this.party.members) {
+      if (member.isDead) {
+        member.revive(1);
+        this.hud.addCombatMessage(`${member.name} is tended to and brought back at 1 HP.`, '#f88');
+      }
+    }
+  }
+
+  /**
+   * Bring a dying ally round on the spot with the plan `planDyingRescue`
+   * found — a healing spell paid for from the healer's slots, or the weakest
+   * healing potion someone is carrying. False when there is no such plan.
+   */
+  private rescueDying(): boolean {
+    const plan = planDyingRescue(this.party);
+    if (!plan) return false;
+    if (plan.kind === 'spell') {
+      const slot = plan.healer.spendSpellSlot(plan.spell.level);
+      if (slot === null) return false;
+      const [dicePart] = (plan.spell.healing ?? '1d4').split('+');
+      const [count, size] = dicePart.split('d').map(Number);
+      const healing = rollDice(count || 1, size || 4) + plan.healer.spellcastingMod;
+      sfx.heal();
+      this.hud.addCombatMessage(`${plan.healer.name} kneels and casts ${plan.spell.name} on ${plan.target.name}!`, '#8cf');
+      this.hud.addCombatMessage(plan.target.heal(healing), '#8d8');
+      return true;
+    }
+    const item = plan.holder.inventory.find(i => i.id === plan.itemId);
+    if (!item) return false;
+    plan.holder.useItem(item.id);
+    this.hud.addCombatMessage(`${plan.holder.name} tips a ${item.name} between ${plan.target.name}'s lips.`, '#8cf');
+    this.applyLootedItem(item, plan.target);
+    return true;
   }
 
   private mostInjuredMember(): GameCharacter | null {
@@ -4532,16 +4605,16 @@ class Game {
         const cost = 50;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
         this.addGold(-cost);
-        for (const m of this.party.members) { m.xp += 30; }
         this.hud.addCombatMessage(`⚔️ Combat training complete — each member gains 30 XP.`, '#8cf');
+        this.grantXp(m => (m.isAlive ? 30 : 0));
         break;
       }
       case 'train_magic': {
         const cost = 75;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
         this.addGold(-cost);
-        for (const m of this.party.members) { if (m.charClass.id === 'wizard' || m.charClass.id === 'cleric') m.xp += 40; else m.xp += 15; }
         this.hud.addCombatMessage(`📖 Arcane study complete — casters gain 40 XP, others 15 XP.`, '#8cf');
+        this.grantXp(m => (m.isAlive ? (isCaster(m.charClass.id) ? 40 : 15) : 0));
         break;
       }
       case 'heal': {
@@ -5489,6 +5562,12 @@ function startGame() {
   const saves = listSaves();
   game.hud.onStartChoice = (choice, slot) => game.handleStartChoice(choice, slot);
   game.hud.onMainMenu = () => game.returnToMainMenu();
+  game.hud.onRendererChange = (id) => {
+    void game.useBackend(id).catch(err => {
+      console.warn('[render] backend switch failed, staying put.', err);
+      game.hud.addCombatMessage('That renderer could not start here; staying on the current one.', '#c66');
+    });
+  };
   game.hud.showStartScreen(saves);
 
   // The title theme waits for the first touch, since the browser will not

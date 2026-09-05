@@ -62,6 +62,27 @@ class FakeHost implements RoomFeatureHost {
   distributeLoot(loot: LootResult): void { this.looted.push(loot); }
   treasuresCounted = 0;
   recordTreasureFound(count: number): void { this.treasuresCounted += count; }
+  /** Mirrors Game.spendGold: affordability first, then richest pocket first. */
+  spendGold(n: number): boolean {
+    const total = this.party.members.reduce((s, m) => s + m.gold, 0);
+    if (total < n) return false;
+    let remaining = n;
+    for (const m of [...this.party.members].sort((a, b) => b.gold - a.gold)) {
+      const take = Math.min(m.gold, remaining);
+      m.gold -= take;
+      remaining -= take;
+    }
+    return true;
+  }
+  levelUps = 0;
+  grantXp(amountFor: (m: GameCharacter) => number): void {
+    for (const m of this.party.members) {
+      const amount = amountFor(m);
+      if (amount > 0 && m.addXp(amount)) this.levelUps++;
+    }
+  }
+  battleEdge: { attackBonus: number; fights: number } | null = null;
+  grantBattleEdge(attackBonus: number, fights: number): void { this.battleEdge = { attackBonus, fights }; }
 
   said(fragment: string): boolean { return this.log.some(l => l.includes(fragment)); }
 
@@ -195,11 +216,57 @@ describe('the deterministic features', () => {
     expect(f.used).toBe(false);
   });
 
-  it('lets the party talk to the merchant as often as it likes', () => {
+  it('a penniless party can talk to the merchant as often as it likes, and buys nothing', () => {
     const f = host.place(mkFeature({ kind: 'merchant_camp' }));
     expect(features.perform('feature_merchant_talk')).toBe(true);
     expect(f.used).toBe(false);
+    expect(host.said('cannot scrape together')).toBe(true);
+    expect(host.party.leader.inventory.some(i => i.id === 'potion_healing')).toBe(false);
     expect(features.perform('feature_merchant_talk')).toBe(true);
+  });
+
+  it('sells the party a discounted healing potion and then packs up', () => {
+    host.party.members[1].gold = 25;
+    const f = host.place(mkFeature({ kind: 'merchant_camp' }));
+    expect(features.perform('feature_merchant_talk')).toBe(true);
+    expect(f.used).toBe(true);
+    // The cheapest ware is the potion, at the dungeon price rather than the town's 50.
+    expect(host.party.members[1].gold).toBe(25 - RoomFeatureController.MERCHANT_POTION_PRICE);
+    expect(host.party.leader.inventory.filter(i => i.id === 'potion_healing')).toHaveLength(1);
+    host.log.length = 0;
+    expect(features.perform('feature_merchant_talk')).toBe(true);
+    expect(host.said('packed up')).toBe(true);
+  });
+
+  it('the war room hands the combat engine a +2 edge for one battle', () => {
+    const f = host.place(mkFeature({ kind: 'war_room' }));
+    expect(features.perform('feature_war_room')).toBe(true);
+    expect(host.battleEdge).toEqual({ attackBonus: 2, fights: 1 });
+    expect(f.used).toBe(true);
+  });
+
+  it('the ritual chamber really restores an expended spell slot', () => {
+    // Force the slot-restoring branch of the ritual (0.5 <= roll < 0.8).
+    vi.spyOn(Math, 'random').mockReturnValue(0.6);
+    const wizard = host.party.members[2];
+    const max = wizard.maxSpellSlots[1];
+    expect(max).toBeGreaterThan(0);
+    wizard.spellSlots[1] = max - 1;
+    host.place(mkFeature({ kind: 'ritual_chamber' }));
+    expect(features.perform('feature_ritual')).toBe(true);
+    expect(wizard.spellSlots[1]).toBe(max);
+    expect(host.said('spell slot restored')).toBe(true);
+  });
+
+  it('the ritual chamber grants XP through the level-up path', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const fighter = host.party.members[0];
+    fighter.xp = fighter.xpToNext() - 1;
+    host.place(mkFeature({ kind: 'ritual_chamber' }));
+    expect(features.perform('feature_ritual')).toBe(true);
+    expect(fighter.level).toBe(2);
+    // Only the fighter was a hair from levelling; the announcement fires once.
+    expect(host.levelUps).toBe(1);
   });
 
   it('robbing the merchant pays out once and costs standing in the nearest town', () => {

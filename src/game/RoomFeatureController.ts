@@ -22,10 +22,10 @@ import type { LootResult } from '../loot/LootTables';
 import type { DMIntent } from '../ai/DMCommand';
 import { FEATURE_INTENT_KIND } from '../ai/DMCommand';
 import { getMonsterTemplate, getRandomMonster } from '../entities/Monster';
-import { rollCombatLoot } from '../loot/LootTables';
+import { MARKET_POTIONS, MARKET_SCROLLS, rollCombatLoot } from '../loot/LootTables';
 import { pushDiceRoll } from '../rules/DiceEvents';
 import { rollD20 } from '../rules/Rules';
-import { SPELLS, isCaster, rollDice } from '../data/gameData';
+import { SPELLS, isCaster, ordinal, rollDice } from '../data/gameData';
 
 /** The slice of the game a room feature is allowed to reach. */
 export interface RoomFeatureHost {
@@ -42,6 +42,12 @@ export interface RoomFeatureHost {
   distributeLoot(loot: LootResult, emptyLine: string): void;
   /** Count found treasure towards collect tasks and collect_item quests. */
   recordTreasureFound(count: number): void;
+  /** Take coin from the party, richest pocket first; false (and nothing taken) if short. */
+  spendGold(n: number): boolean;
+  /** XP through `addXp`, with the level-up announced — never a raw `xp +=`. */
+  grantXp(amountFor: (m: GameCharacter) => number): void;
+  /** A flat bonus to the party's attack rolls for the next `fights` battles. */
+  grantBattleEdge(attackBonus: number, fights: number): void;
 }
 
 /** Capitalise a sentence built from a feature name, which starts lowercase. */
@@ -71,6 +77,39 @@ export class RoomFeatureController {
     war_room: 'study the war table',
     chest: 'open the chest',
   };
+
+  /** The merchant's discounted healing potion — the dungeon price, not the town's. */
+  static readonly MERCHANT_POTION_PRICE = 20;
+
+  /**
+   * Talk to the dungeon merchant. He lays out two wares — a healing potion at
+   * a discount and one scroll from the market list at its full value — and the
+   * party buys what it can afford on the spot, cheapest first: a potion is
+   * always worth 20 gp down here, and haggling in a dungeon is not a thing.
+   * One sale and he packs up; the rob path is untouched.
+   */
+  private featureMerchantTalk(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
+    if (f.used) { say('The merchant has packed up and left.', '#888'); return true; }
+    const potion = MARKET_POTIONS.find(p => p.id === 'potion_healing')!;
+    const scroll = MARKET_SCROLLS[Math.floor(Math.random() * MARKET_SCROLLS.length)];
+    const scrollPrice = scroll.value ?? 30;
+    const potionPrice = RoomFeatureController.MERCHANT_POTION_PRICE;
+    say('The weary merchant looks up. "Potions, scrolls, odds and ends. Down here, you take what you can get."', '#a89');
+    say(`On his cart: a ${potion.name} for ${potionPrice} gp, and a ${scroll.name} for ${scrollPrice} gp.`, '#8cf');
+
+    // Cheapest affordable ware first; the potion is the one that saves lives.
+    const wares = [{ item: potion, price: potionPrice }, { item: scroll, price: scrollPrice }]
+      .sort((a, b) => a.price - b.price);
+    const buy = wares.find(w => this.game.spendGold(w.price));
+    if (!buy) {
+      say(`The party cannot scrape together ${wares[0].price} gp. The merchant shrugs and goes back to his ledger.`, '#c88');
+      return true;
+    }
+    f.used = true;
+    this.game.party.leader.inventory.push({ ...buy.item, id: buy.item.id });
+    say(`${this.game.party.leader.name} pays ${buy.price} gp for the ${buy.item.name}. The merchant pockets the coin and begins packing his cart.`, '#ffd700');
+    return true;
+  }
 
   /**
    * Open a chest. A stuck lid takes a Strength check to force, and a wired one
@@ -260,12 +299,7 @@ export class RoomFeatureController {
         }
         return true;
       }
-      case 'feature_merchant_talk': {
-        if (f.used) { say('The merchant has packed up and left.', '#888'); return true; }
-        say('The weary merchant looks up. \"I have potions, scrolls, and odds and ends. Take a look at the town shops — they have better prices.\"', '#a89');
-        say('Tip: Buy something from the merchant for a discount? He sells Healing Potions for 20 gp and Scrolls for 30 gp.', '#8cf');
-        return true;
-      }
+      case 'feature_merchant_talk': return this.featureMerchantTalk(f, say);
       case 'feature_merchant_rob': {
         if (f.used) { say('The merchant already fled.', '#888'); return true; }
         f.used = true;
@@ -311,17 +345,22 @@ export class RoomFeatureController {
         } else if (blessing < 0.8) {
           // Restore a spell slot
           say('Arcane energy flows through the chamber. The casters feel their magic renewed.', '#a8f');
+          let renewed = 0;
           for (const m of this.game.party.members) {
-            if (m.charClass.id === 'wizard' || m.charClass.id === 'cleric' || m.charClass.id === 'sorcerer' || m.charClass.id === 'warlock') {
-              // Add a spell slot (simplified: just note it)
-              say(m.name + ' feels a spell slot restored.', '#a8f');
-            }
+            if (!m.isAlive || !isCaster(m.charClass.id)) continue;
+            // One expended slot, lowest level first — the same recovery a
+            // wizard's Arcane Recovery gives, without the rest.
+            const lvl = m.restoreSpellSlot();
+            if (lvl === null) { say(m.name + ' has no magic spent to renew.', '#888'); continue; }
+            renewed++;
+            say(m.name + ' feels a ' + ordinal(lvl) + '-level spell slot restored (' + m.slotSummaryFor(1) + ').', '#a8f');
           }
+          if (renewed === 0) say('The energy finds no empty vessel and dissipates into the stone.', '#888');
         } else {
           // Bonus XP
           const xp = 20 + Math.floor(Math.random() * 40);
-          for (const m of this.game.party.members) m.xp += xp;
           say('Ancient knowledge floods your mind. Each member gains ' + xp + ' XP.', '#ffd700');
+          this.game.grantXp(m => (m.isAlive ? xp : 0));
         }
         return true;
       }
@@ -331,7 +370,9 @@ export class RoomFeatureController {
         f.used = true;
         // Reveals info about the dungeon
         say('The maps reveal hidden passages and monster patrol routes. You gain tactical advantage.', '#8cf');
-        // Bonus: +2 to next attack rolls
+        // The promise is kept on the combat engine: +2 to hit, spent when the
+        // next battle ends.
+        this.game.grantBattleEdge(2, 1);
         say('Your party gains +2 to attack rolls for the next battle (tactical knowledge).', '#a89');
         // Small gold find
         const gold = 10 + Math.floor(Math.random() * 25);

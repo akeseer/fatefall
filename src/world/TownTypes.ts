@@ -892,22 +892,29 @@ export function getReputationShopTier(rep: number): { label: string; color: stri
   return { label: 'Stranger', color: '#6b7280', unlockNext: 10 };
 }
 
-/** Get the mechanical perks for a given reputation level. */
+/**
+ * The price discount a town's standing earns, as a whole percentage. This is
+ * the same curve `townPriceModifier` applies (rep/400, capped at 25%); the
+ * panel prints it, so the two must agree or the shop calls the notice a liar.
+ */
+export function reputationDiscountPercent(rep: number): number {
+  // Rounded the way the till rounds — the modifier to two decimals — so a
+  // 2.5% standing reads as the 2% it actually saves, not a rounded-up 3%.
+  const modifier = Math.round((1 - Math.min(0.25, Math.max(0, rep) / 400)) * 100) / 100;
+  return Math.round((1 - modifier) * 100);
+}
+
+/**
+ * What a reputation level actually buys, in words the panel shows. Only the
+ * two things the game really does: the market discount, and the shelves the
+ * reputation shop opens. An older list promised free healing, quest bonuses
+ * and blessings no code granted.
+ */
 export function getReputationPerks(rep: number): string[] {
   const perks: string[] = [];
-  if (rep >= 10) perks.push('Access to reputation shop (Tier 1)');
-  if (rep >= 10) perks.push('5% discount on all purchases');
-  if (rep >= 25) perks.push('Access to reputation shop (Tier 2)');
-  if (rep >= 25) perks.push('10% discount on all purchases');
-  if (rep >= 25) perks.push('Free healing once per visit');
-  if (rep >= 50) perks.push('Access to reputation shop (Tier 3)');
-  if (rep >= 50) perks.push('15% discount on all purchases');
-  if (rep >= 50) perks.push('Quest rewards +25% bonus');
-  if (rep >= 75) perks.push('Access to reputation shop (Tier 4)');
-  if (rep >= 75) perks.push('20% discount on all purchases');
-  if (rep >= 75) perks.push('Free identify on any item');
-  if (rep >= 100) perks.push('Access to reputation shop (Tier 5)');
-  if (rep >= 100) perks.push('25% discount on all purchases');
-  if (rep >= 100) perks.push('Free blessing before every dungeon');
+  const pct = reputationDiscountPercent(rep);
+  if (pct > 0) perks.push(`${pct}% off every purchase${pct >= 25 ? ' (the most a town will give)' : ''}`);
+  const unlocked = REPUTATION_SHOP.filter(i => i.repRequired <= rep).length;
+  if (unlocked > 0) perks.push(`${unlocked} of ${REPUTATION_SHOP.length} reputation wares on the shelves`);
   return perks;
 }

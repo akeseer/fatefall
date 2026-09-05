@@ -200,6 +200,10 @@ describe('meta orders', () => {
     expect(host.said('descend / deeper')).toBe(true);
     expect(host.said('model on / off / status')).toBe(true);
     expect(host.lines.every(l => l.color === '#8a8')).toBe(true);
+    // Town, travel and commerce orders were once left out of the list.
+    for (const order of ['travel to <town>', 'tasks', 'accept task 1', 'accept quest 1', 'turn in', 'shop', 'buy <item>', 'sell <item>', 'formation 2x2', 'leave', 'enter', 'depart', 'go to town']) {
+      expect(host.said(order), order).toBe(true);
+    }
   });
 
   it('pause holds the world, and only once', () => {
@@ -292,11 +296,12 @@ describe('orders refused while blades are out', () => {
     expect(host.colorOf(line)).toBe('#c66');
   });
 
-  it('a room feature is refused too, as confused glances', () => {
+  it('a room feature is refused too, as an order for later rather than a shrug', () => {
     host.inBattle = true;
     dm.dispatch({ intent: 'feature_altar' }, 'pray at the altar');
     expect(host.performFeatureIntent).not.toHaveBeenCalled();
-    expect(host.said('confused glances')).toBe(true);
+    expect(host.said('in the middle of a fight')).toBe(true);
+    expect(host.said('confused glances')).toBe(false);
   });
 
   it('but using a looted item still works mid-fight', () => {

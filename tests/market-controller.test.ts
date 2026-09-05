@@ -9,7 +9,8 @@ import { initTownLife, townPriceModifier } from '../src/world/TownLife';
 import type { TownLifeState } from '../src/world/TownLife';
 import type { Overworld, OverworldTown } from '../src/world/Overworld';
 import { TileMap } from '../src/world/TileMap';
-import { TOWN_ARCHETYPES, type ReputationShopItem } from '../src/world/TownTypes';
+import { TOWN_ARCHETYPES, REPUTATION_SHOP, type ReputationShopItem } from '../src/world/TownTypes';
+import { CombatEngine } from '../src/combat/CombatEngine';
 import { MARKET_POTIONS, MARKET_SCROLLS } from '../src/loot/LootTables';
 
 /** A real archetype id, so the price modifier is the one the game would use. */
@@ -326,14 +327,57 @@ describe('the reputation shop', () => {
     const cost = Math.max(1, Math.floor(200 * mod));
     market.buyRepItem(favour);
     expect(host.purse).toBe(1000 - cost);
-    expect(host.party.leader.inventory.map(i => i.name)).toContain('Cloak of the Watch');
+    // A cloak goes straight onto the leader's back; the purchase is the trinket worn.
+    expect(host.party.leader.equipment.trinket?.name).toBe('Cloak of the Watch');
   });
 
-  it('files a ring or a wonder as treasure, since neither is a pack slot the game knows', () => {
+  it('files a ring or a wonder as trinket-slot gear, not treasure, so it can be worn', () => {
     host.townLife!.byTown.town_1.townReputation = 100;
     market.buyRepItem(favour);
-    expect(host.party.leader.inventory[0].type).toBe('treasure');
-    expect(host.party.leader.inventory[0].power).toBe(3);
+    const worn = host.party.leader.equipment.trinket!;
+    expect(worn.type).toBe('armor');
+    expect(worn.power).toBe(3);
+    expect(worn.identified).toBe(true);
+    expect(host.party.leader.inventory).toEqual([]);
+  });
+
+  it('leaves a second trinket in the pack rather than tearing off the first', () => {
+    host.townLife!.byTown.town_1.townReputation = 100;
+    market.buyRepItem(favour);
+    market.buyRepItem(favour);
+    expect(host.party.leader.equipment.trinket?.name).toBe('Cloak of the Watch');
+    expect(host.party.leader.inventory.map(i => i.name)).toEqual(['Cloak of the Watch']);
+  });
+
+  it('sells a Ring of Protection +1 that raises AC and saves once worn', () => {
+    host.townLife!.byTown.town_1.townReputation = 100;
+    const ring = REPUTATION_SHOP.find(i => i.name === 'Ring of Protection +1')!;
+    const leader = host.party.leader;
+    const acBefore = leader.ac;
+    market.buyRepItem(ring);
+    expect(leader.equipment.trinket?.name).toBe('Ring of Protection +1');
+    expect(leader.ac).toBe(acBefore + 1);
+    expect(leader.trinketSaveBonus).toBe(1);
+    expect(leader.hasDisplacement).toBe(false);
+  });
+
+  it('sells a Cloak of Displacement that blurs the wearer without padding their AC', () => {
+    host.townLife!.byTown.town_1.townReputation = 100;
+    const cloak = REPUTATION_SHOP.find(i => i.name === 'Cloak of Displacement')!;
+    const leader = host.party.leader;
+    const acBefore = leader.ac;
+    market.buyRepItem(cloak);
+    expect(leader.hasDisplacement).toBe(true);
+    expect(leader.ac).toBe(acBefore);
+    expect(leader.trinketSaveBonus).toBe(0);
+    // Attacks against the wearer roll with disadvantage; against an advantaged foe the two cancel.
+    const engine = new CombatEngine(host.party);
+    expect(engine.displacementMods({ advantage: false, disadvantage: false }, leader)).toEqual({ advantage: false, disadvantage: true });
+    expect(engine.displacementMods({ advantage: true, disadvantage: false }, leader)).toEqual({ advantage: false, disadvantage: false });
+    // Doffed, the blur is gone.
+    leader.unequip('trinket');
+    expect(leader.hasDisplacement).toBe(false);
+    expect(engine.displacementMods({ advantage: false, disadvantage: false }, leader)).toEqual({ advantage: false, disadvantage: false });
   });
 
   it('does not trade out on the road', () => {

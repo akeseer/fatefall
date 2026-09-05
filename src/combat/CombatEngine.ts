@@ -109,6 +109,19 @@ export class CombatEngine {
   public tavernBuffXp: number = 0;
   public tavernBuffFightsLeft: number = 0;
 
+  /**
+   * War-room study: a flat bonus to the party's attack rolls for the next few
+   * fights. Transient — it is not saved, so a reload forgets it, which is a
+   * fair price for a bonus that lasts one battle.
+   */
+  public warRoomAttackBonus: number = 0;
+  public warRoomFightsLeft: number = 0;
+
+  /** Hearth-blessed delve: the party's blows land harder on undead. */
+  public hearthBlessedUndeadBonus: number = 0;
+  /** Gloom delve: fear bites harder — added to every frightful-presence DC. */
+  public gloomFearDcBonus: number = 0;
+
   /** Grant a potion buff to a party member (Speed, Giant Strength…). */
   addPotionBuff(characterId: string, buff: { damageBonus: number; extraAttacks: number; turns: number }) {
     const existing = this.potionBuffs[characterId];
@@ -182,6 +195,8 @@ export class CombatEngine {
       if (dc) maxDc = Math.max(maxDc, dc);
     }
     if (maxDc === 0) return;
+    // A gloom delve: dread bites harder, so the save is a point steeper.
+    maxDc += this.gloomFearDcBonus;
 
     this.log.messages.push(`A terrifying presence crushes down on the party! (Frightful Presence, WIS DC ${maxDc})`);
     for (const member of this.party.alive) {
@@ -1335,6 +1350,17 @@ export class CombatEngine {
     }
   }
 
+  /**
+   * A cloak of displacement blurs its wearer the way invisibility does:
+   * attacks against them roll with disadvantage, and, as with every other
+   * source, advantage and disadvantage cancel one another out.
+   */
+  displacementMods<M extends { advantage: boolean; disadvantage: boolean }>(mods: M, defender: GameCharacter): M {
+    if (!defender.hasDisplacement) return mods;
+    if (mods.advantage) return { ...mods, advantage: false, disadvantage: false };
+    return { ...mods, disadvantage: true };
+  }
+
   /** Weapon attack applying advantage/disadvantage, bless, and auto-crits. */
   private weaponAttack(attacker: GameCharacter, target: Monster, abilityBonus?: { count: number; size: number }): void {
     const mods = getAttackModifiers(attacker, target);
@@ -1411,6 +1437,14 @@ export class CombatEngine {
     }
     if (this.tavernBuffAttack > 0) {
       opts.attackRollBonus = (opts.attackRollBonus || 0) + this.tavernBuffAttack;
+    }
+    // War-room maps: the party knows where the foe will stand.
+    if (this.warRoomAttackBonus > 0 && this.warRoomFightsLeft > 0) {
+      opts.attackRollBonus = (opts.attackRollBonus || 0) + this.warRoomAttackBonus;
+    }
+    // Hearth-blessed delve: the light the party carries burns the undead.
+    if (this.hearthBlessedUndeadBonus > 0 && target.template.type === 'undead') {
+      opts.damageBonus = (opts.damageBonus || 0) + this.hearthBlessedUndeadBonus;
     }
     // Storm or gale weather throws off every strike.
     if (this.weatherAttackMod !== 0) {
@@ -1547,7 +1581,7 @@ export class CombatEngine {
         }
       }
     }
-    const mods = getAttackModifiers(monster, target);
+    const mods = this.displacementMods(getAttackModifiers(monster, target), target);
     // Pack Tactics (5e): swarming beasts and humanoids gain advantage when a
     // living, un-fled ally stands beside their target — numbers are a weapon.
     if (!mods.advantage && !mods.disadvantage) {
@@ -1593,7 +1627,7 @@ export class CombatEngine {
         if (guardian) {
           this.interceptionUsedThisRound = true;
           this.log.messages.push(`🛡️ ${guardian.name} throws ${guardian.charClass.id === 'paladin' ? 'a holy shield' : 'a shoulder'} in front of ${target.name} — the blow is theirs to take!`);
-          const guardianMods = getAttackModifiers(monster, guardian);
+          const guardianMods = this.displacementMods(getAttackModifiers(monster, guardian), guardian);
           const gAc = guardian.ac + this.defenseBonus + this.townBuffAC + this.tavernBuffAC + Math.max(0, -this.weatherAttackMod) - gloom;
           const gResult = monster.attack(gAc, guardianMods);
           this.log.messages.push(generateCombatTurnNarration({
@@ -1748,6 +1782,14 @@ export class CombatEngine {
         this.tavernBuffGoldFind = 0;
         this.tavernBuffXp = 0;
         this.log.messages.push('The tavern rumors fade from memory.');
+      }
+    }
+    // The war-room edge is spent on the battles it was promised for.
+    if (this.warRoomFightsLeft > 0) {
+      this.warRoomFightsLeft--;
+      if (this.warRoomFightsLeft === 0) {
+        this.warRoomAttackBonus = 0;
+        this.log.messages.push('The war-room maps have served their purpose — the tactical edge is spent.');
       }
     }
     for (const member of this.party.members) member.pendingItemUse = false;

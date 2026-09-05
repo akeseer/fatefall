@@ -222,6 +222,47 @@ function triageHealing(party: Party, state: PartyState): HealPriority[] {
   return priorities.sort((a, b) => b.urgency - a.urgency);
 }
 
+// ── Rescuing the dying ───────────────────────────────
+
+/** Healing potions, weakest to strongest, so the planner spends the cheapest. */
+const HEALING_POTION_RANK: Record<string, number> = {
+  potion_healing: 1, potion_greater_healing: 2, potion_superior_healing: 3,
+};
+
+export type DyingRescue =
+  | { kind: 'spell'; healer: GameCharacter; spell: Spell; target: GameCharacter }
+  | { kind: 'potion'; holder: GameCharacter; itemId: string; target: GameCharacter };
+
+/**
+ * How the party gets a dying ally back on their feet without stopping to rest:
+ * a conscious caster with a healing spell and a slot for it, else the weakest
+ * healing potion anyone conscious is carrying. Null means the only answer is a
+ * rest, which the caller must actually take — a plan that only shouts "heal
+ * them!" leaves the party standing over the body forever.
+ */
+export function planDyingRescue(party: Party): DyingRescue | null {
+  const target = party.members.find(m => m.isDying);
+  if (!target) return null;
+  const awake = party.members.filter(m => m.isConscious);
+
+  for (const healer of awake) {
+    const spells = healer.knownSpells
+      .map(id => SPELLS.find(s => s.id === id))
+      .filter((s): s is Spell => !!s && !!s.healing && s.level > 0 && healer.canCastSpell(s.level))
+      .sort((a, b) => a.level - b.level);
+    if (spells.length > 0) return { kind: 'spell', healer, spell: spells[0], target };
+  }
+
+  let best: { holder: GameCharacter; itemId: string; rank: number } | null = null;
+  for (const holder of awake) {
+    for (const item of holder.inventory) {
+      const rank = HEALING_POTION_RANK[item.id];
+      if (rank && (!best || rank < best.rank)) best = { holder, itemId: item.id, rank };
+    }
+  }
+  return best ? { kind: 'potion', holder: best.holder, itemId: best.itemId, target } : null;
+}
+
 // ── Spell Selection Intelligence ─────────────────────
 
 interface SpellChoice {
@@ -482,6 +523,11 @@ interface ExploreChoice {
   pathing?: boolean;
   /** Optional custom narration for pathing moves. */
   message?: string;
+  /**
+   * No walkable neighbour at all. The direction is a placeholder; the caller
+   * should hand the step to the game's A* explorer instead of walking into a wall.
+   */
+  deadEnd?: boolean;
 }
 
 type ExploreTargetKind = 'stairs' | 'room' | 'tile';
@@ -634,7 +680,7 @@ function chooseExplorationDirection(
   }
 
   if (walkableDirs.length === 0) {
-    return { direction: Direction.Down, reason: 'No way forward — dead end', urgency: 'cautious' };
+    return { direction: Direction.Down, reason: 'No way forward — dead end', urgency: 'cautious', deadEnd: true };
   }
 
   // Recency: 0 = most recently visited tile, -1 = not seen recently. The
@@ -701,15 +747,17 @@ export type AIAction =
   | { type: 'attack'; target: Monster; message: string }
   /** Head for a chest or other lootable the party can see. */
   | { type: 'loot'; target: Vector2; direction: Direction; message: string }
-  | { type: 'retreat'; direction: Direction; message: string }
   | { type: 'rest'; message: string }
   /** Spend a revivify scroll on a fallen ally instead of stopping to rest. */
   | { type: 'revive'; message: string }
   | { type: 'enter_door' | 'go_down_stairs'; message: string }
+  /** Someone is dying and a caster or potion can bring them round on the spot. */
   | { type: 'heal'; message: string }
   | { type: 'flee'; message: string }
+  /** Someone is dying and nothing but a rest will do. */
   | { type: 'regroup'; message: string }
   | { type: 'scout'; direction: Direction; message: string }
+  /** The local wander is boxed in; the game routes to a destination instead. */
   | { type: 'idle'; message: string };
 
 // ── AIDirector ───────────────────────────────────────
@@ -878,6 +926,12 @@ export class AIDirector {
     this.recentTiles.push({ x: leader.tile.x, y: leader.tile.y });
     if (this.recentTiles.length > 14) this.recentTiles.shift();
 
+    // Boxed in with no walkable neighbour: the local wander has nothing to
+    // offer, so let the game's route-to-destination explorer take the step.
+    if (explore.deadEnd) {
+      return { type: 'idle', message: `${leader.name} finds no way forward from here.` };
+    }
+
     this.lastDirection = explore.direction;
     const dirName = { up: 'north', down: 'south', left: 'west', right: 'east' }[explore.direction];
 
@@ -900,7 +954,10 @@ export class AIDirector {
       message = `${leader.name} leads the party ${dirName}...`;
     }
 
-    return { type: 'explore', direction: explore.direction, message };
+    // `pathing` must survive the trip: the game's loop detector only
+    // redirects aimless wandering, and a deliberate A* march reads as a loop
+    // whenever a corridor doubles back.
+    return { type: 'explore', direction: explore.direction, message, pathing: explore.pathing };
   }
 
   /**
@@ -1026,7 +1083,10 @@ export class AIDirector {
   // ── Dying Allies Handler ────────────────────────────
 
   private handleDyingAllies(state: PartyState, leader: GameCharacter): AIAction {
-    if (state.hasHealer) {
+    // A healer with nothing left to cast is a bystander: only shout for
+    // healing when someone can actually deliver it. Otherwise regroup, which
+    // the game resolves as tending the fallen over a short rest.
+    if (state.hasHealer && planDyingRescue(this.party)) {
       return {
         type: 'heal',
         message: `${leader.name}: "${pick([

@@ -208,6 +208,11 @@ export class DMCommandDispatcher {
           '• summon <monster> e.g. "summon owlbear"   |   report — party status',
           '• roll d20 / 2d6+3 / "roll d20 adv" — roll the dice (d20 banks a fated Luck die)',
           '• look / examine / describe — narrate the room around you',
+          '• formation 2x2 / line / loose — how the party stands   |   "formation" alone lists the shapes',
+          '• travel to <town> — set out across the overworld   |   go to town — head for the last town',
+          '• enter / delve — go down a dungeon mouth you stand on   |   leave / climb out — back to the surface',
+          '• depart / leave town — take the road   |   shop — browse the market   |   buy <item> / sell <item>',
+          '• tasks — the bulletin board   |   accept task 1 / accept quest 1   |   turn in — claim a finished quest',
           '• talk to <npc> / list npcs — visit townsfolk for quests and gossip',
           '• raid camp / report camp / list clues — deal with bandit hideouts',
           '• pray at the altar / search the vault / free prisoners / barricade — use the room’s feature',
@@ -305,7 +310,14 @@ export class DMCommandDispatcher {
       case 'feature_treasure': case 'feature_merchant_talk': case 'feature_merchant_rob':
       case 'feature_puzzle': case 'feature_ritual': case 'feature_war_room': case 'feature_chest':
       case 'feature_inspect': case 'search_room': {
-        if (!inCombat && this.game.performFeatureIntent(cmd.intent)) {
+        // A feature verb mid-fight is a clear order given at the wrong time,
+        // not a misunderstanding: refuse it instead of shrugging.
+        if (inCombat) {
+          sfx.refuse();
+          this.game.hud.addCombatMessage('The party is in the middle of a fight — that will have to wait.', '#c66');
+          return;
+        }
+        if (this.game.performFeatureIntent(cmd.intent)) {
           this.game.hud.setParty(this.game.party);
         } else {
           this.confusedGlances();

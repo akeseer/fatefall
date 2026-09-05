@@ -144,6 +144,16 @@ describe('parseDMCommandRegex — town, quests, travel, camps, npcs', () => {
     expect(parse('travel to Emberwatch')).toEqual({ intent: 'travel_to', destination: 'emberwatch' });
   });
 
+  it('the bare wordings "help" documents all land', () => {
+    expect(parse('enter')).toEqual({ intent: 'enter_dungeon' });
+    expect(parse('leave')).toEqual({ intent: 'leave_dungeon' });
+    expect(parse('leave town')).toEqual({ intent: 'depart_town' });
+    expect(parse('formation 2x2')).toEqual({ intent: 'formation', rows: 2, cols: 2 });
+    expect(parse('formation line')).toMatchObject({ intent: 'formation' });
+    expect(parse('formation')).toEqual({ intent: 'formation_help' });
+    expect(parse('accept task 1')).toEqual({ intent: 'accept_task', index: 1 });
+  });
+
   it('camps and townsfolk', () => {
     expect(parse('raid camp')).toEqual({ intent: 'raid_camp' });
     expect(parse('storm the camp')).toEqual({ intent: 'raid_camp' });

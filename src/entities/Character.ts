@@ -355,6 +355,20 @@ export class GameCharacter {
     return this.strMod + this.weaponMagicBonus;
   }
 
+  /** True while a cloak of displacement is worn: attacks against the wearer roll with disadvantage. */
+  get hasDisplacement(): boolean {
+    return /displacement/i.test(this.equipment.trinket?.name ?? '');
+  }
+
+  /**
+   * The +N a worn ring or amulet "of protection" adds to every saving throw,
+   * on top of the AC it already grants — the classic pairing.
+   */
+  get trinketSaveBonus(): number {
+    const t = this.equipment.trinket;
+    return t && /protection/i.test(t.name) ? magicBonusOf(t) : 0;
+  }
+
   /**
    * Recompute AC from equipped gear: base 10+DEX, overridden by armor's
    * target AC, then shields add +2 and protective trinkets add their +N.
@@ -364,7 +378,9 @@ export class GameCharacter {
     const armor = this.equipment.armor;
     if (armor) ac = Math.max(ac, armor.power ?? 11);
     if (this.equipment.shield) ac += this.equipment.shield.power ?? 2;
-    if (this.equipment.trinket) ac += magicBonusOf(this.equipment.trinket) || 1;
+    // A cloak of displacement promises only that blows go astray; it earns no
+    // AC of its own, so it is exempt from the +1 an un-numbered trinket gets.
+    if (this.equipment.trinket && !this.hasDisplacement) ac += magicBonusOf(this.equipment.trinket) || 1;
     // The 'heavy' curse weighs the wearer down: -1 AC.
     if (this.findCursedEquipped()?.curseKind === 'heavy') ac -= 1;
     this.ac = ac;
@@ -607,6 +623,7 @@ export class GameCharacter {
   makeSavingThrow(ability: Ability, dc: number, extraBonus: number = 0): SaveResult {
     // The 'doomed' curse draws hostile attention: -1 to all saves.
     if (this.findCursedEquipped()?.curseKind === 'doomed') extraBonus -= 1;
+    extraBonus += this.trinketSaveBonus;
     // Petrified and paralyzed creatures automatically fail STR and DEX saves.
     if ((ability === 'str' || ability === 'dex') &&
         (this.hasCondition('petrified') || this.hasCondition('paralyzed'))) {

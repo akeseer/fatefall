@@ -10,7 +10,7 @@
  * this spends it on goods.
  */
 
-import type { InventoryItem } from '../entities/Character';
+import { slotForItem, type InventoryItem } from '../entities/Character';
 import type { Party } from '../entities/Party';
 import type { HUD } from '../ui/HUD';
 import type { OverworldTown } from '../world/Overworld';
@@ -140,16 +140,36 @@ export class MarketController {
       this.game.hud.townPanel.refresh();
       return;
     }
-    const item: InventoryItem = {
-      id: `rep_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-      name: repItem.name,
-      type: repItem.type === 'ring' || repItem.type === 'wondrous' ? 'treasure' : repItem.type as any,
-      value: repItem.value,
-      description: repItem.description,
-      power: repItem.power,
-    };
-    this.game.party.leader.inventory.push(item);
-    this.game.hud.addCombatMessage(`${this.game.party.leader.name} acquires ${repItem.name} from the reputation shop for ${cost} gp!`, '#ffd700');
+    const item = repItemToInventory(repItem);
+    const leader = this.game.party.leader;
+    leader.inventory.push(item);
+    this.game.hud.addCombatMessage(`${leader.name} acquires ${repItem.name} from the reputation shop for ${cost} gp!`, '#ffd700');
+    // A ring or a cloak does nothing in the pack. Fasten it on at once if the
+    // slot is free; otherwise the DM chooses what to swap with an equip order.
+    if (slotForItem(item) === 'trinket' && !leader.equipment.trinket) {
+      const worn = leader.equip(item.id);
+      if (worn.ok) this.game.hud.addCombatMessage(worn.line, '#ffd700');
+    }
     this.game.hud.townPanel.refresh();
   }
+}
+
+/**
+ * The item a reputation-shop purchase hands over. Rings and wonders are filed
+ * under 'armor' because that is the type the equipment slots read: a name
+ * with "ring" or "cloak" in it then lands in the trinket slot, where a "+1"
+ * raises AC and saves and a cloak of displacement makes attackers miss. For
+ * a while they were 'treasure', and 400 gp bought a paperweight.
+ */
+export function repItemToInventory(repItem: ReputationShopItem): InventoryItem {
+  const type: InventoryItem['type'] = repItem.type === 'ring' || repItem.type === 'wondrous' ? 'armor' : repItem.type;
+  return {
+    id: `rep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: repItem.name,
+    type,
+    value: repItem.value,
+    description: repItem.description,
+    power: repItem.power,
+    identified: true,
+  };
 }

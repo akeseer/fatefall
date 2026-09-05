@@ -94,6 +94,8 @@ async function start() {
     minHeight: 680,
     backgroundColor: '#0a0a0a',
     title: 'Fatefall',
+    // The packaged app carries the icon in its executable; this is for `npm run app`.
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     autoHideMenuBar: true,
     show: false,
     webPreferences: {

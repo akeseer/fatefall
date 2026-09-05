@@ -35,6 +35,8 @@ export class HUD {
   public onCompendiumAction?: (entry: CompendiumEntry, mode: 'encounter' | 'legend') => void;
   public onDMCommand?: (text: string) => void;
   public onSave?: () => void;
+  /** The player picked a renderer in the sound drawer; the game switches and remembers it. */
+  public onRendererChange?: (id: 'pixi' | 'phaser' | 'canvas') => void;
   /** Open the town panel when in town; otherwise narrates that you're not in town. */
   public onTownOpen?: () => void;
   /** Save the run and return to the main menu. */
@@ -151,6 +153,12 @@ export class HUD {
         #audio-pop .ap-row .ap-val { flex: 0 0 30px; text-align: right; color: ${T.gold}; font-family: ${T.monoFont}; font-size: 10px; }
         #audio-pop .ap-head { display: flex; justify-content: space-between; align-items: center; }
         #audio-pop .ap-head span { color: ${T.gold}; font-family: ${T.titleFont}; letter-spacing: 0.04em; }
+        #audio-pop .ap-rule { border-top: 1px solid ${T.rule}; margin: 10px 0 6px; }
+        #audio-pop .ap-seg { display: flex; border: 1px solid ${T.line}; border-radius: ${T.r2}; overflow: hidden; flex: 1; }
+        #audio-pop .ap-seg button { flex: 1; padding: 3px 0; font-size: 10px; border: 0; border-radius: 0; }
+        #audio-pop .ap-seg button + button { border-left: 1px solid ${T.line}; }
+        #audio-pop .ap-seg button.on { background: ${T.rowHot}; color: ${T.gold}; }
+        #audio-pop .ap-note { color: ${T.faint}; font-size: 10px; margin-top: 5px; font-style: italic; }
         /* Speed: one segmented control, not five loose buttons. */
         #speed-controls {
           display: flex;
@@ -227,6 +235,13 @@ export class HUD {
         <div class="ap-row"><label for="vol-master">Master</label><input id="vol-master" type="range" min="0" max="100" data-bus="master"><span class="ap-val"></span></div>
         <div class="ap-row"><label for="vol-sfx">Effects</label><input id="vol-sfx" type="range" min="0" max="100" data-bus="sfx"><span class="ap-val"></span></div>
         <div class="ap-row"><label for="vol-music">Music</label><input id="vol-music" type="range" min="0" max="100" data-bus="music"><span class="ap-val"></span></div>
+        <div class="ap-rule"></div>
+        <div class="ap-row"><label>Renderer</label><div class="ap-seg" id="renderer-pick">
+          <button data-renderer="pixi" title="WebGL with lighting, weather and colour grading">Pixi</button>
+          <button data-renderer="phaser" title="WebGL through Phaser, with the same mood in broader strokes">Phaser</button>
+          <button data-renderer="canvas" title="Plain 2D canvas: the fallback that runs anywhere">Canvas</button>
+        </div></div>
+        <div class="ap-note">Switches at once; the choice is remembered.</div>
       </div>
 
       <!-- Top strip: dungeon title + quest tracker, pinned on their own row below the
@@ -327,6 +342,27 @@ export class HUD {
     }
     audio.onChange(showAudio);
     showAudio();
+
+    // Renderer: three buttons, the current one lit. The game does the switch;
+    // the drawer only remembers which is meant to be lit until it reports.
+    const pick = audioPop.querySelector('#renderer-pick') as HTMLElement;
+    const showRenderer = () => {
+      let current = 'pixi';
+      try { current = localStorage.getItem('fatefall.renderer') ?? 'pixi'; } catch { /* default */ }
+      for (const b of Array.from(pick.querySelectorAll('button'))) b.classList.toggle('on', b.dataset.renderer === current);
+    };
+    for (const b of Array.from(pick.querySelectorAll('button'))) {
+      b.addEventListener('click', () => {
+        const id = b.dataset.renderer as 'pixi' | 'phaser' | 'canvas';
+        sfx.click();
+        this.onRendererChange?.(id);
+        // Optimistic: the game writes the preference once the switch succeeds,
+        // and the next open of the drawer reads it back.
+        for (const o of Array.from(pick.querySelectorAll('button'))) o.classList.toggle('on', o === b);
+      });
+    }
+    showRenderer();
+    audioBtn.addEventListener('click', showRenderer);
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'KeyM' || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;

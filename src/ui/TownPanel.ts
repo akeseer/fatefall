@@ -9,9 +9,40 @@ import { InventoryItem } from '../entities/Character';
 import { Quest, questProgressText, QuestState } from '../quests/Quests';
 import { OverworldTown } from '../world/Overworld';
 import { QuestGiver, getReputationTier, getDialogue } from '../quests/QuestGivers';
-import { TOWN_ARCHETYPES, TownBuilding, TownService, TownServiceId, TownArchetype, SHOP_STOCK, ShopItem, shopItemToInventory, REPUTATION_SHOP, ReputationShopItem, getReputationShopTier, getReputationPerks } from '../world/TownTypes';
+import { TOWN_ARCHETYPES, TownBuilding, TownServiceId, TownArchetype, SHOP_STOCK, shopItemToInventory, REPUTATION_SHOP, ReputationShopItem, getReputationShopTier, getReputationPerks } from '../world/TownTypes';
 import { BulletinTask, bulletinIcon, bulletinProgress } from '../quests/BulletinBoard';
+import { MARKET_POTIONS, MARKET_SCROLLS } from '../loot/LootTables';
 import { T } from './Theme';
+
+// ── Pricing and stock helpers (pure, so the tests can hold them to the market's arithmetic) ──
+
+/** Ids of the standing consumables every market carries; anything else in the stock is the town's rack of tiered gear. */
+const STANDING_IDS = new Set([...MARKET_POTIONS, ...MARKET_SCROLLS].map(i => i.id));
+
+/** True for a piece of the town's tiered-gear rack (the part of the stock that is unique to this visit). */
+export function isRackPiece(item: InventoryItem): boolean {
+  return !STANDING_IDS.has(item.id);
+}
+
+/** The price the market will ask: MarketController.buyItem's arithmetic, so the label and the till agree. */
+export function buyPriceOf(value: number, dynamicMod: number, marketDay: boolean): number {
+  return Math.max(1, Math.floor(value * dynamicMod * (marketDay ? 0.9 : 1)));
+}
+
+/** What the market will pay: MarketController.sellItem's arithmetic (half value, then the town's modifier, then market day's 25% more). */
+export function sellPriceOf(value: number, dynamicMod: number, marketDay: boolean): number {
+  return Math.max(1, Math.floor(Math.floor(value / 2) * dynamicMod * (marketDay ? 1.25 : 1)));
+}
+
+/** The overview's abbreviated market: the rack first (it is what changes town to town), then the standing wares, up to `limit`. */
+export function quickMarketStock(stock: InventoryItem[], limit = 8): InventoryItem[] {
+  return [...stock.filter(isRackPiece), ...stock.filter(i => !isRackPiece(i))].slice(0, limit);
+}
+
+/** A rack of tiered gear stands where arms are sold: a smithy, an armoury, a relic hall, or the market square itself. */
+export function sellsRack(building: TownBuilding): boolean {
+  return building.hasShop && (building.id === 'market' || ['weapons', 'armor', 'rare'].includes(building.shopPool ?? ''));
+}
 
 export class TownPanel {
   private overlay: HTMLElement;
@@ -40,6 +71,12 @@ export class TownPanel {
   public eventProvider: () => { name: string; icon: string; effect: { description: string } } | null = () => null;
   /** Dynamic price modifier for this town (includes prosperity, festival, caravan). */
   public priceModifierProvider: () => number = () => 1;
+  /**
+   * True on a market day, when the till takes 10% off and pays 25% more. Until
+   * the game wires it the panel assumes an ordinary day, and the price it
+   * prints is then the ceiling of what the market actually charges.
+   */
+  public marketDayProvider: () => boolean = () => false;
   /** Current town reputation (0-100). */
   public townRepProvider: () => number = () => 0;
   /** Buy a reputation shop item. */
@@ -179,10 +216,11 @@ export class TownPanel {
     const buildings: TownBuilding[] = archetype?.buildings ?? [];
     const activeBuilding = this.activeBuildingId ? buildings.find(b => b.id === this.activeBuildingId) : null;
     const dynamicMod = this.priceModifierProvider();
+    const marketDay = this.marketDayProvider();
 
     // If we're inside a building, show the building detail view
     if (activeBuilding) {
-      this.renderBuilding(panel, town, activeBuilding, archetype!, gold, stock, inventory, dynamicMod);
+      this.renderBuilding(panel, activeBuilding, gold, stock, inventory, dynamicMod, marketDay);
       return;
     }
 
@@ -242,33 +280,16 @@ export class TownPanel {
       </div>`;
     }).join('') || '';
 
-    // Quick market (show shop pool from first building with a shop, or "general")
-    const defaultShopPool = buildings.find(b => b.hasShop)?.shopPool ?? 'general';
-    const shopItems = (SHOP_STOCK[defaultShopPool] ?? SHOP_STOCK.general).slice(0, 4);
-    const buyRows = shopItems.map(item => {
-      const adjustedPrice = Math.max(1, Math.floor(item.value * dynamicMod));
-      const discount = dynamicMod < 1 ? `<span class="dp-num" style="color:${T.good}; font-size:9px; text-decoration:line-through; margin-right:5px;">${item.value}</span>` : '';
-      return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 9px; border-bottom:1px solid ${T.line};">
-        <div style="min-width:0;">
-          <div style="color:${T.text}; font-size:11px;">${item.name}</div>
-          <div style="color:${T.faint}; font-size:10px;">${item.description}</div>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px; flex:0 0 auto;">
-          ${discount}<span class="dp-num" style="color:${T.coin}; font-size:11px;">${adjustedPrice} gp</span>
-        </div>
-      </div>`;
-    }).join('');
+    // Quick market: the real stock the Buy button can act on — the town's rack
+    // first, then the standing wares — rather than a printed sample of a shop
+    // pool that no button could buy. The rest waits inside the buildings.
+    const quickStock = quickMarketStock(stock);
+    const buyRows = this.buyRows(quickStock, dynamicMod, marketDay);
+    const moreNote = stock.length > quickStock.length
+      ? `<div style="color:${T.faint}; padding:6px 9px; font-size:10px; font-style:italic;">${stock.length - quickStock.length} more inside the town's shops.</div>`
+      : '';
 
-    const sellable = inventory.filter(i => (i.value ?? 0) > 0);
-    const sellRows = sellable.length > 0 ? sellable.map(item => `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 9px; border-bottom:1px solid ${T.line};">
-        <div style="color:${T.text}; font-size:11px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.name}</div>
-        <div style="display:flex; align-items:center; gap:7px; flex:0 0 auto;">
-          <span class="dp-num" style="color:${T.coin}; font-size:11px;">${Math.floor((item.value ?? 0) / 2)} gp</span>
-          <button data-tp-action="sell" data-tp-id="${item.id}" class="dp-btn" style="padding:2px 9px; font-size:10px;">Sell</button>
-        </div>
-      </div>`).join('')
-      : `<div style="color:${T.faint}; padding:7px 9px; font-size:11px; font-style:italic;">Nothing to sell.</div>`;
+    const sellRows = this.sellRows(inventory, dynamicMod, marketDay);
 
     // Archetype flavour badge
     const archName = archetype ? `<span class="dp-chip dp-chip-sm" style="margin-left:9px; color:${T.goldDim}; vertical-align:middle;">${archetype.name}</span>` : '';
@@ -324,7 +345,7 @@ export class TownPanel {
         <!-- Right: Quick Market + Sell -->
         <div style="width:326px; flex:0 0 auto; overflow-y:auto; padding:4px 12px 12px;">
           ${TownPanel.section('Quick Market')}
-          <div class="dp-row" style="padding:0; overflow:hidden;">${buyRows || `<div style="color:${T.faint}; padding:7px 9px; font-size:11px; font-style:italic;">Enter a building to see its shop.</div>`}</div>
+          <div class="dp-row" style="padding:0; overflow:hidden;">${buyRows || `<div style="color:${T.faint}; padding:7px 9px; font-size:11px; font-style:italic;">Enter a building to see its shop.</div>`}${moreNote}</div>
           ${TownPanel.section('Sell')}
           <div class="dp-row" style="padding:0; overflow:hidden;">${sellRows}</div>
           ${(() => {
@@ -338,8 +359,12 @@ export class TownPanel {
             const progress = nextUnlock
               ? `<div style="color:${T.faint}; font-size:9.5px; margin-bottom:6px;">Next unlock at rep ${nextUnlock.repRequired}: ${nextUnlock.name}</div>`
               : `<div style="color:${T.gold}; font-size:9.5px; margin-bottom:6px;">All reputation items unlocked.</div>`;
+            // Only the perks the game really grants; the discount figure is the one the till uses.
+            const perks = getReputationPerks(rep).map(p => `<div style="color:${T.good}; font-size:9.5px;">✓ ${p}</div>`).join('');
+            const perkBlock = perks ? `<div style="margin-bottom:6px;">${perks}</div>` : '';
             const items = repItems.map(item => {
-              const adjustedPrice = Math.max(1, Math.floor(item.value * dynamicMod));
+              // The reputation shop is the one till that does not mark market day.
+              const adjustedPrice = buyPriceOf(item.value, dynamicMod, false);
               const typeIcon = item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : item.type === 'potion' ? '🧪' : item.type === 'scroll' ? '📜' : item.type === 'ring' ? '💍' : '✨';
               return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 9px; border-bottom:1px solid ${T.line};">
                 <div style="min-width:0;">
@@ -352,7 +377,7 @@ export class TownPanel {
                 </div>
               </div>`;
             }).join('');
-            return `${tierBar}${progress}<div class="dp-row" style="padding:0; overflow:hidden;">${items || `<div style="color:${T.faint}; padding:6px 9px; font-size:10px; font-style:italic;">No items at your reputation level yet.</div>`}</div>`;
+            return `${tierBar}${perkBlock}${progress}<div class="dp-row" style="padding:0; overflow:hidden;">${items || `<div style="color:${T.faint}; padding:6px 9px; font-size:10px; font-style:italic;">No items at your reputation level yet.</div>`}</div>`;
           })()}
         </div>
       </div>
@@ -362,16 +387,49 @@ export class TownPanel {
       </div>`;
   }
 
+  /** Rows of market stock with a Buy button each; rack pieces carry a tag, since they are this town's alone. */
+  private buyRows(items: InventoryItem[], dynamicMod: number, marketDay: boolean): string {
+    return items.map(item => {
+      const value = item.value ?? 0;
+      const price = buyPriceOf(value, dynamicMod, marketDay);
+      const discount = price < value ? `<span class="dp-num" style="color:${T.good}; font-size:9px; text-decoration:line-through; margin-right:5px;">${value}</span>` : '';
+      const rackTag = isRackPiece(item) ? `<span class="dp-chip dp-chip-sm" style="color:${T.goldDim}; margin-left:6px; font-size:8.5px;">rack</span>` : '';
+      return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 9px; border-bottom:1px solid ${T.line};">
+        <div style="min-width:0;">
+          <div style="color:${T.text}; font-size:11px;">${item.name}${rackTag}</div>
+          <div style="color:${T.faint}; font-size:10px;">${item.description}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; flex:0 0 auto;">
+          ${discount}<span class="dp-num" style="color:${T.coin}; font-size:11px;">${price} gp</span>
+          <button data-tp-action="buy" data-tp-id="${item.id}" class="dp-btn" style="padding:2px 9px; font-size:10px;">Buy</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  /** Rows of the party's saleable goods, priced as the market will pay. */
+  private sellRows(inventory: InventoryItem[], dynamicMod: number, marketDay: boolean): string {
+    const sellable = inventory.filter(i => (i.value ?? 0) > 0);
+    if (sellable.length === 0) return `<div style="color:${T.faint}; padding:7px 9px; font-size:11px; font-style:italic;">Nothing to sell.</div>`;
+    return sellable.map(item => `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 9px; border-bottom:1px solid ${T.line};">
+        <div style="color:${T.text}; font-size:11px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.name}</div>
+        <div style="display:flex; align-items:center; gap:7px; flex:0 0 auto;">
+          <span class="dp-num" style="color:${T.coin}; font-size:11px;">${sellPriceOf(item.value ?? 0, dynamicMod, marketDay)} gp</span>
+          <button data-tp-action="sell" data-tp-id="${item.id}" class="dp-btn" style="padding:2px 9px; font-size:10px;">Sell</button>
+        </div>
+      </div>`).join('');
+  }
+
   /** Render the "inside a building" detail view. */
   private renderBuilding(
     panel: Element,
-    town: OverworldTown | null,
     building: TownBuilding,
-    archetype: TownArchetype,
     gold: number,
     stock: InventoryItem[],
     inventory: InventoryItem[],
-    dynamicMod: number = 1,
+    dynamicMod: number,
+    marketDay: boolean,
   ): void {
     // Services
     const serviceRows = building.services.map(s => {
@@ -396,7 +454,7 @@ export class TownPanel {
     let shopRows = '';
     if (shopPool) {
       shopRows = shopPool.map(item => {
-        const adjustedPrice = Math.max(1, Math.floor(item.value * dynamicMod));
+        const adjustedPrice = buyPriceOf(item.value, dynamicMod, marketDay);
         return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:6px 9px; border-bottom:1px solid ${T.line};">
           <div style="min-width:0;">
             <div style="color:${T.text}; font-size:11px;">${item.name}</div>
@@ -409,7 +467,15 @@ export class TownPanel {
         </div>`;
       }).join('');
     }
-    void town; void archetype; void stock; void inventory;
+    // The rack of tiered gear stands only where arms are traded; a shopkeeper
+    // anywhere will buy what the party carries.
+    const rack = sellsRack(building) ? stock.filter(isRackPiece) : [];
+    const rackBlock = rack.length > 0
+      ? `${TownPanel.section('Enchanted Rack')}<div class="dp-row" style="padding:0; overflow:hidden;">${this.buyRows(rack, dynamicMod, marketDay)}</div>`
+      : '';
+    const sellBlock = building.hasShop
+      ? `${TownPanel.section('Sell')}<div class="dp-row" style="padding:0; overflow:hidden;">${this.sellRows(inventory, dynamicMod, marketDay)}</div>`
+      : '';
 
     panel.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; padding:11px 16px; border-bottom:1px solid ${T.line}; background:linear-gradient(180deg, rgba(46,38,26,0.55), rgba(24,20,15,0.35));">
@@ -427,10 +493,11 @@ export class TownPanel {
           ${TownPanel.section('Services')}
           ${serviceRows}
         </div>
-        ${shopPool ? `
+        ${shopPool || rackBlock || sellBlock ? `
         <div style="width:306px; flex:0 0 auto; overflow-y:auto; padding:4px 12px 12px;">
-          ${TownPanel.section('Shop')}
-          <div class="dp-row" style="padding:0; overflow:hidden;">${shopRows}</div>
+          ${shopPool ? `${TownPanel.section('Shop')}<div class="dp-row" style="padding:0; overflow:hidden;">${shopRows}</div>` : ''}
+          ${rackBlock}
+          ${sellBlock}
         </div>` : ''}
       </div>
       <div style="display:flex; gap:10px; padding:10px 16px; border-top:1px solid ${T.line}; background:linear-gradient(0deg, rgba(46,38,26,0.5), rgba(24,20,15,0.3));">
