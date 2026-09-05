@@ -15,8 +15,14 @@ npm test         # vitest run; tests live in tests/**/*.test.ts
 Keep `dependencies` in `package.json` empty. Pixi and Phaser are devDependencies that
 Vite bundles behind dynamic imports; nothing is installed at runtime. Dev-only tooling is fine.
 `electron/main.cjs` wraps the built `dist/` as a desktop app (`npm run app`, `npm run app:build`);
-it serves the build from a loopback HTTP server rather than `file://`, so the game code needs no
-knowledge of where it runs.
+it serves the build from a loopback HTTP server rather than `file://`, and `preload.cjs` puts a
+`fatefall` object on the window that `startGame` requires: a production build in a plain browser
+shows a desktop-only notice instead. The dev server is exempt, and so is a loopback preview with
+`?debug` (the `stable` config), which is why that workflow still works. The splash
+(`electron/splash.html`) is driven by `executeJavaScript` from the main process; the update check
+reads `fatefall.updates` in package.json (GitHub releases or a JSON manifest) and never blocks the
+game for more than six seconds. `FATEFALL_SHOT=<png>` runs the app headlessly for a screenshot of
+the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manifest for testing.
 
 ## Architecture map
 

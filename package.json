@@ -41,6 +41,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "build/icon.png",
       "package.json"
     ],
     "npmRebuild": false,
@@ -76,6 +77,12 @@
         "dmg"
       ],
       "category": "public.app-category.games"
+    }
+  },
+  "fatefall": {
+    "updates": {
+      "github": "",
+      "manifest": "https://fatefall.example/latest.json"
     }
   }
 }

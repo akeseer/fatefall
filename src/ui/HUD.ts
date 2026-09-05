@@ -35,6 +35,8 @@ export class HUD {
   public onCompendiumAction?: (entry: CompendiumEntry, mode: 'encounter' | 'legend') => void;
   public onDMCommand?: (text: string) => void;
   public onSave?: () => void;
+  /** An update the desktop shell found at launch; the drawer shows a line for it. */
+  public updateAvailable: { version: string; open: () => void } | null = null;
   /** The player picked a renderer in the sound drawer; the game switches and remembers it. */
   public onRendererChange?: (id: 'pixi' | 'phaser' | 'canvas') => void;
   /** Open the town panel when in town; otherwise narrates that you're not in town. */
@@ -242,6 +244,7 @@ export class HUD {
           <button data-renderer="canvas" title="Plain 2D canvas: the fallback that runs anywhere">Canvas</button>
         </div></div>
         <div class="ap-note">Switches at once; the choice is remembered.</div>
+        <div class="ap-row" id="update-row" style="display:none;"><label>Update</label><span id="update-text" style="flex:1; color:${T.warn};"></span><button id="btn-update" class="dp-btn dp-btn-gold" style="padding:2px 9px; font-size:10px;">Get it</button></div>
       </div>
 
       <!-- Top strip: dungeon title + quest tracker, pinned on their own row below the
@@ -363,6 +366,17 @@ export class HUD {
     }
     showRenderer();
     audioBtn.addEventListener('click', showRenderer);
+
+    // Update line: filled in when the drawer opens, since the shell's result is
+    // attached after the HUD is built.
+    const updateRow = audioPop.querySelector('#update-row') as HTMLElement;
+    const showUpdate = () => {
+      const u = this.updateAvailable;
+      updateRow.style.display = u ? 'flex' : 'none';
+      if (u) (updateRow.querySelector('#update-text') as HTMLElement).textContent = `Fatefall ${u.version} is out`;
+    };
+    updateRow.querySelector('#btn-update')!.addEventListener('click', () => { sfx.click(); this.updateAvailable?.open(); });
+    audioBtn.addEventListener('click', showUpdate);
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'KeyM' || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;

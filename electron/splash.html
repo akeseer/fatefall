@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Fatefall</title>
+    <style>
+      /* The same palette as the game's title screen: dark wood, parchment and gold. */
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+      body {
+        font-family: Georgia, 'Palatino Linotype', 'Times New Roman', serif;
+        color: #ddd5c4;
+        -webkit-user-select: none; user-select: none;
+        -webkit-app-region: drag;
+      }
+      .card {
+        position: absolute; inset: 0;
+        border-radius: 10px;
+        background: radial-gradient(ellipse at 50% 30%, #2a1e14 0%, #14100c 60%, #0b0d12 100%);
+        border: 1px solid #5c5040;
+        box-shadow: 0 0 0 1px rgba(232,197,106,0.12) inset, 0 18px 50px rgba(0,0,0,0.7);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px;
+      }
+      .die {
+        width: 96px; height: 96px;
+        filter: drop-shadow(0 8px 18px rgba(0,0,0,0.6));
+        animation: tumble 6s ease-in-out infinite;
+      }
+      @keyframes tumble {
+        0%, 100% { transform: rotate(-6deg) translateY(0); }
+        50% { transform: rotate(6deg) translateY(-4px); }
+      }
+      h1 {
+        margin: 0;
+        font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+        font-size: 30px; letter-spacing: 0.22em; font-weight: normal;
+        color: #e8c56a;
+        text-shadow: 0 0 18px rgba(232,197,106,0.25);
+      }
+      .tag { margin: -8px 0 0; font-style: italic; color: #968e7e; font-size: 12px; }
+      .status { margin-top: 10px; min-height: 18px; font-size: 13px; color: #ddd5c4; text-align: center; }
+      .status.warn { color: #e8b45a; }
+      .status.good { color: #8ecf92; }
+      .bar {
+        width: 240px; height: 3px; border-radius: 2px;
+        background: #312d33; overflow: hidden;
+      }
+      .bar > i {
+        display: block; height: 100%; width: 40%;
+        background: linear-gradient(90deg, transparent, #e8c56a, transparent);
+        animation: sweep 1.4s ease-in-out infinite;
+      }
+      @keyframes sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+      .bar.done > i { animation: none; width: 100%; background: #e8c56a; }
+      .version { position: absolute; bottom: 10px; right: 14px; font-size: 10px; color: #6b6559; letter-spacing: 0.08em; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg class="die" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="16,2 29,9 29,23 16,30 3,23 3,9" fill="#8c2b2b" stroke="#e8c46a" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="16,9 23,20 9,20" fill="#c4483f" stroke="#e8c46a" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+      <h1>FATEFALL</h1>
+      <p class="tag">The dice are being counted.</p>
+      <div class="bar" id="bar"><i></i></div>
+      <div class="status" id="status">Starting…</div>
+      <div class="version" id="version"></div>
+    </div>
+    <script>
+      // The main process drives this page with `setStatus(text, tone)`; there is
+      // no preload and no IPC here, only a function it can call by name.
+      window.setStatus = function (text, tone) {
+        const el = document.getElementById('status');
+        el.textContent = text;
+        el.className = 'status' + (tone ? ' ' + tone : '');
+        if (tone === 'good' || tone === 'warn') document.getElementById('bar').classList.add('done');
+      };
+      window.setVersion = function (v) {
+        document.getElementById('version').textContent = 'v' + v;
+      };
+    </script>
+  </body>
+</html>

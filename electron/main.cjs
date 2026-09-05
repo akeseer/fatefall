@@ -8,6 +8,21 @@
  * the window is pointed at that. Nothing is reachable from outside the
  * machine: the server binds 127.0.0.1 and serves only files under `dist/`.
  *
+ * ── Boot ──
+ *
+ * A small frameless splash comes up at once, so the first thing the player
+ * sees is not a blank window. While it is up the update check runs against
+ * the manifest named in package.json (`fatefall.updates`), with a short
+ * timeout so a machine that is offline waits a moment and then plays. The
+ * game window loads behind the splash and is shown, with the splash closed,
+ * once it has painted.
+ *
+ * ── App only ──
+ *
+ * `preload.cjs` puts a `fatefall` object on the game's window with the app
+ * version and the update result. The game refuses to start without it, so
+ * the built files are inert in a plain browser.
+ *
  * The window is the game and nothing else: no menu bar, no navigation, links
  * that would leave the game open in the system browser instead. Saves live in
  * the app's own profile, separate from any browser's.
@@ -16,12 +31,20 @@
  * up and quits; it is the smoke test for the packaged app.
  */
 
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, net } = require('electron');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { compareVersions, readManifest } = require('./version.cjs');
 
 const DIST = path.join(__dirname, '..', 'dist');
+const PKG = require('../package.json');
+
+/** How long the update check may hold the splash before the game starts anyway. */
+const UPDATE_TIMEOUT_MS = 6000;
+
+/** How long the splash lingers after the check so its last line can be read. */
+const SPLASH_LINGER_MS = 900;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -75,9 +98,112 @@ function serve() {
   });
 }
 
+// ── Updates ──
+
+/** Where the latest version is published, from package.json. */
+function updateSource() {
+  // An override for testing the check against a local manifest.
+  if (process.env.FATEFALL_UPDATE_URL) return process.env.FATEFALL_UPDATE_URL;
+  const cfg = (PKG.fatefall && PKG.fatefall.updates) || {};
+  if (cfg.github) return `https://api.github.com/repos/${cfg.github}/releases/latest`;
+  if (cfg.manifest) return cfg.manifest;
+  return null;
+}
+
+/** Fetch JSON with Electron's net stack and a hard timeout. */
+function fetchJson(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out')), timeoutMs);
+    const request = net.request({ url, method: 'GET' });
+    request.setHeader('Accept', 'application/json');
+    request.setHeader('User-Agent', `Fatefall/${PKG.version}`);
+    request.on('response', response => {
+      const chunks = [];
+      response.on('data', c => chunks.push(c));
+      response.on('end', () => {
+        clearTimeout(timer);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          reject(new Error(`HTTP ${response.statusCode}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch (err) {
+          reject(err);
+        }
+      });
+      response.on('error', err => { clearTimeout(timer); reject(err); });
+    });
+    request.on('error', err => { clearTimeout(timer); reject(err); });
+    request.end();
+  });
+}
+
+/**
+ * The launch check. Never throws: an offline machine, an unset source or a
+ * malformed manifest all come back as 'unknown' with a reason, and the game
+ * starts regardless.
+ */
+async function checkForUpdates() {
+  const source = updateSource();
+  if (!source) return { status: 'unknown', reason: 'no update source configured' };
+  try {
+    const manifest = readManifest(await fetchJson(source, UPDATE_TIMEOUT_MS));
+    if (!manifest) return { status: 'unknown', reason: 'unreadable manifest' };
+    if (compareVersions(manifest.version, PKG.version) > 0) {
+      return { status: 'available', latest: manifest.version, url: manifest.url, notes: manifest.notes };
+    }
+    return { status: 'current', latest: manifest.version };
+  } catch (err) {
+    return { status: 'unknown', reason: err && err.message ? err.message : String(err) };
+  }
+}
+
+// ── Windows ──
+
+function openSplash() {
+  const splash = new BrowserWindow({
+    width: 420,
+    height: 300,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    show: false,
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  splash.removeMenu();
+  splash.once('ready-to-show', () => splash.show());
+  const loaded = splash.loadFile(path.join(__dirname, 'splash.html'));
+  const say = async (text, tone) => {
+    if (splash.isDestroyed()) return;
+    try {
+      await loaded;
+      await splash.webContents.executeJavaScript(
+        `window.setStatus(${JSON.stringify(text)}, ${JSON.stringify(tone || '')}); window.setVersion(${JSON.stringify(PKG.version)});`,
+      );
+    } catch {
+      /* the splash may already be closing */
+    }
+  };
+  return { splash, say };
+}
+
 // The game is allowed to start its music without a click: this is an app, not
 // a page that might autoplay at someone.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+let updateResult = { status: 'unknown', reason: 'not checked yet' };
+
+// The preload asks for this synchronously before the game's first script runs.
+ipcMain.on('fatefall:info', event => {
+  event.returnValue = { version: PKG.version, platform: process.platform, update: updateResult };
+});
+ipcMain.on('fatefall:open-update', () => {
+  if (updateResult.url && /^https?:/.test(updateResult.url)) shell.openExternal(updateResult.url);
+});
 
 async function start() {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
@@ -85,7 +211,25 @@ async function start() {
     app.quit();
     return;
   }
-  const port = await serve();
+
+  const { splash, say } = openSplash();
+  void say('Starting…');
+
+  const [port] = await Promise.all([
+    serve(),
+    (async () => {
+      void say('Checking for updates…');
+      updateResult = await checkForUpdates();
+      if (updateResult.status === 'available') {
+        void say(`Update ${updateResult.latest} is available. Opening the game…`, 'warn');
+      } else if (updateResult.status === 'current') {
+        void say('You have the latest version.', 'good');
+      } else {
+        void say('Could not check for updates. Opening the game…', 'warn');
+      }
+      await new Promise(r => setTimeout(r, SPLASH_LINGER_MS));
+    })(),
+  ]);
 
   const win = new BrowserWindow({
     width: 1280,
@@ -99,13 +243,13 @@ async function start() {
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
     },
   });
   win.removeMenu();
-  win.once('ready-to-show', () => win.show());
 
   // Anything that tries to open a new window goes to the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -117,6 +261,21 @@ async function start() {
     if (!url.startsWith(`http://127.0.0.1:${port}/`)) event.preventDefault();
   });
 
+  win.once('ready-to-show', async () => {
+    // In screenshot mode the splash is captured before it goes, so the boot
+    // screen is checked along with the game.
+    const shot = process.env.FATEFALL_SHOT;
+    if (shot && !splash.isDestroyed()) {
+      try {
+        const image = await splash.webContents.capturePage();
+        fs.writeFileSync(shot.replace(/\.png$/i, '') + '.splash.png', image.toPNG());
+      } catch {
+        /* the splash is optional evidence */
+      }
+    }
+    win.show();
+    if (!splash.isDestroyed()) splash.close();
+  });
   await win.loadURL(`http://127.0.0.1:${port}/`);
 
   const shot = process.env.FATEFALL_SHOT;

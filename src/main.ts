@@ -5545,14 +5545,69 @@ function pick<T>(arr: T[]): T {
 
 // ── Startup ──────────────────────────────────────────
 
+/**
+ * What the desktop shell puts on the window before the game's first script
+ * runs (see electron/preload.cjs). Its absence is how a plain browser is told
+ * apart from the app.
+ */
+interface FatefallShell {
+  app: boolean;
+  version: string;
+  platform: string;
+  update: { status: 'current' | 'available' | 'unknown'; latest?: string; url?: string | null; notes?: string; reason?: string };
+  openUpdate: () => void;
+}
+
+function shell(): FatefallShell | null {
+  const s = (window as unknown as { fatefall?: FatefallShell }).fatefall;
+  return s && s.app ? s : null;
+}
+
+/**
+ * Fatefall is a desktop game. A production build that finds itself in a plain
+ * browser stops here and says so, in place of the title screen. The dev
+ * server is exempt, since that is where the game is worked on, and so is a
+ * local preview asked for with ?debug.
+ */
+function refuseBrowser(): void {
+  document.body.innerHTML = '';
+  const box = document.createElement('div');
+  box.id = 'desktop-only';
+  box.style.cssText = [
+    'position:fixed', 'inset:0', 'display:flex', 'flex-direction:column', 'align-items:center', 'justify-content:center',
+    'gap:14px', 'background:radial-gradient(ellipse at 50% 30%, #2a1e14 0%, #14100c 60%, #0b0d12 100%)',
+    "font-family:Georgia,'Palatino Linotype',serif", 'color:#ddd5c4', 'text-align:center', 'padding:24px',
+  ].join(';');
+  box.innerHTML = `
+    <svg width="96" height="96" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="16,2 29,9 29,23 16,30 3,23 3,9" fill="#8c2b2b" stroke="#e8c46a" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="16,9 23,20 9,20" fill="#c4483f" stroke="#e8c46a" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>
+    <div style="font-family:'Palatino Linotype','Book Antiqua',Palatino,Georgia,serif;font-size:32px;letter-spacing:0.22em;color:#e8c56a;">FATEFALL</div>
+    <div style="font-style:italic;color:#968e7e;max-width:460px;line-height:1.5;">
+      Fatefall is a desktop game and does not run in a browser.<br>
+      Install or open the Fatefall app to play.
+    </div>`;
+  document.body.appendChild(box);
+}
+
 function startGame() {
+  const env = (import.meta as { env?: { DEV?: boolean } }).env;
+  // A built copy served from this machine with ?debug is the other exemption:
+  // that is how the game is inspected without the dev server's reloads. A
+  // player with the installer never has a local server to point at.
+  const inspecting = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+    && new URLSearchParams(location.search).has('debug');
+  if (!env?.DEV && !inspecting && !shell()) {
+    refuseBrowser();
+    return;
+  }
   const game = new Game();
   // A handle for driving the game from the console. Dev builds always have
   // it; a production build only when asked for with ?debug, since a global
   // that reaches every piece of state is not something to ship by default.
   // `import.meta.env` is Vite's, and the tests project compiles this file too,
   // so it is read through a local shape rather than Vite's ambient types.
-  const env = (import.meta as { env?: { DEV?: boolean } }).env;
   if (env?.DEV || new URLSearchParams(location.search).has('debug')) {
     (window as any).__game = game;
     (window as any).__audio = getAudio();
@@ -5569,6 +5624,15 @@ function startGame() {
     });
   };
   game.hud.showStartScreen(saves);
+
+  const app = shell();
+  if (app?.update.status === 'available') {
+    game.hud.addCombatMessage(
+      `⬆ Fatefall ${app.update.latest} is available (you have ${app.version}). Open the download page from the Sound drawer.`,
+      '#e8b45a',
+    );
+    game.hud.updateAvailable = { version: app.update.latest ?? '', open: () => app.openUpdate() };
+  }
 
   // The title theme waits for the first touch, since the browser will not
   // let a page make a sound before one. By then the player may already be

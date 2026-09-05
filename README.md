@@ -23,7 +23,8 @@ seconds, on tab hide, and on close.
 
 ## Running as a desktop app
 
-The same build runs as its own window, with no browser and its own save slots:
+Fatefall is a desktop game. The built files refuse to start in a plain browser
+and show a notice instead; the game runs in its own window with its own save slots:
 
 ```bash
 npm run app        # build, then open Fatefall in an Electron window
@@ -31,7 +32,15 @@ npm run app:build  # build a Windows installer and a portable .exe into release/
 ```
 
 The packaged app serves the built files from a loopback-only local server inside
-the window, so nothing about the game changes between the browser and the app.
+the window. It boots behind a splash that checks for a newer version: set
+`fatefall.updates.github` in `package.json` to `owner/repo` once releases are
+published on GitHub, or point `fatefall.updates.manifest` at a JSON file of the
+form `{ "version": "1.1.0", "url": "https://…/Fatefall Setup 1.1.0.exe", "notes": "…" }`.
+An unreachable server just means the game opens after a moment. When an update is
+found, the game's log says so and the Sound drawer gets a button to the download.
+
+For development the dev server (`npm run dev`) still plays in the browser, as does a
+local preview of a build opened with `?debug`.
 
 ## Playing
 
