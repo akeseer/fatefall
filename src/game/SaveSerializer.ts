@@ -129,6 +129,8 @@ export interface SaveHost {
   // ── Live DM orders ──
   dmStance: 'auto' | 'aggressive' | 'cautious';
   dmDirection?: Direction;
+  runMode: 'auto' | 'manual';
+  hardcore: boolean;
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -202,6 +204,8 @@ export class SaveSerializer {
       bossSlainThisFloor: this.game.bossSlainThisFloor,
       monsterIdCounter: this.game.monsterIdCounter,
       dmStance: this.game.dmStance,
+      runMode: this.game.runMode,
+      hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
       camera: {
@@ -389,6 +393,8 @@ export class SaveSerializer {
     this.game.phase = save.phase;
     this.game.monsterIdCounter = save.monsterIdCounter;
     this.game.dmStance = save.dmStance;
+    this.game.runMode = save.runMode ?? 'auto';
+    this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();
 

@@ -42,16 +42,25 @@ const ROLE: Record<string, string> = {
   blood_hunter: 'Scarred zealot; bleeds to punish monsters.',
 };
 
+/** How the run will be played, chosen alongside the party. */
+export interface RunOptions {
+  /** Auto: the party runs itself. Manual: the player commands every fight and the party holds at each new room. */
+  mode: 'auto' | 'manual';
+  /** A dead adventurer is gone for good, and a dead party ends the run. */
+  hardcore: boolean;
+}
+
 export interface PartyBuilderOptions {
   /** The class's sprite as the generator draws it, for the card. */
   portrait: (classId: string) => ImageData;
-  /** Four class ids, in seat order. */
-  onBegin: (classIds: string[]) => void;
+  /** Four class ids, in seat order, and how the run is to be played. */
+  onBegin: (classIds: string[], options: RunOptions) => void;
   onBack: () => void;
 }
 
 export class PartyBuilder {
   private chosen: string[] = [];
+  private options: RunOptions = { mode: 'auto', hardcore: false };
   private root: HTMLElement | null = null;
   private opts: PartyBuilderOptions | null = null;
   private readonly portraits = new Map<string, string>();
@@ -62,6 +71,7 @@ export class PartyBuilder {
     this.hide();
     this.opts = opts;
     this.chosen = [];
+    this.options = { mode: 'auto', hardcore: false };
     const root = document.createElement('div');
     root.id = 'party-builder';
     root.style.cssText = `position:absolute; inset:0; z-index:100; overflow:auto; background:radial-gradient(ellipse at 50% 20%, #14100c 0%, #0a0808 55%, #050405 100%); display:flex; flex-direction:column; align-items:center; font-family:${T.bodyFont}; color:${T.text};`;
@@ -82,13 +92,40 @@ export class PartyBuilder {
         #party-builder .pb-card .pb-seatno { position:absolute; margin-top:-100px; margin-left:88px; width:18px; height:18px; border-radius:50%; background:${T.gold}; color:${T.ink}; font-size:10px; font-weight:bold; line-height:18px; }
         #party-builder .pb-btn { padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2}; }
         #party-builder .pb-btn[disabled] { opacity:0.45; cursor:default; }
+        #party-builder .pb-opts { display:flex; gap:14px; justify-content:center; margin-top:18px; flex-wrap:wrap; }
+        #party-builder .pb-opt { border:1px solid ${T.line}; border-radius:${T.r3}; background:${T.row}; padding:10px 12px; width:300px; text-align:left; }
+        #party-builder .pb-opt .pb-opt-title { font-family:${T.titleFont}; font-size:11px; letter-spacing:0.14em; color:${T.faint}; margin-bottom:7px; }
+        #party-builder .pb-seg { display:flex; border:1px solid ${T.line}; border-radius:${T.r2}; overflow:hidden; }
+        #party-builder .pb-seg button { flex:1; padding:6px 0; font-size:11px; border:0; border-radius:0; letter-spacing:0.04em; }
+        #party-builder .pb-seg button + button { border-left:1px solid ${T.line}; }
+        #party-builder .pb-seg button.on { background:${T.rowHot}; color:${T.gold}; }
+        #party-builder .pb-seg button.on.grim { color:${T.bad}; }
+        #party-builder .pb-opt .pb-opt-desc { font-size:10.5px; color:${T.muted}; line-height:1.4; margin-top:7px; min-height:28px; }
       </style>
       <div style="max-width:920px; width:96%; text-align:center; padding:28px 0 36px;">
         <div class="dp-title" style="font-size:26px; letter-spacing:0.2em; color:${T.gold};">CHOOSE YOUR PARTY</div>
         <div style="color:${T.muted}; font-style:italic; font-size:12px; margin-top:6px;">Pick four callings. The world will roll their names, faces and fates.</div>
         <div id="pb-seats" style="display:flex; gap:12px; justify-content:center; margin-top:22px;"></div>
         <div class="pb-grid" id="pb-grid"></div>
-        <div style="display:flex; gap:12px; justify-content:center; margin-top:26px; align-items:center;">
+        <div class="pb-opts">
+          <div class="pb-opt">
+            <div class="pb-opt-title">PLAY</div>
+            <div class="pb-seg">
+              <button data-opt="mode" data-value="auto">Auto</button>
+              <button data-opt="mode" data-value="manual">Manual</button>
+            </div>
+            <div class="pb-opt-desc" id="pb-mode-desc"></div>
+          </div>
+          <div class="pb-opt">
+            <div class="pb-opt-title">STAKES</div>
+            <div class="pb-seg">
+              <button data-opt="hardcore" data-value="false">Standard</button>
+              <button data-opt="hardcore" data-value="true">Hardcore</button>
+            </div>
+            <div class="pb-opt-desc" id="pb-stakes-desc"></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:12px; justify-content:center; margin-top:22px; align-items:center;">
           <button data-pb="back" class="dp-btn dp-title pb-btn">← Back</button>
           <button data-pb="random" class="dp-btn dp-title pb-btn" title="Roll a party for me">⚄ Surprise Me</button>
           <button data-pb="begin" class="dp-btn-gold dp-title pb-btn" disabled style="box-shadow:0 0 16px rgba(232,197,106,0.22);">✦ Set Out</button>
@@ -112,6 +149,14 @@ export class PartyBuilder {
         this.toggle(card.dataset.class!);
         return;
       }
+      const opt = target.closest('[data-opt]') as HTMLElement | null;
+      if (opt) {
+        sfx.click();
+        if (opt.dataset.opt === 'mode') this.options.mode = opt.dataset.value === 'manual' ? 'manual' : 'auto';
+        else this.options.hardcore = opt.dataset.value === 'true';
+        this.render();
+        return;
+      }
       const btn = target.closest('[data-pb]') as HTMLElement | null;
       if (!btn) return;
       const action = btn.dataset.pb;
@@ -125,7 +170,7 @@ export class PartyBuilder {
       } else if (action === 'begin' && this.chosen.length === PARTY_SIZE) {
         sfx.levelUp();
         const picked = [...this.chosen];
-        this.opts?.onBegin(picked);
+        this.opts?.onBegin(picked, { ...this.options });
       }
     });
 
@@ -177,6 +222,17 @@ export class PartyBuilder {
         card.appendChild(badge);
       }
     }
+    for (const b of Array.from(root.querySelectorAll<HTMLElement>('[data-opt]'))) {
+      const on = b.dataset.opt === 'mode' ? b.dataset.value === this.options.mode : (b.dataset.value === 'true') === this.options.hardcore;
+      b.classList.toggle('on', on);
+      b.classList.toggle('grim', on && b.dataset.opt === 'hardcore' && b.dataset.value === 'true');
+    }
+    (root.querySelector('#pb-mode-desc') as HTMLElement).textContent = this.options.mode === 'manual'
+      ? 'You command every hero in every fight, and the party holds at each new room and town gate until you send them on.'
+      : 'The party runs itself: it explores, fights and trades on its own, and takes your orders when you give them.';
+    (root.querySelector('#pb-stakes-desc') as HTMLElement).textContent = this.options.hardcore
+      ? 'Death is final. A fallen adventurer leaves the party for good, and when the last one falls the run is over and the slot is cleared.'
+      : 'A lost fight is a retreat: the survivors drag everyone out, exhausted but alive.';
     const begin = root.querySelector('[data-pb="begin"]') as HTMLButtonElement;
     begin.disabled = this.chosen.length !== PARTY_SIZE;
     begin.textContent = this.chosen.length === PARTY_SIZE ? '✦ Set Out' : `✦ Set Out (${this.chosen.length}/${PARTY_SIZE})`;

@@ -54,6 +54,11 @@ local preview of a build opened with `?debug`.
 - Pick a save slot on the start screen. A new run asks you to choose your party's four
   classes; the world rolls their names, races, faces and gear. The party leaves town for
   its first quest on its own if you do nothing for a while.
+- The same screen sets how the run is played. **Auto**: the party runs itself and fights
+  resolve on their own. **Manual**: you command every hero in every fight, and the party
+  holds at each new room and town gate until you press Play. **Hardcore**: a fallen
+  adventurer leaves the party for good, and when the last one falls the run is over and
+  the slot is cleared.
 - The **DM** button (or the input bar at the bottom) takes orders. Type `help` for
   the list the party understands, though you do not have to stick to it — see below.
 - Speed controls run the world from 0.25× to 4×; Pause freezes it.

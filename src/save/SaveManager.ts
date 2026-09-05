@@ -27,7 +27,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 
 export interface SavedCharacter {
   id: string;
@@ -126,6 +126,10 @@ export interface SaveData {
   monsterIdCounter: number;
   dmStance: 'auto' | 'aggressive' | 'cautious';
   dmDirection: Direction | null;
+  /** How the run is played: the party runs itself, or the player commands each fight and each room. v12+. */
+  runMode?: 'auto' | 'manual';
+  /** Hardcore: a dead adventurer is gone for good, and a dead party ends the run. v12+. */
+  hardcore?: boolean;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -303,7 +307,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 9) current = migrateV9toV10(current);
   if (!current) return null;
   if (current.version === 10) current = migrateV10toV11(current);
+  if (!current) return null;
+  if (current.version === 11) current = migrateV11toV12(current);
   return current;
+}
+
+/** v11 → v12: the run mode and hardcore flag. Older runs were auto and forgiving, which is what the absent fields mean. */
+function migrateV11toV12(data: SaveData): SaveData | null {
+  return { ...data, version: 12 };
 }
 
 /** v6 → v7: seed the day/night clock for older saves. */

@@ -272,6 +272,16 @@ class Game {
   public dmDirection?: Direction;
   public dmStance: 'auto' | 'aggressive' | 'cautious' = 'auto';
 
+  /**
+   * How this run is played. Auto: the party runs itself and fights resolve on
+   * their own. Manual: every fight opens the command menu, and the party holds
+   * at each new room and each town gate until the player lets it go on.
+   */
+  public runMode: 'auto' | 'manual' = 'auto';
+
+  /** Hardcore: a dead adventurer is gone for good; a dead party ends the run. */
+  public hardcore = false;
+
   private paused: boolean = false;
   private saveTimer: number = 0;
   /** Ticks until the party may try another auto-disarm (avoids spam). */
@@ -924,6 +934,7 @@ class Game {
     this.errorHalt = false;
     this.running = true;
     this.runStarted = true;
+    this.applyRunMode();
     // Both are armed here, not just the frame request. A window that is
     // visible but never painted (occluded, or a host that withholds frames)
     // gets no first animation frame at all, and the watchdog cannot rescue a
@@ -1389,6 +1400,7 @@ class Game {
       this.history.roomsVisited = this.visitedRooms.size;
       this.bulletinScoutProgress(1);
       this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
+      this.manualHold('a new room');
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
       // closes a little of the party's hurts.
       if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
@@ -2757,9 +2769,9 @@ class Game {
           this.hud.partyBuilder.hide();
           this.hud.showStartScreen(listSaves(), slot);
         },
-        onBegin: (classIds) => {
+        onBegin: (classIds, options) => {
           this.hud.partyBuilder.hide();
-          this.startFreshRun(classIds);
+          this.startFreshRun(classIds, options);
           this.start();
         },
       });
@@ -2792,6 +2804,10 @@ class Game {
    * new party takes up the quest with a clean slate.
    */
   private partyRetreat(): void {
+    if (this.hardcore) {
+      this.hardcoreRetreat();
+      return;
+    }
     let deadCount = 0;
     for (const member of this.party.members) {
       if (!member.isDead) {
@@ -2812,6 +2828,84 @@ class Game {
       if (member.isDead) continue;
       member.revive(Math.ceil(member.maxHp * 0.5));
     }
+  }
+
+  /**
+   * The mode's standing orders. Fights open on the command menu in Manual
+   * and resolve on their own in Auto; the toggle in the battle window still
+   * changes it for the run. Called when the loop starts, so a restored run
+   * comes back the way it was played.
+   */
+  private applyRunMode(): void {
+    this.hud.battleView.setMode(this.runMode === 'manual' ? 'manual' : 'auto');
+    this.hud.setRunFlags(this.runMode, this.hardcore);
+  }
+
+  /** In Manual, the party holds where it stands and waits for the player. */
+  private manualHold(where: string): void {
+    if (this.runMode !== 'manual' || this.paused || this.phase === GamePhase.Combat) return;
+    this.paused = true;
+    this.hud.setPausedIndicator(true);
+    this.hud.addCombatMessage(`\u23f8 The party holds at ${where} and looks to you. Press Play (or P) when they should go on.`, '#e8b45a');
+  }
+
+  /**
+   * A lost fight in hardcore. The survivors stagger out as they always did;
+   * the dead stay dead and leave the party, and a party with no one left is
+   * a run that is over.
+   */
+  private hardcoreRetreat(): void {
+    for (const member of this.party.members) {
+      if (!member.isDead) this.hud.addCombatMessage(member.gainExhaustion(), '#c66');
+    }
+    const fallen = this.party.members.filter(m => m.isDead);
+    for (const m of fallen) {
+      this.hud.addCombatMessage(`\u2620 ${m.name} will not rise again. ${m.charClass.name}, level ${m.level}; ${this.history.kills} foes fell before them.`, '#e0705f');
+      this.expeditionJournal.push(`${m.name} died and was not brought back`);
+    }
+    this.removeFallen();
+    if (this.party.members.length === 0) {
+      this.endRun();
+      return;
+    }
+    for (const member of this.party.members) {
+      if (member.hp <= 0) member.revive(Math.ceil(member.maxHp * 0.5));
+    }
+    this.party.generateDefaultName();
+    this.hud.setParty(this.party);
+  }
+
+  /** Take the dead out of the party, keeping the formation and the leader straight. */
+  private removeFallen(): void {
+    for (let i = this.party.members.length - 1; i >= 0; i--) {
+      if (!this.party.members[i].isDead) continue;
+      this.party.members.splice(i, 1);
+      this.party.formation.splice(i, 1);
+      if (i < this.party.leaderIndex) this.party.leaderIndex--;
+      else if (i === this.party.leaderIndex) this.party.leaderIndex = 0;
+    }
+    if (this.party.leaderIndex >= this.party.members.length) this.party.leaderIndex = 0;
+  }
+
+  /** The run is over: the slot is cleared and the title returns after the epitaph. */
+  private endRun(): void {
+    sfx.down();
+    clearSlot(this.activeSlot);
+    this.runStarted = false;
+    this.running = false;
+    this.music.play('title');
+    this.ambience.stop();
+    this.hud.closeOverlays();
+    this.hud.showRunEnd(
+      {
+        partyName: this.party.partyName,
+        kills: this.history.kills,
+        victories: this.history.victories,
+        deepest: this.history.deepestLevel,
+        rooms: this.history.roomsVisited,
+      },
+      () => this.hud.showStartScreen(listSaves(), this.activeSlot),
+    );
   }
 
   /** DM "roll <expr>" — parse and roll dice for the party, feeding the dice tray. */
@@ -3308,8 +3402,10 @@ class Game {
   }
 
   /** Wipe the active slot and start over: fresh party, fresh floor 1. */
-  startFreshRun(classIds: string[] = []): void {
+  startFreshRun(classIds: string[] = [], options: { mode: 'auto' | 'manual'; hardcore: boolean } = { mode: 'auto', hardcore: false }): void {
     clearSlot(this.activeSlot);
+    this.runMode = options.mode;
+    this.hardcore = options.hardcore;
     this.dungeonLevel = 0;
     this.history = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
     this.dungeonTheme = null;
@@ -4585,6 +4681,7 @@ class Game {
 
     // The party autonomously handles town business after a brief pause.
     setTimeout(() => this.autoTownActions(), 3500);
+    this.manualHold(`the gates of ${town.name}`);
   }
 
   /** Leave town: with a quest in hand, the party marches to its dungeon. */

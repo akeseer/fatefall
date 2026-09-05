@@ -115,3 +115,19 @@ describe('migrateSave', () => {
     expect(out.clockElapsed).toBe(123);
   });
 });
+
+describe('v11 -> v12 run settings', () => {
+  it('leaves an older run without a mode or a hardcore flag, which restore reads as auto and forgiving', () => {
+    const out = migrateSave({ version: 11, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.runMode).toBeUndefined();
+    expect(out.hardcore).toBeUndefined();
+  });
+
+  it('carries the mode and the flag through untouched', () => {
+    const save = { version: SAVE_VERSION, runMode: 'manual', hardcore: true } as SaveData;
+    const out = migrateSave(save)!;
+    expect(out.runMode).toBe('manual');
+    expect(out.hardcore).toBe(true);
+  });
+});

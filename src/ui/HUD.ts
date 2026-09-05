@@ -36,6 +36,46 @@ export class HUD {
   public onCompendiumAction?: (entry: CompendiumEntry, mode: 'encounter' | 'legend') => void;
   public onDMCommand?: (text: string) => void;
   public onSave?: () => void;
+  /** The run's standing flags, shown beside the title: Manual and Hardcore. */
+  setRunFlags(mode: 'auto' | 'manual', hardcore: boolean): void {
+    let strip = this.overlay.querySelector('#run-flags') as HTMLElement | null;
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'run-flags';
+      strip.style.cssText = 'position:absolute; top:44px; right:10px; display:flex; gap:6px; z-index:26; pointer-events:none;';
+      this.overlay.appendChild(strip);
+    }
+    const chip = (text: string, color: string) =>
+      `<span style="font-size:9.5px; letter-spacing:0.12em; padding:2px 7px; border:1px solid ${color}; color:${color}; border-radius:${T.r1}; background:rgba(10,9,12,0.7);">${text}</span>`;
+    strip.innerHTML = `${mode === 'manual' ? chip('MANUAL', T.warn) : ''}${hardcore ? chip('\u2620 HARDCORE', T.bad) : ''}`;
+  }
+
+  /** The end of a hardcore run: the party's epitaph, then back to the title. */
+  showRunEnd(summary: { partyName: string; kills: number; victories: number; deepest: number; rooms: number }, onDone: () => void): void {
+    this.overlay.querySelector('#run-end')?.remove();
+    const screen = document.createElement('div');
+    screen.id = 'run-end';
+    screen.style.cssText = `position:absolute; inset:0; z-index:110; background:radial-gradient(ellipse at 50% 40%, #1a0c0c 0%, #0a0808 55%, #050405 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; font-family:${T.bodyFont}; color:${T.text}; text-align:center;`;
+    screen.innerHTML = `
+      <div style="font-size:44px; color:${T.bad}; text-shadow:0 0 24px rgba(224,112,95,0.4);">\u2620</div>
+      <div class="dp-title" style="font-size:26px; letter-spacing:0.2em; color:${T.gold};">THE PARTY HAS FALLEN</div>
+      <div style="font-style:italic; color:${T.muted}; font-size:13px;">${summary.partyName} went into the dark and did not come back.</div>
+      <div style="display:flex; gap:22px; margin-top:8px; font-size:12px; color:${T.text};">
+        <div><span class="dp-num" style="color:${T.gold}; font-size:18px;">${summary.kills}</span><br><span style="color:${T.faint}; font-size:10px; letter-spacing:0.1em;">FOES SLAIN</span></div>
+        <div><span class="dp-num" style="color:${T.gold}; font-size:18px;">${summary.victories}</span><br><span style="color:${T.faint}; font-size:10px; letter-spacing:0.1em;">BATTLES WON</span></div>
+        <div><span class="dp-num" style="color:${T.gold}; font-size:18px;">${summary.deepest}</span><br><span style="color:${T.faint}; font-size:10px; letter-spacing:0.1em;">DEEPEST FLOOR</span></div>
+        <div><span class="dp-num" style="color:${T.gold}; font-size:18px;">${summary.rooms}</span><br><span style="color:${T.faint}; font-size:10px; letter-spacing:0.1em;">ROOMS SEEN</span></div>
+      </div>
+      <div style="color:${T.faint}; font-size:11px; margin-top:6px;">Hardcore: the slot has been cleared.</div>
+      <button id="run-end-done" class="dp-btn-gold dp-title" style="margin-top:14px; padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">Return to the Title</button>`;
+    this.overlay.appendChild(screen);
+    screen.querySelector('#run-end-done')!.addEventListener('click', () => {
+      sfx.click();
+      screen.remove();
+      onDone();
+    });
+  }
+
   /** An update the desktop shell found at launch; the drawer shows a line for it. */
   public updateAvailable: { version: string; open: () => void } | null = null;
   /** The player picked a renderer in the sound drawer; the game switches and remembers it. */
@@ -80,6 +120,7 @@ export class HUD {
 
   /** Close every floating panel and unpause — called before returning to the menu. */
   closeOverlays() {
+    this.overlay.querySelector('#run-flags')?.remove();
     this.compendium.close();
     this.townPanel.hide();
     this.battleView.close();
@@ -936,6 +977,9 @@ export class HUD {
         ${partyLabel ? `<div class="dp-title" style="color:${T.gold}; font-size:12px; font-weight:bold; margin-top:3px; letter-spacing:0.5px;">${partyLabel}</div>` : ''}
         <div style="color:${T.text}; font-size:12px; font-weight:bold; margin-top:3px;">${locationName}</div>
         <div style="color:${T.faint}; font-size:10px; margin-top:2px;">${locationLine} \u00b7 ${new Date(save.savedAt).toLocaleDateString()} ${new Date(save.savedAt).toLocaleTimeString()}</div>
+        ${save.hardcore || save.runMode === 'manual'
+          ? `<div style="margin-top:3px; display:flex; gap:5px;">${save.runMode === 'manual' ? `<span style="font-size:9px; letter-spacing:0.1em; padding:1px 5px; border:1px solid ${T.warn}; color:${T.warn}; border-radius:${T.r1};">MANUAL</span>` : ''}${save.hardcore ? `<span style="font-size:9px; letter-spacing:0.1em; padding:1px 5px; border:1px solid ${T.bad}; color:${T.bad}; border-radius:${T.r1};">\u2620 HARDCORE</span>` : ''}</div>`
+          : ''}
         ${(typeof (save as any).clockElapsed === 'number')
           ? `<div style="color:${T.info}; font-size:10px; margin-top:2px;">${this.calendarShortDate((save as any).clockElapsed)}</div>`
           : ''}

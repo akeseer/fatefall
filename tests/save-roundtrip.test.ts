@@ -72,6 +72,8 @@ class TestHost implements SaveHost {
 
   dmStance: SaveHost['dmStance'] = 'auto';
   dmDirection: SaveHost['dmDirection'] = undefined;
+  runMode: SaveHost['runMode'] = 'auto';
+  hardcore = false;
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {
@@ -184,6 +186,8 @@ function populatedHost(): TestHost {
   host.clock = { ...createClock(), phase: 0.42, elapsed: 75_600 };
   host.dmStance = 'cautious';
   host.dmDirection = Direction.Left;
+  host.runMode = 'manual';
+  host.hardcore = true;
   host.camera.x = 128;
   host.camera.y = 64;
   host.camera.targetX = 130;
@@ -285,6 +289,8 @@ describe('SaveSerializer round trip', () => {
     expect(target.clock.elapsed).toBe(75_600);
     expect(target.dmStance).toBe('cautious');
     expect(target.dmDirection).toBe(Direction.Left);
+    expect(target.runMode).toBe('manual');
+    expect(target.hardcore).toBe(true);
 
     // Camera and speed
     expect(target.camera.x).toBe(128);
