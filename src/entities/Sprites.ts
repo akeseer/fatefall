@@ -43,6 +43,23 @@ function pixelSnapped(ctx: CanvasRenderingContext2D): CanvasRenderingContext2D {
   });
 }
 
+/** The same pixels, right to left. */
+function mirrorImageData(ctx: CanvasRenderingContext2D, src: ImageData): ImageData {
+  const { width: w, height: h } = src;
+  const out = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const from = (y * w + x) * 4;
+      const to = (y * w + (w - 1 - x)) * 4;
+      out.data[to] = src.data[from];
+      out.data[to + 1] = src.data[from + 1];
+      out.data[to + 2] = src.data[from + 2];
+      out.data[to + 3] = src.data[from + 3];
+    }
+  }
+  return out;
+}
+
 export class SpriteRenderer {
   private charCanvas: HTMLCanvasElement;
   private charCtx: CanvasRenderingContext2D;
@@ -64,7 +81,20 @@ export class SpriteRenderer {
     this.monsterCtx = this.monsterCanvas.getContext('2d', { willReadFrequently: true })!;
   }
 
-  getCharSprite(character: GameCharacter): ImageData {
+  /**
+   * A character's sprite, mirrored when asked so a party walking left leads
+   * with the held hand. The mirror is cached beside the original; the
+   * sprites face the viewer, so a flip changes only which side the weapon is on.
+   */
+  getCharSprite(character: GameCharacter, mirrored = false): ImageData {
+    if (mirrored) {
+      const mkey = `${character.charClass.id}\u0000mirror`;
+      const hit = this.cache.get(mkey);
+      if (hit) return hit;
+      const flipped = mirrorImageData(this.charCtx, this.getCharSprite(character));
+      this.cache.set(mkey, flipped);
+      return flipped;
+    }
     const key = character.charClass.id;
     if (this.cache.has(key)) return this.cache.get(key)!;
 

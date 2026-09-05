@@ -432,6 +432,8 @@ interface VisualSprite {
   moveDuration: number;
   progress: number;
   moving: boolean;
+  /** True after a step to the left; the sprite is mirrored so the held hand leads. */
+  faceLeft: boolean;
 }
 
 export class MapRenderer {
@@ -1472,7 +1474,7 @@ export class MapRenderer {
         ctx.strokeRect(Math.floor(sx) - 2, Math.floor(sy) - 2, TILE_SIZE + 2, TILE_SIZE + 2);
       }
 
-      const sprite = this.sprites.getCharSprite(member);
+      const sprite = this.sprites.getCharSprite(member, visual.faceLeft);
       ctx.putImageData(sprite, Math.floor(sx), Math.floor(sy));
 
       // Little dust puff at the start of each step.
@@ -2878,6 +2880,7 @@ export class MapRenderer {
         moveDuration: moveMs,
         progress: 1,
         moving: false,
+        faceLeft: false,
       };
       this.visuals.set(member, v);
       return v;
@@ -2904,6 +2907,9 @@ export class MapRenderer {
         v.progress = 0;
         v.moving = true;
       }
+      // Face the way the step is going, re-read every frame so a retarget
+      // mid-step turns the sprite too.
+      if (Math.abs(targetX - v.x) > 0.5) v.faceLeft = targetX < v.x;
       // Advance the step (supports mid-step retarget if the tick is faster).
       const raw = Math.min(1, (this.renderTime - v.moveStart) / v.moveDuration);
       const e = raw * raw * (3 - 2 * raw); // smoothstep

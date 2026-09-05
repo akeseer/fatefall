@@ -1,3 +1,5 @@
+import { hashSeed, mulberry32 } from '../world/DungeonGenerator';
+
 /**
  * QuestGivers — named NPCs who live in towns and hand out quests with
  * personality. Each town gets 2-3 quest-givers drawn from a pool of
@@ -375,10 +377,12 @@ export const GIVERS: Omit<QuestGiver, 'id' | 'reputation'>[] = [
  * seeded by the town's id for consistency across saves.
  */
 export function generateQuestGivers(townId: string): QuestGiver[] {
-  // Simple seeded shuffle based on town id
-  let seed = 0;
-  for (let i = 0; i < townId.length; i++) seed = ((seed << 5) - seed + townId.charCodeAt(i)) | 0;
-  const rng = () => { seed = (seed * 16807 + 0) & 0x7fffffff; return (seed & 0x7fffffff) / 0x7fffffff; };
+  // Seeded by the town id through the dungeon generator's hash and PRNG. The
+  // hand-rolled multiplier this replaced masked its state to 31 bits instead
+  // of reducing it properly, so its low bits cycled and a town id that hashed
+  // to zero never shuffled at all: those towns always got the first two
+  // givers in the list.
+  const rng = mulberry32(hashSeed(townId));
 
   const indices = GIVERS.map((_, i) => i);
   // Fisher-Yates shuffle with seeded RNG

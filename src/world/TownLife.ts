@@ -636,6 +636,31 @@ function pickLine<T>(pool: T[]): T {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+/**
+ * How long a town repeats one rumor before the talk moves on. Festivals run
+ * on the same wall clock at ninety seconds to four minutes apart, so this
+ * makes a rumor last about a visit and a half.
+ */
+export const RUMOR_LIFETIME_MS = 180_000;
+
+/**
+ * Give a town fresh talk once its rumor is stale. Returns the new rumor's
+ * text, or null when the old one still has life in it. `rumorSince` was
+ * recorded from the start and never read, so every town repeated its first
+ * rumor for the whole of a run.
+ */
+export function refreshRumor(tl: TownLife, overworld: Overworld, town: OverworldTown, now: number): string | null {
+  if (now - tl.rumorSince < RUMOR_LIFETIME_MS) return null;
+  const ctx = rumorContextFor(overworld, town);
+  let rumor = pickRumor(ctx);
+  // Try a few times for something the town was not already saying.
+  for (let i = 0; i < 4 && rumor.text === tl.rumor; i++) rumor = pickRumor(ctx);
+  tl.rumor = rumor.text;
+  tl.rumorBias = rumor.bias;
+  tl.rumorSince = now;
+  return rumor.text;
+}
+
 export function initTownLife(overworld: Overworld, now: number = Date.now()): TownLifeState {
   const byTown: Record<string, TownLife> = {};
   for (const town of overworld.towns) {
@@ -768,6 +793,10 @@ export function tickTownLife(
     const tl = state.byTown[town.id];
     if (!tl) continue;
     const partyHere = ctx.partyTownId === town.id;
+
+    // The talk moves on. Only announced where the party can hear it.
+    const fresh = refreshRumor(tl, overworld, town, now);
+    if (fresh && partyHere) lines.push(`The talk in ${town.name} has turned: “${fresh}”`);
 
     // Festivals begin and end on their own clocks.
     if (!tl.festival && now > tl.nextFestivalAt) {
