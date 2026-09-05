@@ -32,6 +32,9 @@ seconds, on tab hide, and on close.
   command each hero.
 - Typing `roll d20` banks a **Luck die**: the party's next d20 roll is fated to that
   result, for better or worse.
+- Everything you hear is synthesised in the browser: a score per place and mood, a
+  sound for every blow and spell, and the weather itself. The **Sound** button opens
+  a drawer with master, effects and music levels; `M` mutes.
 
 ## Talking to the party
 
@@ -58,10 +61,11 @@ for how the model is built and retrained.
 | `src/combat/` | Turn-based combat engine |
 | `src/world/` | Overworld, towns and town life, dungeons, weather, day/night, calendar |
 | `src/entities/` | Characters, monsters, party, procedural pixel sprites |
+| `src/audio/` | The audio engine, sound effects, the score and the weather ambience, all synthesised |
 | `src/quests/` | Quests, quest givers, bulletin board, bandit camps |
 | `src/rules/`, `src/loot/`, `src/traps/`, `src/save/` | Dice, loot tables, traps, save slots and migrations |
 | `src/ui/` | HUD overlay, battle view, 3D dice, town panel, compendium |
-| `src/rendering/`, `src/engine/` | Canvas map renderer, camera, shared types |
+| `src/rendering/`, `src/engine/` | Recorded-frame map renderer, Pixi and Canvas backends with lighting, weather and mood effects, camera, shared types |
 | `tests/` | Vitest suites (run with `npm test`) |
 | `tools/train/` | Training pipeline for the DM command-understanding model |
 
