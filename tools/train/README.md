@@ -69,10 +69,10 @@ Flags: `--model`, `--split`, `--bins`, `--pairs`, `--classes`, `--all-classes`,
 
 | | |
 |---|---|
-| Dev accuracy | 85.6% — 91.0% on the 81.6% of rows that clear the bar |
-| ECE | 0.028, and 0.023 above the bar |
-| Regex agreement | 84.9% where the regex commits; on the 897 disagreements the model is right 651 times to the regex's 174 |
-| `unknown` precision / recall | 86.5% / 88.0% — still under the 0.95 precision bar on this split |
+| Dev accuracy | 87.6% — 92.9% on the 84.5% of rows that clear the bar |
+| ECE | 0.013, and 0.009 above the bar |
+| Regex agreement | 86.9% where the regex commits; on the 837 disagreements the model is right 709 times to the regex's 65 |
+| `unknown` precision / recall | 84.6% / 82.7% — still under the 0.95 precision bar on this split |
 
 The dev split is the harsher of the two measurements and deliberately so: it
 holds out *whole templates*, so every wording family with only one member is a
@@ -173,7 +173,7 @@ labels. After editing `DMCommandParser.ts`:
   classifier, so renaming a character to something unusual still works.
 - `unknown` precision clears its 0.95 bar on the hand-written set — 19 of 19,
   no real order dropped as chatter, and 5% of the table talk acted on — but is
-  0.865 on the dev split, where the bar still reads FAIL. The gap is the split's
+  0.846 on the dev split, where the bar still reads FAIL. The gap is the split's
   design, not a second opinion about the same thing: the dev split holds out
   whole templates, so a wording family with one member ("is there a festival
   on", "prioritise staying alive", "take five") is scored with nothing near it
@@ -181,6 +181,6 @@ labels. After editing `DMCommandParser.ts`:
   seen is `unknown`. The remaining 126 false `unknown`s are spread thinly over
   twenty-odd such templates, so closing that gap means widening those families
   in `vocabulary.py`, not tuning the model. What the player actually feels is
-  the last line of the report: 2.0% of the split's table talk clears the accept
+  the last line of the report: 0.7% of the split's table talk clears the accept
   bar and would be acted on, down from 6.4%. Run `python tools/train/eval.py`
   for the current figures.

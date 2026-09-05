@@ -83,6 +83,14 @@ EXTRA = {
         "offload the {item} at the shop", "take the {item} to the market and sell it",
         "sell the {item} to the merchant", "get the market to take the {item}",
         "see what the merchant gives for the {item}", "trade the {item} in at the shop",
+        # Gear and loot as well as market goods, and the kit nobody is using:
+        # "offload that spare armour" read as chatter with only {item} here.
+        "offload the {gear}", "offload that spare {gear}", "flog the {gear}", "flog the spare {gear}",
+        "sell the spare {gear}", "sell off the {gear}", "pawn the {gear}", "hawk the {gear}",
+        "get some coin for the {gear}", "get rid of the spare {gear}", "turn the spare {gear} into gold",
+        "offload the spare gear", "flog the gems", "sell the gems at the market", "offload the loot",
+        "sell whatever we dont use", "sell off anything spare", "get rid of the extra kit",
+        "sell the treasure", "cash in the loot", "offload what we looted", "flog the spare kit",
     ],
     "talk_to": [
         "have a word with {npc}", "pay {npc} a visit", "go see {npc}", "call on {npc}",
