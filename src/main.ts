@@ -78,6 +78,7 @@ import { getLLM } from './ai/LLMService';
 import { sfx } from './audio/Sfx';
 import { getAudio } from './audio/Audio';
 import { getMusic, type MusicMood } from './audio/Music';
+import { getAmbience, NIGHT_BELOW } from './audio/Ambience';
 
 // ── Context-aware compendium content ────────────────
 
@@ -1026,6 +1027,13 @@ class Game {
   private update(dt: number) {
     if (this.errorHalt) return;
     this.music.play(this.musicMood());
+    this.ambience.update({
+      weather: this.weather?.type ?? null,
+      underground: this.mode === GameMode.Dungeon,
+      night: this.clock.light < NIGHT_BELOW,
+      town: this.mode === GameMode.Town,
+      inCombat: this.phase === GamePhase.Combat,
+    });
     // Persist the run every few seconds (also on tab hide / page unload).
     this.saveTimer += dt;
     if (this.saveTimer >= 8000) {
@@ -2116,6 +2124,9 @@ class Game {
   /** The score. It follows where the party is and what they are doing, and crossfades between. */
   private readonly music = getMusic();
 
+  /** The weather, heard: rain, wind, the hush of a cave. Follows the same state the picture does. */
+  readonly ambience = getAmbience();
+
   /**
    * Which piece the moment wants. Asked every simulation step; the music
    * treats the same answer twice as nothing to do, and a new answer as a
@@ -2717,6 +2728,7 @@ class Game {
     this.hud.closeOverlays();
     this.running = false;
     this.music.play('title');
+    this.ambience.stop();
     this.hud.showStartScreen(listSaves(), this.activeSlot);
   }
 

@@ -77,6 +77,9 @@ Keep the game bundle free of runtime npm dependencies. Dev-only tooling is fine.
   one `Piece` per `MusicMood`, a lookahead scheduler on the audio clock, and a
   two-second crossfade between moods; `Game.musicMood()` picks the mood from mode,
   phase and daylight every step and `Music.play` treats a repeat as a no-op.
+  `Ambience.ts` is the weather heard: looped filtered noise per layer (rain,
+  rumble, wind, cave hush, crickets) on the effects bus, gliding toward the levels
+  the pure `ambienceLevels()` derives from the same state the picture uses.
   `ui/DiceSounds.ts` is a client of the engine. Never create a second AudioContext; browsers cap them and it
   would break the single mute. Wire a new sound at the event that makes it, next to
   the picture of it. `window.__audio` is exposed alongside `__game` for inspection.
