@@ -9,6 +9,7 @@ import { maxSlotsFor, getCasterType, SPELLS } from '../data/gameData';
 import type { Spell } from '../data/gameData';
 import type { PartyCommand } from '../combat/CombatEngine';
 import type { DiceSounds } from './DiceSounds';
+import { battleSceneCss, type BattleScene } from './BattleScenes';
 import { T, classColor, hpColor } from './Theme';
 
 /** A consumable the command menu can offer: a potion or scroll in someone's pack. */
@@ -189,24 +190,42 @@ export class BattleView {
            A side-view battlefield: a thin band of sky, a horizon rule,
            and a floor the two sides stand on. The floor is lit from
            below the way the map is lit by its torches. */
+        #battle-field {
+          /* Defaults: the old torchlit hall. setScene() overrides these per fight. */
+          --bv-sky: linear-gradient(180deg, #07060a 0%, #0c0a0e 100%);
+          --bv-floor: linear-gradient(180deg, #1a1410 0%, #16110d 55%, #0f0c09 100%);
+          --bv-horizon: rgba(232,197,106,0.32);
+          --bv-lines: rgba(232,197,106,0.035);
+          --bv-glow: rgba(232,197,106,0.13);
+          --bv-scenery: none;
+          --bv-weather: none;
+        }
         #battle-ground {
           position: absolute; inset: 0; pointer-events: none;
-          background:
-            radial-gradient(ellipse 70% 55% at 50% 100%, rgba(232,197,106,0.13), transparent 70%),
-            radial-gradient(ellipse 90% 40% at 50% 10%, rgba(232,197,106,0.05), transparent 70%),
-            linear-gradient(180deg, #07060a 0%, #0c0a0e 9%, #1a1410 10%, #16110d 55%, #0f0c09 100%);
+          /* Sky above the horizon line (the top third), floor below it. */
+          background: var(--bv-sky) top / 100% 34% no-repeat, var(--bv-floor) bottom / 100% 66% no-repeat;
         }
         #battle-ground::before {
-          /* Horizon: a gold hairline with haze above it. */
-          content: ''; position: absolute; left: 0; right: 0; top: 10%; height: 1px;
-          background: linear-gradient(90deg, transparent, ${T.rule} 20%, rgba(232,197,106,0.32) 50%, ${T.rule} 80%, transparent);
+          /* Horizon: a hairline where the sky meets the ground. */
+          content: ''; position: absolute; left: 0; right: 0; top: 34%; height: 1px; z-index: 2;
+          background: linear-gradient(90deg, transparent, var(--bv-horizon) 25%, var(--bv-horizon) 75%, transparent);
         }
         #battle-ground::after {
-          /* Floor: faint perspective courses and a vignette to the sides. */
-          content: ''; position: absolute; left: 0; right: 0; top: 10%; bottom: 0;
+          /* Floor: a glow under the ranks, faint perspective courses, a vignette to the sides. */
+          content: ''; position: absolute; left: 0; right: 0; top: 34%; bottom: 0;
           background:
+            radial-gradient(ellipse 70% 55% at 50% 100%, var(--bv-glow), transparent 70%),
             linear-gradient(90deg, rgba(0,0,0,0.5), transparent 18%, transparent 82%, rgba(0,0,0,0.5)),
-            repeating-linear-gradient(180deg, transparent 0 26px, rgba(232,197,106,0.035) 26px 27px);
+            repeating-linear-gradient(180deg, transparent 0 26px, var(--bv-lines) 26px 27px);
+        }
+        #battle-scenery {
+          /* Silhouettes against the sky, standing on the horizon. */
+          position: absolute; left: 0; right: 0; top: 0; height: 34%; pointer-events: none; z-index: 1;
+          background: var(--bv-scenery);
+        }
+        #battle-weather {
+          position: absolute; inset: 0; pointer-events: none; z-index: 3;
+          background: var(--bv-weather);
         }
         /* ── Stands ─────────────────────────────────────────────────
            Every combatant is a stand: the sprite over a shadow, a name
@@ -248,7 +267,10 @@ export class BattleView {
         .battle-card.bv-hero.bv-down .bv-sprite { transform: rotate(90deg) translateY(12%); opacity: 0.5; }
         .battle-card.bv-down .bv-shadow { opacity: 0.4; }
         .bv-tag {
-          font-family: ${T.titleFont}; font-weight: bold; letter-spacing: 0.4px;
+          font-family: ${T.titleFont
+          /* Legible on a sunlit dune as well as a black floor. */
+          text-shadow: 0 1px 2px #000, 0 0 5px rgba(0,0,0,0.85);
+        }; font-weight: bold; letter-spacing: 0.4px;
           text-align: center; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           max-width: 100%; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.8);
         }
@@ -459,12 +481,15 @@ export class BattleView {
         </div>
       </div>
       <!-- The field: foes on the left, the party on the right, both in ranks
-           on one floor. Stands are laid out absolutely by layoutSide(). -->
+           on one floor. Stands are laid out absolutely by layoutSide(). The
+           middle sixteen percent belongs to nobody: the dice land there. -->
       <div id="battle-field" style="position:relative; flex:1 1 auto; min-height:0; overflow:hidden;">
         <div id="battle-ground"></div>
+        <div id="battle-scenery"></div>
+        <div id="battle-weather"></div>
         <div id="battle-banner" style="position:absolute; left:0; right:0; top:14px; z-index:8; text-align:center; pointer-events:none; color:${T.gold}; font-size:30px; font-weight:bold; letter-spacing:8px; text-shadow:0 2px 4px #000, 0 0 18px rgba(232,197,106,0.55);"></div>
-        <div id="battle-enemies" style="position:absolute; left:0; top:0; bottom:0; width:50%;"></div>
-        <div id="battle-heroes" style="position:absolute; right:0; top:0; bottom:0; width:50%;"></div>
+        <div id="battle-enemies" style="position:absolute; left:0; top:0; bottom:0; width:42%;"></div>
+        <div id="battle-heroes" style="position:absolute; right:0; top:0; bottom:0; width:42%;"></div>
       </div>
       <!-- The bottom windows: party status (the command menu docks over it
            when a hero is asked for orders) and the narration box. -->
@@ -494,7 +519,22 @@ export class BattleView {
   }
 
   /** Open the window for a fight and render both sides. */
-  open(party: Party, monsters: Monster[], sprites: SpriteRenderer): void {
+  /** Paint the backdrop for where the fight is. Safe to call before or during a fight. */
+  setScene(scene: BattleScene): void {
+    const css = battleSceneCss(scene);
+    const field = this.root.querySelector('#battle-field') as HTMLElement | null;
+    if (!field) return;
+    field.style.setProperty('--bv-sky', css.sky);
+    field.style.setProperty('--bv-floor', css.floor);
+    field.style.setProperty('--bv-horizon', css.horizon);
+    field.style.setProperty('--bv-lines', css.lines);
+    field.style.setProperty('--bv-glow', css.glow);
+    field.style.setProperty('--bv-scenery', css.scenery || 'none');
+    field.style.setProperty('--bv-weather', css.weather || 'none');
+  }
+
+  open(party: Party, monsters: Monster[], sprites: SpriteRenderer, scene?: BattleScene): void {
+    if (scene) this.setScene(scene);
     this.party = party;
     this.enemies = monsters;
     this.spellRenderer = sprites;

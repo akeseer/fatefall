@@ -80,6 +80,7 @@ import { getAudio } from './audio/Audio';
 import { getMusic, type MusicMood } from './audio/Music';
 import { getAmbience, NIGHT_BELOW } from './audio/Ambience';
 import { StoryController } from './game/StoryController';
+import type { BattleScene } from './ui/BattleScenes';
 import { STORY_BOSS_HP_SCALE, type StoryState } from './story/Story';
 
 // ── Context-aware compendium content ────────────────
@@ -287,6 +288,19 @@ class Game {
   /** The main quest: where the tale of the shattered die stands for this run. */
   public story: StoryState | null = null;
   private readonly storyController = new StoryController(this);
+
+  /** Where the fight is, for the battle window's backdrop. */
+  private battleScene(): BattleScene {
+    const place = this.mode === GameMode.Dungeon ? 'dungeon' : this.mode === GameMode.Town ? 'town' : 'overworld';
+    const region = this.mode === GameMode.Dungeon ? undefined : regionAt(this.worldRegions, this.party.leader.tile);
+    return {
+      place,
+      themeId: this.mode === GameMode.Dungeon ? (this.dungeonTheme?.id ?? null) : null,
+      biome: region?.biome ?? null,
+      weather: this.mode === GameMode.Dungeon ? null : (this.weather?.type ?? null),
+      daylight: this.clock.light,
+    };
+  }
 
   /** Pause or resume from outside the toggle, keeping the button honest. */
   setPaused(paused: boolean): void {
@@ -1631,7 +1645,7 @@ class Game {
     // then does not get a window.
     setTimeout(() => {
       if (this.phase !== GamePhase.Combat) return;
-      this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
+      this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites, this.battleScene());
       this.hud.battleView.update({
         round: this.combatEngine.log.round,
         actors: this.combatEngine.initiativeOrder,
@@ -2678,7 +2692,7 @@ class Game {
     this.combatEngine.setDecisionPause(this.hud.battleView.getMode() === 'manual');
     this.wireBattleModeToggle();
     this.hud.battleView.syncSpeedFromInterval(this.combatTickInterval);
-    this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites);
+    this.hud.battleView.open(this.party, this.combatEngine.monsters, this.sprites, this.battleScene());
     this.hud.battleView.update({
       round: this.combatEngine.log.round,
       actors: this.combatEngine.initiativeOrder,
