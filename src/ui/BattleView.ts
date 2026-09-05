@@ -10,6 +10,8 @@ import type { Spell } from '../data/gameData';
 import type { PartyCommand } from '../combat/CombatEngine';
 import type { DiceSounds } from './DiceSounds';
 import { battleSceneCss, type BattleScene } from './BattleScenes';
+import { classifyFx, ELEMENT_COLORS as FX_COLORS, type FxEvent } from './BattleFx';
+import { sfx } from '../audio/Sfx';
 import { T, classColor, hpColor } from './Theme';
 
 /** A consumable the command menu can offer: a potion or scroll in someone's pack. */
@@ -428,6 +430,131 @@ export class BattleView {
           30% { opacity: 1; }
           100% { transform: translate(34px, -6px) rotate(-28deg); opacity: 0; }
         }
+        /* ── The spellbook, drawn ─────────────────────────────────
+           Every effect below is a small DOM element dropped on a figure
+           or on the field, animated once, and removed. Colours come
+           from --fx, set per element by the code. */
+        .bv-bolt {
+          position: absolute; width: 22px; height: 6px; border-radius: 3px; z-index: 30; pointer-events: none;
+          background: linear-gradient(90deg, transparent, var(--fx) 40%, #fff 70%, var(--fx));
+          box-shadow: 0 0 10px var(--fx), 0 0 22px var(--fx);
+        }
+        .bv-bolt.dart { width: 12px; height: 4px; }
+        .bv-burst {
+          position: absolute; left: 50%; top: 40%; width: 64px; height: 64px; margin: -32px 0 0 -32px;
+          border-radius: 50%; pointer-events: none; z-index: 12;
+          background: radial-gradient(circle, #fff 0%, var(--fx) 30%, transparent 70%);
+          animation: bv-burst 0.5s ease-out forwards;
+        }
+        @keyframes bv-burst { 0% { transform: scale(0.2); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+        .bv-flame {
+          position: absolute; bottom: 10%; width: 14px; height: 30px; border-radius: 50% 50% 40% 40%; pointer-events: none; z-index: 12;
+          background: radial-gradient(ellipse at 50% 90%, #fff3b0 0%, var(--fx) 40%, transparent 75%);
+          animation: bv-flame 0.7s ease-out forwards;
+        }
+        @keyframes bv-flame { 0% { transform: translateY(0) scaleY(0.4); opacity: 0.9; } 60% { opacity: 1; } 100% { transform: translateY(-46px) scaleY(1.4) scaleX(0.6); opacity: 0; } }
+        .bv-shard {
+          position: absolute; left: 50%; top: 45%; width: 5px; height: 26px; margin-left: -2px; pointer-events: none; z-index: 12;
+          background: linear-gradient(180deg, #fff, var(--fx)); clip-path: polygon(50% 0, 100% 80%, 50% 100%, 0 80%);
+          animation: bv-shard 0.55s ease-out forwards;
+        }
+        @keyframes bv-shard { 0% { transform: rotate(var(--rot)) translateY(0) scale(0.3); opacity: 1; } 100% { transform: rotate(var(--rot)) translateY(-40px) scale(1); opacity: 0; } }
+        .bv-zap {
+          position: absolute; left: 50%; top: -30%; width: 6px; height: 80%; margin-left: -3px; pointer-events: none; z-index: 14;
+          background: #fff; box-shadow: 0 0 8px var(--fx), 0 0 20px var(--fx);
+          clip-path: polygon(30% 0, 70% 0, 45% 30%, 80% 30%, 40% 62%, 65% 62%, 20% 100%, 45% 58%, 15% 58%, 55% 28%, 20% 28%);
+          animation: bv-zap 0.35s steps(3) forwards;
+        }
+        @keyframes bv-zap { 0% { opacity: 1; } 100% { opacity: 0; } }
+        .bv-wisp {
+          position: absolute; left: 50%; top: 60%; width: 8px; height: 8px; border-radius: 50%; pointer-events: none; z-index: 12;
+          background: radial-gradient(circle, var(--fx), transparent 70%); box-shadow: 0 0 6px var(--fx);
+          animation: bv-wisp 0.8s ease-in forwards;
+        }
+        @keyframes bv-wisp { 0% { transform: translate(var(--dx), 0) scale(1); opacity: 0.9; } 100% { transform: translate(calc(var(--dx) * 0.3), -60px) scale(0.3); opacity: 0; } }
+        .bv-column {
+          position: absolute; left: 50%; top: -60%; width: 34px; height: 170%; margin-left: -17px; pointer-events: none; z-index: 11;
+          background: linear-gradient(180deg, transparent, var(--fx) 30%, #fff 55%, var(--fx) 75%, transparent);
+          opacity: 0.85; animation: bv-column 0.7s ease-out forwards;
+        }
+        @keyframes bv-column { 0% { transform: scaleX(0.1); opacity: 0; } 30% { transform: scaleX(1); opacity: 0.9; } 100% { transform: scaleX(0.6); opacity: 0; } }
+        .bv-bubble {
+          position: absolute; left: 50%; bottom: 15%; width: 7px; height: 7px; border-radius: 50%; pointer-events: none; z-index: 12;
+          border: 1.5px solid var(--fx); background: rgba(0,0,0,0.2); animation: bv-bubble 0.9s ease-out forwards;
+        }
+        @keyframes bv-bubble { 0% { transform: translate(var(--dx), 0) scale(0.5); opacity: 1; } 100% { transform: translate(var(--dx), -50px) scale(1.2); opacity: 0; } }
+        .bv-ripple {
+          position: absolute; left: 50%; top: 40%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; pointer-events: none; z-index: 12;
+          border: 2px solid var(--fx); animation: bv-ripple 0.7s ease-out forwards;
+        }
+        @keyframes bv-ripple { 0% { transform: scale(0.3); opacity: 1; } 100% { transform: scale(2.6); opacity: 0; } }
+        .bv-aura {
+          position: absolute; left: 50%; top: 50%; width: 120%; height: 120%; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; z-index: 1;
+          background: radial-gradient(circle, var(--fx) 0%, transparent 70%); opacity: 0; animation: bv-aura 1.4s ease-out forwards;
+        }
+        @keyframes bv-aura { 0% { opacity: 0; } 25% { opacity: 0.75; } 100% { opacity: 0; } }
+        .bv-mote {
+          position: absolute; left: 50%; bottom: 0; width: 4px; height: 4px; border-radius: 50%; pointer-events: none; z-index: 13;
+          background: var(--fx); box-shadow: 0 0 6px var(--fx); animation: bv-mote 1.1s ease-out forwards;
+        }
+        @keyframes bv-mote { 0% { transform: translate(var(--dx), 0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(var(--dx), -70px); opacity: 0; } }
+        .bv-hexring {
+          position: absolute; left: 50%; top: 50%; width: 110%; height: 110%; transform: translate(-50%, -50%); pointer-events: none; z-index: 13;
+          border: 2px solid var(--fx); clip-path: polygon(25% 5%, 75% 5%, 98% 50%, 75% 95%, 25% 95%, 2% 50%);
+          box-shadow: 0 0 12px var(--fx) inset; animation: bv-hexring 1.2s ease-out forwards;
+        }
+        @keyframes bv-hexring { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); } }
+        .bv-speed { position: absolute; top: 30%; height: 2px; width: 30px; pointer-events: none; z-index: 13; background: linear-gradient(90deg, transparent, var(--fx)); animation: bv-speed 0.5s ease-out forwards; }
+        @keyframes bv-speed { 0% { transform: translateX(var(--from)); opacity: 1; } 100% { transform: translateX(0); opacity: 0; } }
+        .bv-mark {
+          position: absolute; left: 50%; top: 40%; width: 40px; height: 40px; margin: -20px 0 0 -20px; pointer-events: none; z-index: 14;
+          border: 2px solid var(--fx); border-radius: 50%; box-shadow: 0 0 8px var(--fx); animation: bv-mark 1s ease-out forwards;
+        }
+        .bv-mark::before, .bv-mark::after { content: ''; position: absolute; background: var(--fx); }
+        .bv-mark::before { left: 50%; top: -8px; bottom: -8px; width: 2px; margin-left: -1px; }
+        .bv-mark::after { top: 50%; left: -8px; right: -8px; height: 2px; margin-top: -1px; }
+        @keyframes bv-mark { 0% { transform: scale(2.2) rotate(45deg); opacity: 0; } 30% { transform: scale(1) rotate(0); opacity: 1; } 100% { opacity: 0; } }
+        .bv-miss-pop {
+          position: absolute; left: 50%; top: 18%; transform: translateX(-50%); pointer-events: none; z-index: 20;
+          font-family: ${T.titleFont}; font-size: 13px; font-weight: bold; letter-spacing: 2px; color: #b9b3a6; text-shadow: 0 1px 2px #000;
+          animation: bv-miss-pop 0.8s ease-out forwards;
+        }
+        @keyframes bv-miss-pop { 0% { transform: translate(-50%, 0) skewX(-12deg); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(-50%, -26px) skewX(-12deg); opacity: 0; } }
+        .battle-card.bv-dodge .bv-figure { animation: bv-dodge 0.35s ease-out; }
+        @keyframes bv-dodge { 0%, 100% { transform: translateX(0) skewX(0); } 40% { transform: translateX(var(--away)) skewX(6deg); } }
+        .bv-zee {
+          position: absolute; left: 60%; top: 10%; pointer-events: none; z-index: 20; color: #cfd6ff; font-family: ${T.titleFont}; font-weight: bold; text-shadow: 0 1px 2px #000;
+          animation: bv-zee 1.6s ease-out forwards;
+        }
+        @keyframes bv-zee { 0% { transform: translate(0, 0) scale(0.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(14px, -36px) scale(1.2); opacity: 0; } }
+        .bv-star { position: absolute; left: 50%; top: 8%; pointer-events: none; z-index: 20; color: #ffe95c; font-size: 12px; text-shadow: 0 0 6px #ffcc33; animation: bv-orbit 1.2s linear forwards; }
+        @keyframes bv-orbit { 0% { transform: rotate(var(--ph)) translateX(18px) rotate(calc(-1 * var(--ph))); opacity: 1; } 100% { transform: rotate(calc(var(--ph) + 360deg)) translateX(18px) rotate(calc(-1 * var(--ph) - 360deg)); opacity: 0; } }
+        .bv-vine {
+          position: absolute; bottom: 0; width: 4px; height: 55%; pointer-events: none; z-index: 13; border-radius: 2px;
+          background: linear-gradient(180deg, transparent, var(--fx)); transform-origin: bottom; animation: bv-vine 0.9s ease-out forwards;
+        }
+        @keyframes bv-vine { 0% { transform: scaleY(0) rotate(var(--rot)); opacity: 0; } 30% { opacity: 1; } 100% { transform: scaleY(1) rotate(var(--rot)); opacity: 0; } }
+        .battle-card.bv-shiver .bv-sprite { animation: bv-shiver 0.6s ease-in-out; }
+        @keyframes bv-shiver { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-2px); } 40%, 80% { transform: translateX(2px); } }
+        .battle-card.bv-tint-poison .bv-sprite { filter: sepia(1) hue-rotate(60deg) saturate(2) drop-shadow(0 0 6px #8ae06a); transition: filter .4s; }
+        .battle-card.bv-tint-cursed .bv-sprite { filter: saturate(0.4) brightness(0.8) drop-shadow(0 0 8px #9a6adf); transition: filter .4s; }
+        .battle-card.bv-tint-invisible .bv-sprite { opacity: 0.35; filter: blur(0.6px) drop-shadow(0 0 4px #b0c8ff); transition: opacity .5s; }
+        .battle-card.bv-dissolve .bv-sprite { animation: bv-dissolve 0.9s ease-in forwards; }
+        @keyframes bv-dissolve { 0% { filter: brightness(1.8) saturate(0); opacity: 1; } 100% { filter: brightness(3) saturate(0) blur(3px); transform: translateY(-14px) scaleY(1.2); opacity: 0; } }
+        .battle-card.bv-hero.bv-topple .bv-sprite { animation: bv-topple 0.6s ease-in forwards; }
+        @keyframes bv-topple { 0% { transform: rotate(0); } 60% { transform: rotate(80deg) translateY(6%); } 100% { transform: rotate(90deg) translateY(12%); } }
+        #battle-flash { position: absolute; inset: 0; pointer-events: none; z-index: 40; opacity: 0; background: var(--fx); }
+        #battle-flash.on { animation: bv-field-flash 0.5s ease-out forwards; }
+        @keyframes bv-field-flash { 0% { opacity: 0.55; } 100% { opacity: 0; } }
+        #battle-field.bv-quake { animation: bv-quake 0.45s ease-in-out; }
+        @keyframes bv-quake { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-6px, 3px); } 40% { transform: translate(5px, -3px); } 60% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); } }
+        .bv-wave {
+          position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; pointer-events: none; z-index: 30;
+          border: 3px solid var(--fx); box-shadow: 0 0 18px var(--fx); animation: bv-wave 0.7s ease-out forwards;
+        }
+        @keyframes bv-wave { 0% { transform: scale(0.2); opacity: 1; } 100% { transform: scale(9); opacity: 0; } }
+        .bv-dark { position: absolute; inset: 0; pointer-events: none; z-index: 35; background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0.85), rgba(0,0,0,0.3) 70%); animation: bv-dark 1.6s ease-in-out forwards; }
+        @keyframes bv-dark { 0% { opacity: 0; } 30% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
         .bv-damage-pop {
           position: absolute; pointer-events: none; z-index: 30; left: 50%;
           font-weight: bold; font-size: 18px; font-family: ${T.monoFont};
@@ -484,6 +611,7 @@ export class BattleView {
         <div id="battle-ground"></div>
         <div id="battle-scenery"></div>
         <div id="battle-weather"></div>
+        <div id="battle-flash"></div>
         <div id="battle-banner" style="position:absolute; left:0; right:0; top:14px; z-index:8; text-align:center; pointer-events:none; color:${T.gold}; font-size:30px; font-weight:bold; letter-spacing:8px; text-shadow:0 2px 4px #000, 0 0 18px rgba(232,197,106,0.55);"></div>
         <div id="battle-enemies" style="position:absolute; left:0; top:0; bottom:0; width:42%;"></div>
         <div id="battle-heroes" style="position:absolute; right:0; top:0; bottom:0; width:42%;"></div>
@@ -683,6 +811,8 @@ export class BattleView {
     };
 
     for (const msg of messages ?? []) {
+      // The spellbook's own reading of the line: elements, abilities, misses, kills, conditions.
+      for (const ev of classifyFx(msg)) this.pendingFx.push(ev);
       // "X strikes/hits ... Y" or narration lines: attacker lunges.
       const atk = /^(.{2,60}?)\b(?:strikes|hits|slashes|smashes|drives|chops|connects|feints|lands)\b/.exec(msg);
       if (atk) {
@@ -760,7 +890,9 @@ export class BattleView {
   }
 
   /** Every kinetic class a stand can carry; cleared before each batch. */
-  private static readonly FX_CLASSES = ['bv-shake', 'bv-lunge-left', 'bv-lunge-right', 'bv-hit', 'bv-crit', 'bv-heal-glow'];
+  private static readonly FX_CLASSES = ['bv-shake', 'bv-lunge-left', 'bv-lunge-right', 'bv-hit', 'bv-crit', 'bv-heal-glow', 'bv-dodge', 'bv-shiver'];
+  /** Effects read from the log this batch, drawn by applyEffects. */
+  private pendingFx: FxEvent[] = [];
 
   /** The figure (sprite + shadow) of a stand, where every effect is anchored. */
   private figureOf(id: string): HTMLElement | null {
@@ -866,6 +998,364 @@ export class BattleView {
       window.setTimeout(() => slash.remove(), 400);
     }
     this.slashIds = new Set();
+
+    this.drawFx();
+  }
+
+  // ── The spellbook, drawn ──
+
+  private fxColor(el: FxEvent['element']): string {
+    return FX_COLORS[el ?? 'arcane'];
+  }
+
+  private figureByName(name: string | undefined): { id: string; fig: HTMLElement; card: HTMLElement; hero: boolean } | null {
+    if (!name) return null;
+    const all = [...(this.party?.members ?? []), ...this.enemies] as (GameCharacter | Monster)[];
+    const actor = this.resolveActorByName(all, name);
+    if (!actor) return null;
+    const id = this.actorId(actor);
+    const card = this.cardOf(id);
+    const fig = this.figureOf(id);
+    if (!card || !fig) return null;
+    return { id, fig, card, hero: !this.isMonster(actor) };
+  }
+
+  /** Drop a one-shot element on a figure and take it away when it is done. */
+  private fxNode(parent: HTMLElement, cls: string, color: string, ms: number, vars: Record<string, string> = {}): HTMLElement {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.style.setProperty('--fx', color);
+    for (const [k, v] of Object.entries(vars)) el.style.setProperty(k, v);
+    parent.appendChild(el);
+    window.setTimeout(() => el.remove(), ms);
+    return el;
+  }
+
+  /** Re-run a keyframe class on a card. */
+  private pulseClass(card: HTMLElement, cls: string, ms: number): void {
+    card.classList.remove(cls);
+    void card.offsetWidth;
+    card.classList.add(cls);
+    window.setTimeout(() => card.classList.remove(cls), ms);
+  }
+
+  private fieldEl(): HTMLElement | null {
+    return this.root.querySelector('#battle-field') as HTMLElement | null;
+  }
+
+  /** A wash of colour over the whole field, for the big spells. */
+  private fieldFlash(color: string): void {
+    const flash = this.root.querySelector('#battle-flash') as HTMLElement | null;
+    if (!flash) return;
+    flash.style.setProperty('--fx', color);
+    flash.classList.remove('on');
+    void flash.offsetWidth;
+    flash.classList.add('on');
+  }
+
+  private quake(): void {
+    const field = this.fieldEl();
+    if (field) this.pulseClass(field, 'bv-quake', 500);
+  }
+
+  /** A bolt from one figure to another, travelling across the field. */
+  private projectile(from: HTMLElement, to: HTMLElement, color: string, dart = false, delayMs = 0): void {
+    const field = this.fieldEl();
+    if (!field) return;
+    const fr = field.getBoundingClientRect();
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    const x0 = a.left + a.width / 2 - fr.left;
+    const y0 = a.top + a.height * 0.45 - fr.top;
+    const x1 = b.left + b.width / 2 - fr.left;
+    const y1 = b.top + b.height * 0.45 - fr.top;
+    const bolt = document.createElement('div');
+    bolt.className = 'bv-bolt' + (dart ? ' dart' : '');
+    bolt.style.setProperty('--fx', color);
+    const angle = Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI;
+    bolt.style.left = `${x0}px`;
+    bolt.style.top = `${y0}px`;
+    bolt.style.opacity = '0';
+    field.appendChild(bolt);
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const ms = Math.max(180, Math.min(420, dist * 0.6));
+    const wobble = dart ? (Math.random() * 40 - 20) : 0;
+    bolt.animate([
+      { transform: `translate(0, 0) rotate(${angle}deg)`, opacity: 1 },
+      { transform: `translate(${(x1 - x0) / 2}px, ${(y1 - y0) / 2 + wobble}px) rotate(${angle}deg)`, opacity: 1, offset: 0.5 },
+      { transform: `translate(${x1 - x0}px, ${y1 - y0}px) rotate(${angle}deg)`, opacity: 0.9 },
+    ], { duration: ms, delay: delayMs, easing: 'ease-in', fill: 'forwards' });
+    window.setTimeout(() => bolt.remove(), ms + delayMs + 30);
+  }
+
+  /** The element's landing on a target: what each kind of magic looks like when it arrives. */
+  private elementBurst(fig: HTMLElement, card: HTMLElement, element: FxEvent['element'], delayMs = 0): void {
+    const color = this.fxColor(element);
+    const run = () => {
+      switch (element) {
+        case 'fire':
+          for (let i = 0; i < 6; i++) {
+            const f = this.fxNode(fig, 'bv-flame', color, 800);
+            f.style.left = `${18 + i * 12 + Math.random() * 6}%`;
+            f.style.animationDelay = `${Math.random() * 0.15}s`;
+          }
+          this.fxNode(fig, 'bv-burst', color, 520);
+          break;
+        case 'cold':
+          for (let i = 0; i < 7; i++) this.fxNode(fig, 'bv-shard', color, 600, { '--rot': `${-75 + i * 25}deg` });
+          this.fxNode(fig, 'bv-ripple', color, 720);
+          break;
+        case 'lightning':
+          this.fxNode(fig, 'bv-zap', color, 380);
+          this.fxNode(fig, 'bv-burst', '#ffffff', 300);
+          break;
+        case 'thunder':
+          this.fxNode(fig, 'bv-ripple', color, 720);
+          this.fxNode(fig, 'bv-ripple', color, 720).style.animationDelay = '0.12s';
+          this.pulseClass(card, 'bv-shake', 400);
+          break;
+        case 'necrotic':
+          for (let i = 0; i < 6; i++) this.fxNode(fig, 'bv-wisp', color, 850, { '--dx': `${-18 + i * 7}px` });
+          break;
+        case 'radiant':
+          this.fxNode(fig, 'bv-column', color, 720);
+          break;
+        case 'poison':
+        case 'acid':
+          for (let i = 0; i < 6; i++) {
+            const b = this.fxNode(fig, 'bv-bubble', color, 950, { '--dx': `${-16 + i * 6}px` });
+            b.style.animationDelay = `${i * 0.06}s`;
+          }
+          break;
+        case 'psychic':
+          for (let i = 0; i < 3; i++) this.fxNode(fig, 'bv-ripple', color, 720).style.animationDelay = `${i * 0.1}s`;
+          break;
+        case 'force':
+          this.fxNode(fig, 'bv-burst', color, 520);
+          for (let i = 0; i < 5; i++) this.fxNode(fig, 'bv-shard', color, 600, { '--rot': `${-60 + i * 30}deg` });
+          break;
+        case 'heal':
+          for (let i = 0; i < 8; i++) {
+            const m = this.fxNode(fig, 'bv-mote', color, 1150, { '--dx': `${-22 + i * 6}px` });
+            m.style.animationDelay = `${Math.random() * 0.3}s`;
+          }
+          break;
+        default:
+          this.fxNode(fig, 'bv-burst', color, 520);
+      }
+    };
+    if (delayMs > 0) window.setTimeout(run, delayMs); else run();
+  }
+
+  /** The sound of an element landing. Fire, lightning, arcane and healing are already voiced by the game. */
+  private elementSound(element: FxEvent['element']): void {
+    switch (element) {
+      case 'cold': sfx.cold(); break;
+      case 'thunder': sfx.thunder(); break;
+      case 'necrotic': sfx.necrotic(); break;
+      case 'radiant': sfx.radiant(); break;
+      case 'psychic': sfx.psychic(); break;
+      case 'poison': sfx.poison(); break;
+      case 'acid': sfx.acid(); break;
+      case 'force': sfx.force(); break;
+    }
+  }
+
+  /** Everything the classifier found in this batch, drawn. */
+  private drawFx(): void {
+    const events = this.pendingFx;
+    this.pendingFx = [];
+    for (const ev of events) {
+      const actor = this.figureByName(ev.actor);
+      const target = this.figureByName(ev.target);
+      const color = this.fxColor(ev.element);
+      switch (ev.kind) {
+        case 'cast': {
+          if (actor) this.fxNode(actor.fig, 'bv-aura', color, 1400);
+          if (ev.aoe) {
+            // A field-wide spell washes the whole field and lands on every foe of the caster.
+            this.fieldFlash(color);
+            if (ev.element === 'thunder' || ev.element === 'lightning' || ev.element === 'fire') this.quake();
+            if (actor) this.fxNode(actor.fig, 'bv-wave', color, 720);
+            if (ev.spell?.toLowerCase() === 'darkness' && this.fieldEl()) this.fxNode(this.fieldEl()!, 'bv-dark', '#000', 1650);
+            const side = actor ? (actor.hero ? this.enemyRow : this.heroRow) : this.enemyRow;
+            const victims = Array.from(side.querySelectorAll('.battle-card:not(.bv-down)')) as HTMLElement[];
+            victims.forEach((c, i) => {
+              const fig = c.querySelector('.bv-figure') as HTMLElement | null;
+              if (fig && ev.element && ev.element !== 'heal') this.elementBurst(fig, c, ev.element, 120 + i * 60);
+            });
+            if (ev.element === 'heal' && actor) {
+              for (const c of Array.from(this.heroRow.querySelectorAll('.battle-card')) as HTMLElement[]) {
+                const fig = c.querySelector('.bv-figure') as HTMLElement | null;
+                if (fig) this.elementBurst(fig, c, 'heal');
+              }
+            }
+            this.elementSound(ev.element);
+            if (ev.spell?.toLowerCase() === 'sleep') sfx.sleep();
+          } else if (target && actor && ev.projectile) {
+            const darts = ev.spell?.toLowerCase() === 'magic missile' ? 3 : ev.spell?.toLowerCase() === 'scorching ray' ? 3 : 1;
+            for (let i = 0; i < darts; i++) this.projectile(actor.fig, target.fig, color, darts > 1, i * 90);
+            if (darts > 1) sfx.darts(); else sfx.bolt();
+            this.elementBurst(target.fig, target.card, ev.element, 260 + (darts - 1) * 90);
+            window.setTimeout(() => this.elementSound(ev.element), 260);
+          } else if (target) {
+            this.elementBurst(target.fig, target.card, ev.element);
+            this.elementSound(ev.element);
+          } else if (actor && ev.element === 'heal') {
+            this.elementBurst(actor.fig, actor.card, 'heal');
+          }
+          break;
+        }
+        case 'buff': {
+          const who = target ?? actor;
+          if (!who) break;
+          switch (ev.buff) {
+            case 'shield':
+              this.fxNode(who.fig, 'bv-hexring', FX_COLORS.force, 1200);
+              sfx.shield();
+              break;
+            case 'bless':
+            case 'aid':
+            case 'sanctuary':
+              for (const c of Array.from((who.hero ? this.heroRow : this.enemyRow).querySelectorAll('.battle-card')) as HTMLElement[]) {
+                const fig = c.querySelector('.bv-figure') as HTMLElement | null;
+                if (fig) for (let i = 0; i < 6; i++) this.fxNode(fig, 'bv-mote', FX_COLORS.radiant, 1150, { '--dx': `${-20 + i * 8}px` }).style.animationDelay = `${i * 0.05}s`;
+              }
+              sfx.bless();
+              break;
+            case 'haste':
+              for (let i = 0; i < 4; i++) {
+                const line = this.fxNode(who.fig, 'bv-speed', FX_COLORS.lightning, 520, { '--from': `${who.hero ? 40 : -40}px` });
+                line.style.top = `${25 + i * 15}%`;
+                line.style.left = who.hero ? 'auto' : '0';
+                line.style.right = who.hero ? '0' : 'auto';
+                line.style.animationDelay = `${i * 0.05}s`;
+              }
+              sfx.haste();
+              break;
+            case 'invisible':
+              who.card.classList.add('bv-tint-invisible');
+              window.setTimeout(() => who.card.classList.remove('bv-tint-invisible'), 6000);
+              sfx.arcane();
+              break;
+            case 'faerie_fire':
+              this.fxNode(who.fig, 'bv-aura', FX_COLORS.psychic, 1400);
+              break;
+          }
+          break;
+        }
+        case 'ability': {
+          switch (ev.ability) {
+            case 'rage':
+              if (actor) { this.fxNode(actor.fig, 'bv-aura', '#ff4a3a', 1400); this.pulseClass(actor.card, 'bv-shake', 400); }
+              sfx.rage();
+              break;
+            case 'second_wind':
+              if (actor) this.elementBurst(actor.fig, actor.card, 'heal');
+              sfx.secondWind();
+              break;
+            case 'hunters_mark':
+            case 'blood_mite':
+              if (target) this.fxNode(target.fig, 'bv-mark', ev.ability === 'blood_mite' ? '#e0705f' : '#ffd24a', 1000);
+              sfx.mark();
+              break;
+            case 'sneak_attack':
+              if (actor) { actor.card.classList.add('bv-tint-cursed'); window.setTimeout(() => actor.card.classList.remove('bv-tint-cursed'), 500); }
+              sfx.sneak();
+              break;
+            case 'flurry':
+              if (actor) this.pulseClass(actor.card, actor.hero ? 'bv-lunge-left' : 'bv-lunge-right', 320);
+              sfx.flurry();
+              break;
+            case 'arcane_jolt':
+              if (actor) this.fxNode(actor.fig, 'bv-zap', FX_COLORS.lightning, 380);
+              sfx.force();
+              break;
+          }
+          break;
+        }
+        case 'miss': {
+          if (target) {
+            this.fxNode(target.fig, 'bv-miss-pop', '#b9b3a6', 800).textContent = 'MISS';
+            target.card.style.setProperty('--away', target.hero ? '10px' : '-10px');
+            this.pulseClass(target.card, 'bv-dodge', 400);
+          }
+          sfx.miss();
+          break;
+        }
+        case 'kill': {
+          if (target) {
+            if (target.hero) this.pulseClass(target.card, 'bv-topple', 700);
+            else { this.pulseClass(target.card, 'bv-dissolve', 950); for (let i = 0; i < 8; i++) this.fxNode(target.fig, 'bv-wisp', '#cfc8b8', 850, { '--dx': `${-24 + i * 7}px` }); }
+            if (!target.hero) sfx.dissolve();
+          }
+          break;
+        }
+        case 'down': {
+          if (target) this.pulseClass(target.card, 'bv-topple', 700);
+          break;
+        }
+        case 'condition': {
+          if (!target) break;
+          switch (ev.condition) {
+            case 'poisoned':
+              target.card.classList.add('bv-tint-poison');
+              window.setTimeout(() => target.card.classList.remove('bv-tint-poison'), 3000);
+              this.elementBurst(target.fig, target.card, 'poison');
+              sfx.poison();
+              break;
+            case 'stunned':
+              for (let i = 0; i < 3; i++) this.fxNode(target.fig, 'bv-star', '#ffe95c', 1200, { '--ph': `${i * 120}deg` }).textContent = '✦';
+              sfx.afflict();
+              break;
+            case 'frightened':
+              this.pulseClass(target.card, 'bv-shiver', 650);
+              this.fxNode(target.fig, 'bv-aura', FX_COLORS.necrotic, 1400);
+              sfx.afflict();
+              break;
+            case 'asleep':
+              for (let i = 0; i < 3; i++) { const z = this.fxNode(target.fig, 'bv-zee', '#cfd6ff', 1700); z.textContent = 'z'; z.style.fontSize = `${10 + i * 3}px`; z.style.animationDelay = `${i * 0.25}s`; }
+              sfx.sleep();
+              break;
+            case 'held':
+            case 'entangled':
+              for (let i = 0; i < 5; i++) { const v = this.fxNode(target.fig, 'bv-vine', ev.condition === 'held' ? '#c8a8ff' : '#6fbf4a', 950, { '--rot': `${-24 + i * 12}deg` }); v.style.left = `${20 + i * 15}%`; }
+              sfx.afflict();
+              break;
+            case 'slowed':
+            case 'cursed':
+            case 'blinded':
+              target.card.classList.add('bv-tint-cursed');
+              window.setTimeout(() => target.card.classList.remove('bv-tint-cursed'), 2500);
+              sfx.afflict();
+              break;
+          }
+          break;
+        }
+        case 'legendary': {
+          this.fieldFlash('#6a2a8a');
+          this.quake();
+          if (actor) this.fxNode(actor.fig, 'bv-aura', '#c060ff', 1400);
+          sfx.legendary();
+          break;
+        }
+        case 'special': {
+          if (actor) this.fxNode(actor.fig, 'bv-aura', color, 1400);
+          if (target) this.elementBurst(target.fig, target.card, ev.element ?? 'necrotic');
+          sfx.roar();
+          this.elementSound(ev.element);
+          break;
+        }
+        case 'potion': {
+          if (target) this.elementBurst(target.fig, target.card, 'heal');
+          break;
+        }
+        case 'scroll': {
+          if (actor) this.fxNode(actor.fig, 'bv-aura', FX_COLORS.arcane, 1400);
+          break;
+        }
+      }
+    }
   }
 
   /**

@@ -104,6 +104,12 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   `ui/DiceSounds.ts` is a client of the engine. Never create a second AudioContext; browsers cap them and it
   would break the single mute. Wire a new sound at the event that makes it, next to
   the picture of it. `window.__audio` is exposed alongside `__game` for inspection.
+- **`src/ui/BattleFx.ts`** — the battle window's reading of the combat log, pure: one line in,
+  effects out (cast with element and delivery, ability, miss, kill, condition, legendary,
+  special, potion, scroll). Elements come from the spell table's damage strings. `BattleView`
+  draws each kind as one-shot DOM nodes and plays the sound for it; fire, lightning, arcane and
+  healing sounds stay in `Game` (they predate this), so a new element's sound belongs in the
+  battle view and nowhere else. Changing an engine sentence means updating the regex and its test.
 - **`src/ui/HUD.ts`** — builds the DOM overlay from a template string. The log is
   append-only HTML strings (`addCombatMessage`).
 

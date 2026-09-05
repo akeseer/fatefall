@@ -313,6 +313,215 @@ export const sfx = {
     tone('square', 140, 120, t, 0.16, 0.12, { lowpass: 600 });
   },
 
+  // ── The rest of the spellbook ──
+
+  /** Cold: a glassy high shimmer that cracks at the end, like ice taking. */
+  cold(): void {
+    if (!gate('cold')) return;
+    const t = now();
+    tone('sine', 1800, 2600, t, 0.22, 0.09, { sweep: 'lin', attack: 0.03 });
+    tone('triangle', 900, 1300, t + 0.04, 0.2, 0.06, { sweep: 'lin' });
+    hiss('highpass', 5000, t + 0.18, 0.08, 0.16);
+    tone('square', 2400, 1800, t + 0.2, 0.05, 0.05, { lowpass: 5000 });
+  },
+
+  /** Thunder: a deep slam and a long rumble that rolls away. */
+  thunder(): void {
+    if (!gate('thunder')) return;
+    const t = now();
+    tone('sine', 70, 35, t, 0.5, 0.55);
+    hiss('lowpass', 220, t, 0.7, 0.32);
+    hiss('bandpass', 700, t + 0.05, 0.25, 0.14, 0.6);
+  },
+
+  /** Necrotic: a falling groan with the air sucked out of it. */
+  necrotic(): void {
+    if (!gate('necrotic')) return;
+    const t = now();
+    tone('sawtooth', 240, 60, t, 0.45, 0.14, { lowpass: 900 });
+    tone('sine', 480, 120, t + 0.05, 0.4, 0.08);
+    hiss('lowpass', 400, t + 0.1, 0.35, 0.1);
+  },
+
+  /** Radiant: a bright choir chord swelling and gone. */
+  radiant(): void {
+    if (!gate('radiant')) return;
+    const t = now();
+    for (const [f, d] of [[523, 0], [659, 0.02], [784, 0.04], [1047, 0.06]] as [number, number][]) {
+      tone('triangle', f, f, t + d, 0.5, 0.07, { attack: 0.08, lowpass: 3000 });
+    }
+    hiss('highpass', 6000, t + 0.05, 0.3, 0.05);
+  },
+
+  /** Psychic: a warbling tone bending upward, wrong on purpose. */
+  psychic(): void {
+    if (!gate('psychic')) return;
+    const t = now();
+    tone('sine', 300, 900, t, 0.3, 0.1, { sweep: 'lin' });
+    tone('sine', 310, 870, t + 0.03, 0.3, 0.08, { sweep: 'lin' });
+    tone('triangle', 1200, 600, t + 0.15, 0.2, 0.05);
+  },
+
+  /** Poison: a wet bubbling in a low band. */
+  poison(): void {
+    if (!gate('poison')) return;
+    const t = now();
+    for (let i = 0; i < 5; i++) tone('sine', 220 + i * 37, 180 + i * 30, t + i * 0.055, 0.07, 0.09);
+    hiss('bandpass', 500, t, 0.32, 0.1, 1.5);
+  },
+
+  /** Acid: a hiss that eats downward. */
+  acid(): void {
+    if (!gate('acid')) return;
+    const t = now();
+    hiss('bandpass', 3000, t, 0.3, 0.16, 0.8);
+    tone('sawtooth', 700, 200, t + 0.05, 0.28, 0.06, { lowpass: 1500 });
+  },
+
+  /** Force: a hard blue snap with a ring behind it. */
+  force(): void {
+    if (!gate('force')) return;
+    const t = now();
+    tone('square', 900, 700, t, 0.06, 0.12, { lowpass: 3000 });
+    tone('sine', 1400, 1400, t + 0.03, 0.22, 0.08, { attack: 0.005 });
+    hiss('highpass', 4000, t, 0.05, 0.1);
+  },
+
+  /** A bolt leaving the hand and crossing the field. */
+  bolt(): void {
+    if (!gate('bolt')) return;
+    const t = now();
+    tone('sine', 500, 1600, t, 0.16, 0.09, { sweep: 'exp' });
+    hiss('bandpass', 1500, t, 0.14, 0.08, 1.2);
+  },
+
+  /** Magic missile: three darts, each a rising pip. */
+  darts(): void {
+    if (!gate('darts')) return;
+    const t = now();
+    for (let i = 0; i < 3; i++) tone('triangle', 800 + i * 120, 1500 + i * 150, t + i * 0.09, 0.09, 0.08, { sweep: 'exp' });
+  },
+
+  /** A swing that finds nothing: a whoosh of air and no landing. */
+  miss(): void {
+    if (!gate('miss')) return;
+    const t = now();
+    hiss('bandpass', 1100, t, 0.18, 0.12, 0.9);
+    tone('sine', 400, 250, t, 0.14, 0.04);
+  },
+
+  /** A ward going up: a rising fifth that holds. */
+  shield(): void {
+    if (!gate('shield')) return;
+    const t = now();
+    tone('triangle', 440, 440, t, 0.3, 0.09, { attack: 0.02 });
+    tone('triangle', 660, 660, t + 0.06, 0.34, 0.09, { attack: 0.02 });
+    hiss('highpass', 5000, t + 0.02, 0.12, 0.05);
+  },
+
+  /** A blessing: soft rising motes. */
+  bless(): void {
+    if (!gate('bless')) return;
+    const t = now();
+    [784, 988, 1175, 1568].forEach((f, i) => tone('sine', f, f, t + i * 0.08, 0.3, 0.07, { attack: 0.03 }));
+  },
+
+  /** Haste: a quick upward zip. */
+  haste(): void {
+    if (!gate('haste')) return;
+    const t = now();
+    tone('square', 400, 2400, t, 0.18, 0.07, { sweep: 'exp', lowpass: 4000 });
+    hiss('highpass', 3000, t + 0.05, 0.1, 0.06);
+  },
+
+  /** Rage: a low roar under a snarl. */
+  rage(): void {
+    if (!gate('rage')) return;
+    const t = now();
+    tone('sawtooth', 90, 130, t, 0.4, 0.2, { lowpass: 600, sweep: 'lin' });
+    hiss('lowpass', 700, t, 0.35, 0.22);
+    tone('square', 180, 150, t + 0.1, 0.25, 0.06, { lowpass: 900 });
+  },
+
+  /** Second wind: a breath in, and a heartbeat. */
+  secondWind(): void {
+    if (!gate('secondWind')) return;
+    const t = now();
+    hiss('lowpass', 900, t, 0.3, 0.1);
+    tone('sine', 80, 80, t + 0.25, 0.1, 0.3);
+    tone('sine', 80, 80, t + 0.4, 0.1, 0.22);
+  },
+
+  /** A mark laid on a quarry: a click and a held note. */
+  mark(): void {
+    if (!gate('mark')) return;
+    const t = now();
+    tone('square', 1400, 1400, t, 0.03, 0.08, { lowpass: 3000 });
+    tone('sine', 660, 660, t + 0.04, 0.3, 0.06, { attack: 0.02 });
+  },
+
+  /** A sneak attack: a quick draw and a wet knife. */
+  sneak(): void {
+    if (!gate('sneak')) return;
+    const t = now();
+    hiss('highpass', 4000, t, 0.06, 0.14);
+    tone('sine', 900, 300, t + 0.05, 0.1, 0.12);
+    hiss('bandpass', 1200, t + 0.08, 0.08, 0.14, 1.2);
+  },
+
+  /** A flurry: three fast slaps. */
+  flurry(): void {
+    if (!gate('flurry')) return;
+    const t = now();
+    for (let i = 0; i < 3; i++) {
+      hiss('bandpass', 1800, t + i * 0.07, 0.04, 0.16, 0.8);
+      tone('sine', 220, 120, t + i * 0.07, 0.06, 0.2);
+    }
+  },
+
+  /** A condition landing: a sour two-note fall. */
+  afflict(): void {
+    if (!gate('afflict')) return;
+    const t = now();
+    tone('triangle', 520, 520, t, 0.12, 0.09);
+    tone('triangle', 390, 370, t + 0.12, 0.22, 0.09);
+  },
+
+  /** Sleep: a slow sigh downward. */
+  sleep(): void {
+    if (!gate('sleep')) return;
+    const t = now();
+    tone('sine', 660, 330, t, 0.6, 0.07, { sweep: 'exp', attack: 0.1 });
+    hiss('lowpass', 500, t, 0.5, 0.06);
+  },
+
+  /** A legendary foe stirring: a gong. */
+  legendary(): void {
+    if (!gate('legendary')) return;
+    const t = now();
+    tone('sine', 110, 110, t, 1.2, 0.35, { attack: 0.01 });
+    tone('sine', 165, 165, t, 1.0, 0.18, { attack: 0.01 });
+    tone('triangle', 330, 320, t, 0.8, 0.08, { attack: 0.01 });
+    hiss('bandpass', 900, t, 0.1, 0.2, 0.5);
+  },
+
+  /** A dragon's breath or a beast's roar: noise with a throat in it. */
+  roar(): void {
+    if (!gate('roar')) return;
+    const t = now();
+    tone('sawtooth', 120, 80, t, 0.5, 0.18, { lowpass: 500, sweep: 'lin' });
+    hiss('lowpass', 900, t, 0.5, 0.26);
+    hiss('bandpass', 2200, t + 0.1, 0.3, 0.1, 1.5);
+  },
+
+  /** A foe dissolving: a downward crackle into nothing. */
+  dissolve(): void {
+    if (!gate('dissolve')) return;
+    const t = now();
+    hiss('bandpass', 2400, t, 0.4, 0.14, 1.2);
+    tone('sawtooth', 400, 60, t, 0.45, 0.1, { lowpass: 1200 });
+  },
+
   /** A menu or button: a tiny blip. */
   click(): void {
     if (!gate('click')) return;
