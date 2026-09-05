@@ -3098,6 +3098,11 @@ class Game {
 
   /** Resolve a looted potion or scroll's actual mechanical effect. */
   private applyLootedItem(item: InventoryItem, target: GameCharacter): void {
+    // Shop wares describe themselves as "Restores N HP."; that is their whole effect.
+    const restoresHp = (i: InventoryItem): number | null => {
+      const m = /restores (\d+) hp/i.exec(i.description);
+      return m ? Number(m[1]) : null;
+    };
     const inCombat = this.phase === GamePhase.Combat && this.combatEngine.isActive;
     const say = (msg: string, color = '#9c6') => this.hud.addCombatMessage(msg, color);
 
@@ -3129,6 +3134,10 @@ class Game {
           this.combatEngine.blessSourceId = `${target.id}:hearthlight`;
           say(`✨ The stored light kindles into a Bless — +1d4 on attack rolls for 3 rounds!`, '#8cf');
         }
+      } else if (restoresHp(item) !== null) {
+        const heal = restoresHp(item)!;
+        say(`${target.name} drinks ${item.name}.`);
+        say(target.heal(heal), '#8d8');
       } else {
         say(`${target.name} drinks ${item.name}. ${item.description}`);
       }
@@ -3169,6 +3178,10 @@ class Game {
         }
         dead.revive(1);
         say(`${reader.name} reads ${item.name} \u2014 a golden thread of life pulls ${dead.name} back from death at 1 HP!`, '#fd8');
+      } else if (restoresHp(item) !== null) {
+        const heal = restoresHp(item)!;
+        say(`${reader.name} reads ${item.name} over ${target.name}.`);
+        say(target.heal(heal), '#8d8');
       } else {
         say(`${reader.name} reads ${item.name}. ${item.description}`);
       }

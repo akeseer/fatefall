@@ -1,3 +1,4 @@
+import type { InventoryItem } from '../entities/Character';
 /**
  * TownTypes — town archetypes that give each settlement a distinct personality.
  * Each archetype determines what buildings exist, what services are available,
@@ -191,6 +192,42 @@ export interface ShopItem {
   value: number;
   description: string;
   power?: number;
+}
+
+/**
+ * Shop wares whose effect the game already knows how to apply under a market
+ * id. Everything else is carried under a shop id and falls to the generic
+ * "Restores N HP" reading, or is simply carried and sold.
+ */
+const SHOP_ITEM_IDS: Record<string, string> = {
+  'Potion of Invisibility': 'potion_invisibility',
+  'Potion of Speed': 'potion_speed',
+  'Scroll of Fireball': 'scroll_fireball',
+  'Scroll of Lightning Bolt': 'scroll_lightning_bolt',
+  'Scroll of Resurrection': 'scroll_revivify',
+};
+
+/** An InventoryItem type for a shop type: gems and tools are treasure, worth their value and nothing else. */
+function inventoryType(t: ShopItem['type']): InventoryItem['type'] {
+  return t === 'gem' || t === 'tool' ? 'treasure' : t;
+}
+
+/**
+ * The item a building's shop hands over. The id is stable per pool and name,
+ * so a second Healing Potion is the same kind of thing as the first.
+ */
+export function shopItemToInventory(pool: string, item: ShopItem): InventoryItem {
+  const slug = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const out: InventoryItem = {
+    id: SHOP_ITEM_IDS[item.name] ?? `shop_${pool}_${slug}`,
+    name: item.name,
+    type: inventoryType(item.type),
+    description: item.description,
+    value: item.value,
+    identified: true,
+  };
+  if (item.power !== undefined) out.power = item.power;
+  return out;
 }
 
 export const SHOP_STOCK: Record<string, ShopItem[]> = {

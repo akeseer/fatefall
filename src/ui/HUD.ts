@@ -137,6 +137,20 @@ export class HUD {
         /* An icon carries the colour; the label stays parchment, so seven
            controls read as one set instead of seven unrelated buttons. */
         #hud-top button .ic { margin-right: 5px; }
+        /* Sound: a small drawer under the speaker, one slider per bus. */
+        #audio-pop {
+          position: absolute; top: 44px; right: 10px; z-index: 40;
+          width: 230px; padding: 10px 12px;
+          background: ${T.panelGrad}; border: 1px solid ${T.lineHot}; border-radius: ${T.r2};
+          box-shadow: 0 10px 28px rgba(0,0,0,0.6), inset 0 1px 0 ${T.rule};
+          font-size: 11px; color: ${T.text};
+        }
+        #audio-pop .ap-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+        #audio-pop .ap-row label { flex: 0 0 52px; color: ${T.muted}; }
+        #audio-pop .ap-row input[type=range] { flex: 1; accent-color: ${T.gold}; height: 14px; margin: 0; }
+        #audio-pop .ap-row .ap-val { flex: 0 0 30px; text-align: right; color: ${T.gold}; font-family: ${T.monoFont}; font-size: 10px; }
+        #audio-pop .ap-head { display: flex; justify-content: space-between; align-items: center; }
+        #audio-pop .ap-head span { color: ${T.gold}; font-family: ${T.titleFont}; letter-spacing: 0.04em; }
         /* Speed: one segmented control, not five loose buttons. */
         #speed-controls {
           display: flex;
@@ -203,10 +217,16 @@ export class HUD {
         <button id="btn-new-dungeon" title="Generate a fresh dungeon"><span class="ic">↻</span>New Dungeon</button>
         <button id="btn-compendium" title="Open the D&D compendium"><span class="ic" style="color:${T.arcane};">📖</span>Grimoire</button>
         <button id="btn-save" title="Save the run to this browser"><span class="ic" style="color:${T.coin};">💾</span>Save</button>
-        <button id="btn-audio" title="Mute / unmute (M)"><span class="ic">🔊</span>Sound</button>
+        <button id="btn-audio" title="Sound settings (M mutes)"><span class="ic">🔊</span>Sound</button>
         <button id="btn-dm-panel" title="Issue orders to the party"><span class="ic" style="color:${T.good};">\u2328</span>DM</button>
         <button id="btn-town" title="Open the town (quests & market)"><span class="ic" style="color:${T.gold};">🏪</span>Town</button>
         <button id="btn-menu" title="Save and return to the main menu" class="dp-btn-bad"><span class="ic">☰</span>Menu</button>
+      </div>
+      <div id="audio-pop" style="display:none;">
+        <div class="ap-head"><span>Sound</span><button id="btn-mute" class="dp-btn" style="padding:2px 9px; font-size:10px;">Mute</button></div>
+        <div class="ap-row"><label for="vol-master">Master</label><input id="vol-master" type="range" min="0" max="100" data-bus="master"><span class="ap-val"></span></div>
+        <div class="ap-row"><label for="vol-sfx">Effects</label><input id="vol-sfx" type="range" min="0" max="100" data-bus="sfx"><span class="ap-val"></span></div>
+        <div class="ap-row"><label for="vol-music">Music</label><input id="vol-music" type="range" min="0" max="100" data-bus="music"><span class="ap-val"></span></div>
       </div>
 
       <!-- Top strip: dungeon title + quest tracker, pinned on their own row below the
@@ -269,14 +289,42 @@ export class HUD {
     // and the speaker shows the state. The key ignores anything typed into a
     // field, since "m" is a letter the DM uses.
     const audioBtn = this.overlay.querySelector('#btn-audio') as HTMLButtonElement;
+    const audioPop = this.overlay.querySelector('#audio-pop') as HTMLElement;
+    const muteBtn = audioPop.querySelector('#btn-mute') as HTMLButtonElement;
+    const sliders = Array.from(audioPop.querySelectorAll('input[type=range]')) as HTMLInputElement[];
     const audio = getAudio();
     const showAudio = () => {
       const ic = audioBtn.querySelector('.ic') as HTMLElement | null;
       if (ic) ic.textContent = audio.muted ? '🔇' : '🔊';
-      audioBtn.title = audio.muted ? 'Unmute (M)' : 'Mute (M)';
       audioBtn.classList.toggle('dp-btn-bad', audio.muted);
+      muteBtn.textContent = audio.muted ? 'Unmute' : 'Mute';
+      muteBtn.classList.toggle('dp-btn-bad', audio.muted);
+      const levels = { master: audio.masterVolume, sfx: audio.sfxVolume, music: audio.musicVolume };
+      for (const sl of sliders) {
+        const bus = sl.dataset.bus as keyof typeof levels;
+        const pct = Math.round(levels[bus] * 100);
+        if (document.activeElement !== sl) sl.value = String(pct);
+        const val = sl.parentElement?.querySelector('.ap-val');
+        if (val) val.textContent = `${pct}%`;
+      }
     };
-    audioBtn.addEventListener('click', () => { audio.toggleMuted(); sfx.click(); });
+    audioBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = audioPop.style.display !== 'none';
+      audioPop.style.display = open ? 'none' : 'block';
+      sfx.click();
+    });
+    audioPop.addEventListener('pointerdown', (e) => e.stopPropagation());
+    // Anywhere else closes the drawer.
+    window.addEventListener('pointerdown', () => { audioPop.style.display = 'none'; });
+    muteBtn.addEventListener('click', () => { audio.toggleMuted(); sfx.click(); });
+    for (const sl of sliders) {
+      sl.addEventListener('input', () => {
+        audio.setVolumes({ [sl.dataset.bus as 'master' | 'sfx' | 'music']: Number(sl.value) / 100 });
+      });
+      // A blip on release, so the effects level can be judged by ear.
+      sl.addEventListener('change', () => sfx.click());
+    }
     audio.onChange(showAudio);
     showAudio();
     window.addEventListener('keydown', (e) => {

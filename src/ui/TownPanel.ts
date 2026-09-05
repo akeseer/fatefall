@@ -9,7 +9,7 @@ import { InventoryItem } from '../entities/Character';
 import { Quest, questProgressText, QuestState } from '../quests/Quests';
 import { OverworldTown } from '../world/Overworld';
 import { QuestGiver, getReputationTier, getDialogue } from '../quests/QuestGivers';
-import { TOWN_ARCHETYPES, TownBuilding, TownService, TownServiceId, TownArchetype, SHOP_STOCK, ShopItem, REPUTATION_SHOP, ReputationShopItem, getReputationShopTier, getReputationPerks } from '../world/TownTypes';
+import { TOWN_ARCHETYPES, TownBuilding, TownService, TownServiceId, TownArchetype, SHOP_STOCK, ShopItem, shopItemToInventory, REPUTATION_SHOP, ReputationShopItem, getReputationShopTier, getReputationPerks } from '../world/TownTypes';
 import { BulletinTask, bulletinIcon, bulletinProgress } from '../quests/BulletinBoard';
 import { T } from './Theme';
 
@@ -99,6 +99,14 @@ export class TownPanel {
         case 'buy': {
           const item = this.buyStockProvider().find(x => x.id === id);
           if (item) this.onBuy?.(item);
+          break;
+        }
+        case 'buy-shop': {
+          // A building's own wares: "pool:name", looked up in the pool it was drawn from.
+          const cut = id.indexOf(':');
+          const pool = id.slice(0, cut);
+          const ware = (SHOP_STOCK[pool] ?? []).find(x => x.name === id.slice(cut + 1));
+          if (ware) this.onBuy?.(shopItemToInventory(pool, ware));
           break;
         }
         case 'sell': {
@@ -396,7 +404,7 @@ export class TownPanel {
           </div>
           <div style="display:flex; align-items:center; gap:7px; flex:0 0 auto;">
             <span class="dp-num" style="color:${T.coin}; font-size:11px;">${adjustedPrice} gp</span>
-            <button data-tp-action="buy" data-tp-id="${item.name}" class="dp-btn" style="padding:2px 9px; font-size:10px;">Buy</button>
+            <button data-tp-action="buy-shop" data-tp-id="${building.shopPool}:${item.name}" class="dp-btn" style="padding:2px 9px; font-size:10px;">Buy</button>
           </div>
         </div>`;
       }).join('');
