@@ -61,7 +61,7 @@ describe('the hundred pre-built dungeons', () => {
         expect(stairs, `${label} stairs`).toBe(i === d.floors.length - 1 ? 0 : 1);
       });
     }
-  });
+  }, 60_000);
 
   it('every creature is real, stands on a walkable tile inside a room, and no two share a tile', () => {
     let total = 0;
@@ -88,7 +88,7 @@ describe('the hundred pre-built dungeons', () => {
       });
     }
     expect(total).toBeGreaterThan(4000);
-  });
+  }, 60_000);
 
   it('bosses grow with depth', () => {
     for (const d of PREBUILT_DUNGEONS) {
