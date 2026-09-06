@@ -13,6 +13,8 @@ import type { OverworldEntrance, OverworldTown } from '../world/Overworld';
 
 const FOG_COLOR = '#0a0a12';
 
+import { SEASON_TILES, type Season } from '../world/Seasons';
+
 const TILE_COLORS: Record<TileType, string> = {
   [TileType.Void]: '#000000',
   [TileType.Floor]: '#2a2a35',
@@ -559,7 +561,7 @@ export class MapRenderer {
             this.dungeonLava(ctx, map, x, y, sx, sy);
             break;
           default:
-            ctx.fillStyle = TILE_COLORS[tile] || '#000';
+            ctx.fillStyle = this.seasonColor(tile) ?? (TILE_COLORS[tile] || '#000');
             ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
             break;
         }
@@ -1477,6 +1479,17 @@ export class MapRenderer {
   }
 
   /** Shared party drawing (dungeon + overworld): glide, bob, status glows. */
+  /** The season, for the few surface tiles that change with it. */
+  private season: Season = 'summer';
+  setSeason(season: Season): void { this.season = season; }
+  private seasonColor(tile: TileType): string | null {
+    const t = SEASON_TILES[this.season];
+    if (tile === TileType.Grass) return t.grass;
+    if (tile === TileType.Forest) return t.forest;
+    if (tile === TileType.Swamp) return t.swamp;
+    return null;
+  }
+
   private drawPartyMembers(
     ctx: CanvasRenderingContext2D,
     camera: Camera,

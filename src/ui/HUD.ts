@@ -172,6 +172,56 @@ export class HUD {
   }
 
   /** The Chronicle: the tale so far, the act in hand, and what the party is known for. */
+  /** What the world map screen draws, supplied by the game. */
+  public worldMapProvider: () => { width: number; height: number; tile: (x: number, y: number) => number; explored: (x: number, y: number) => boolean; towns: { name: string; x: number; y: number; capital?: boolean }[]; entrances: { name: string; x: number; y: number }[]; pois: { name: string; x: number; y: number; cleared: boolean }[]; party: { x: number; y: number }; target: { name: string; x: number; y: number } | null; roamer: { name: string; x: number; y: number } | null; base: { x: number; y: number } | null } | null = () => null;
+
+  /** The world as the party has seen it, with pins. */
+  showWorldMap(): void {
+    this.overlay.querySelector('#world-map')?.remove();
+    const w = this.worldMapProvider();
+    if (!w) { this.addCombatMessage('There is no map to show from down here. The surface has one.', '#886'); return; }
+    const scale = 4;
+    const screen = document.createElement('div');
+    screen.id = 'world-map';
+    screen.style.cssText = `position:absolute; inset:0; z-index:104; background:rgba(5,4,5,0.78); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;
+    const canvas = document.createElement('canvas');
+    canvas.width = w.width * scale; canvas.height = w.height * scale;
+    canvas.style.cssText = `image-rendering:pixelated; border:1px solid ${T.frame}; border-radius:${T.r2}; max-width:88vw; max-height:70vh; background:#06060a;`;
+    const ctx = canvas.getContext('2d')!;
+    const colors: Record<number, string> = { 6: '#224488', 8: '#2d5a2d', 9: '#1e4024', 10: '#6a6a72', 11: '#8a7a5a', 12: '#c9a56a', 13: '#a03050', 14: '#7a6240', 15: '#b0a060', 16: '#d8dce0', 17: '#a08040', 18: '#2a4a2e' };
+    for (let y = 0; y < w.height; y++) for (let x = 0; x < w.width; x++) {
+      if (!w.explored(x, y)) continue;
+      ctx.fillStyle = colors[w.tile(x, y)] ?? '#111';
+      ctx.fillRect(x * scale, y * scale, scale, scale);
+    }
+    const pin = (x: number, y: number, color: string, r: number) => { ctx.fillStyle = color; ctx.fillRect(x * scale - r, y * scale - r, scale + r * 2, scale + r * 2); };
+    for (const p of w.pois) if (!p.cleared) pin(p.x, p.y, '#a8a', 1);
+    for (const e of w.entrances) pin(e.x, e.y, '#e05a5a', 2);
+    for (const t of w.towns) pin(t.x, t.y, t.capital ? '#fff3c0' : '#ffd23f', t.capital ? 3 : 2);
+    if (w.base) pin(w.base.x, w.base.y, '#8dd8ff', 2);
+    if (w.roamer) pin(w.roamer.x, w.roamer.y, '#ff5a3c', 3);
+    if (w.target) pin(w.target.x, w.target.y, '#8dff5a', 3);
+    pin(w.party.x, w.party.y, '#ffffff', 2);
+    const legend = [['#ffffff', 'the party'], ['#ffd23f', 'towns'], ['#fff3c0', 'the capital'], ['#e05a5a', 'dungeon gates'], ['#8dff5a', 'the quest'], ['#a8a', 'places found, unexplored'], ['#8dd8ff', 'the base'], ['#ff5a3c', 'the beast']]
+      .map(([c, l]) => `<span style="display:inline-flex; align-items:center; gap:5px; margin-right:12px;"><span style="width:9px; height:9px; background:${c}; display:inline-block;"></span>${l}</span>`).join('');
+    const box = document.createElement('div');
+    box.style.cssText = `background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; padding:18px 22px 14px; box-shadow:0 24px 60px rgba(0,0,0,0.75); text-align:center;`;
+    box.innerHTML = `<div class="dp-title" style="font-size:20px; color:${T.gold}; letter-spacing:0.12em; margin-bottom:10px;">THE WORLD, AS SEEN</div>`;
+    box.appendChild(canvas);
+    const foot = document.createElement('div');
+    foot.style.cssText = `font-size:10.5px; color:${T.muted}; margin-top:10px; text-align:left;`;
+    foot.innerHTML = legend + `<div style="margin-top:8px; color:${T.faint};">${w.target ? `The quest is at ${w.target.name}. ` : ''}${w.roamer ? `${w.roamer.name} was last seen where the red mark is.` : ''}</div>`;
+    box.appendChild(foot);
+    const close = document.createElement('button');
+    close.className = 'dp-btn dp-title'; close.textContent = 'Close';
+    close.style.cssText = `margin-top:12px; padding:7px 20px; font-size:12px; letter-spacing:1px; border-radius:${T.r2};`;
+    close.addEventListener('click', () => { sfx.click(); screen.remove(); });
+    box.appendChild(close);
+    screen.appendChild(box);
+    screen.addEventListener('click', e => { if (e.target === screen) screen.remove(); });
+    this.overlay.appendChild(screen);
+  }
+
   /** Numbers for the statistics screen, supplied by the game. */
   public statisticsProvider: () => { kills: number; victories: number; defeats: number; rooms: number; deepest: number; gold: number; days: number; ledger: Record<string, number>; levels: string[] } = () => ({ kills: 0, victories: 0, defeats: 0, rooms: 0, deepest: 1, gold: 0, days: 1, ledger: {}, levels: [] });
 
@@ -523,6 +573,7 @@ export class HUD {
         <button id="btn-audio" title="Sound settings (M mutes)"><span class="ic">🔊</span>Sound</button>
         <button id="btn-dm-panel" title="Issue orders to the party"><span class="ic" style="color:${T.good};">\u2328</span>DM</button>
         <button id="btn-town" title="Open the town (quests & market)"><span class="ic" style="color:${T.gold};">🏪</span>Town</button>
+        <button id="btn-map" title="The world as the party has seen it"><span class="ic">🗺</span>Map</button>
         <button id="btn-menu" title="Save and return to the main menu" class="dp-btn-bad"><span class="ic">☰</span>Menu</button>
       </div>
       <div id="audio-pop" style="display:none;">
@@ -713,6 +764,7 @@ export class HUD {
       b.addEventListener('click', () => sfx.click());
     }
 
+    this.overlay.querySelector('#btn-map')!.addEventListener('click', () => this.showWorldMap());
     // DM command bar
     this.overlay.querySelector('#btn-dm-panel')!.addEventListener('click', () => {
       this.toggleDMPanel();

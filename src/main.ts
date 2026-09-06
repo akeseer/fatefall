@@ -59,6 +59,8 @@ import { randomPartyName } from './entities/PartyNames';
 import { THEME_MOTIF } from './ui/BattleScenes';
 import { COMPONENT_ITEMS } from './combat/Components';
 import { rollTieredGear } from './loot/TieredGear';
+import { seasonFor, seasonLine, type Season } from './world/Seasons';
+import { townTier } from './world/TownLife';
 import { rarityTag } from './loot/LootTables';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
@@ -334,6 +336,17 @@ class Game {
   private encumberedNoted = false;
   /** A big purchase argued down by the party's best talker; set for the market at start. */
   haggle?: (cost: number, itemName: string) => number;
+  /** A claimed ruin. Rides in the save. */
+  public base: { x: number; y: number; name: string } | null = null;
+  /** The beast that roams the surface. Rides in the save. */
+  public roamer: { templateId: string; name: string; x: number; y: number } | null = null;
+  private lastSeason: Season | null = null;
+  private roamerTicks = 0;
+  private roamerWarned = false;
+  private bridgesCrossed = new Set<string>();
+  private merchantOffers = new Set<string>();
+  private lastTownTier: Record<string, number> = {};
+  get dayIndex(): number { return Math.floor(this.clock.elapsed / DAY_MS); }
   private retireOffered = new Set<string>();
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
@@ -921,6 +934,7 @@ class Game {
     if (fixedFloor) this.populatePrebuiltFloor(fixedFloor);
     else this.populateDungeonFloor();
     this.dressFloor();
+    this.weatherBelow();
     if (this.traps.length > 0) {
       this.hud.addCombatMessage(`The dungeon is riddled with ${this.traps.length} hidden hazard${this.traps.length === 1 ? '' : 's'} — watch your step.`, '#a86');
     }
@@ -1137,7 +1151,7 @@ class Game {
           this.lastDt = Game.SIM_STEP_MS;
           this.update(Game.SIM_STEP_MS);
           this.checkLevelUps();
-          if (++this.achievementTicks >= 60) { this.achievementTicks = 0; this.checkAchievements(); }
+          if (++this.achievementTicks >= 60) { this.achievementTicks = 0; this.checkAchievements(); this.checkSeason(); }
           this.accumulator -= Game.SIM_STEP_MS;
           steps++;
         }
@@ -3300,6 +3314,219 @@ class Game {
     }
   }
 
+  // ── The world: seasons, roads, rivers, the capital, the beast, a base ─
+
+  /** The season turns every ten days; the map and the markets follow. */
+  private checkSeason(): void {
+    const season = seasonFor(this.dayIndex);
+    this.mapRenderer.setSeason(season);
+    if (this.lastSeason === null) { this.lastSeason = season; return; }
+    if (season !== this.lastSeason) {
+      this.lastSeason = season;
+      this.hud.addCombatMessage(seasonLine(season), '#a8c8a8');
+      this.expeditionJournal.push(`The season turned to ${season}`);
+    }
+  }
+
+  /** What the sky did reaches the first floor down: rain floods, cold eats torches. */
+  private weatherBelow(): void {
+    if (this.dungeonLevel !== 1 || !this.weather) return;
+    const t = this.weather.type;
+    if (/rain|storm|flood/i.test(t)) {
+      let pools = 0;
+      for (const r of this.rooms.slice(1, 4)) {
+        if (r.width < 4 || r.height < 4) continue;
+        const px = r.x + (Math.random() < 0.5 ? 0 : r.width - 2), py = r.y + (Math.random() < 0.5 ? 0 : r.height - 2);
+        for (let y = py; y < py + 2; y++) for (let x = px; x < px + 2; x++) if (this.map.getTile(x, y) === TileType.Floor && !(x === r.cx && y === r.cy)) { this.map.setTile(x, y, TileType.Water); pools++; }
+      }
+      if (pools > 0) this.hud.addCombatMessage('\ud83c\udf27 The rain above has found its way down: the first rooms stand in black water.', '#88a');
+    } else if (/snow|blizzard|frost|ice/i.test(t)) {
+      this.torchLeft = Math.max(60, this.torchLeft - 200);
+      this.hud.addCombatMessage('\u2744 The cold comes down the stair with the party and eats at the torch.', '#88a');
+    }
+  }
+
+  /** Good roads near a prosperous town; bad ones near a besieged one. */
+  private roadQuality(tile: Vector2): number {
+    if (!this.overworld || this.map.getTile(tile.x, tile.y) !== TileType.Road) return 0;
+    const near = this.overworld.towns.find(t => manhattan(t.tile, tile) <= 14);
+    if (!near) return 0;
+    if (this.sieges[near.id]) return -1;
+    return townTier(this.townLife?.byTown[near.id]) >= 2 ? 1 : 0;
+  }
+
+  /** Every bridge crosses a river, and every river has a name. */
+  private nameTheRiver(tile: Vector2): void {
+    if (this.map.getTile(tile.x, tile.y) !== TileType.Bridge) return;
+    const key = `${tile.x},${tile.y}`;
+    if (this.bridgesCrossed.has(key)) return;
+    this.bridgesCrossed.add(key);
+    const names = ['the Sallow', 'the Greywater', 'the Hollowbeck', 'the Kingsflow', 'the Wend', 'the Bittern', 'the Ashwater', 'the Long Lea', 'the Marrow', 'the Silverun'];
+    const river = names[(tile.y * 7 + Math.floor(tile.x / 9)) % names.length];
+    this.hud.addCombatMessage(`\ud83c\udf09 The party crosses ${river} by the bridge here. The water is ${['brown and quick', 'slow and black', 'clear over stones', 'high with rain'][(tile.x + tile.y) % 4]}.`, '#88a');
+  }
+
+  /** Arriving anywhere: the capital's court, a town's growth, the festival's games. */
+  private townArrivalExtras(town: OverworldTown): void {
+    const tl = this.townLife?.byTown[town.id];
+    if (!tl || !this.overworld) return;
+    if (town.id === this.overworld.spawnTownId && !tl.questGivers.some(g => g.id === 'crown_steward')) {
+      tl.questGivers.push({
+        id: 'crown_steward', name: 'Aldous Vane', title: 'Steward of the Crown', portrait: '\ud83d\udc51', portraitColor: '#e8c56a',
+        backstory: `${town.name} is the capital, such as the realm has, and Aldous Vane keeps its ledgers, its bank, and its list of things the Crown would like killed.`,
+        dialogue: {
+          stranger: ['"The Crown pays well and asks few questions. It asks one: can you be relied upon?"'],
+          acquaintance: ['"The Crown has noticed you. That is not always good news, but today it is."'],
+          trusted: ['"There are things I would tell no one else. Sit."'],
+          legend: ['"When the histories are written you will be in them, and I will have written that page."'],
+        },
+        specialty: 'combat', repPerQuest: 40, reputation: 0,
+      });
+      this.hud.addCombatMessage(`\ud83d\udc51 ${town.name} is the capital, such as it is: a bank, a court, and a Steward with a list of the Crown's enemies.`, '#ffd700');
+    }
+    const tier = townTier(tl);
+    const last = this.lastTownTier[town.id] ?? 1;
+    if (tier > last) {
+      this.hud.addCombatMessage(`\ud83c\udfd8 ${town.name} has grown on the party's custom: ${tier === 2 ? 'a market town now, with better prices and a paved road out' : 'a proper city, with the best prices in the realm and roads to match'}.`, '#ffd700');
+      this.expeditionJournal.push(`${town.name} grew to tier ${tier}`);
+    }
+    this.lastTownTier[town.id] = tier;
+    if (tl.festival && !this.merchantOffers.has(`festival:${town.id}:${tl.festival.startedAt}`)) {
+      this.merchantOffers.add(`festival:${town.id}:${tl.festival.startedAt}`);
+      this.festivalGame(town, tl.festival.kind);
+    }
+  }
+
+  /** A festival has games; the party's best enters one, on the tray. */
+  private festivalGame(town: OverworldTown, kind: string): void {
+    const games = [
+      { name: 'the archery', ability: 'dex' as const, label: 'Archery' },
+      { name: 'the wrestling', ability: 'str' as const, label: 'Wrestling' },
+      { name: 'the footrace', ability: 'con' as const, label: 'The footrace' },
+    ];
+    const game = games[Math.abs(kind.length + town.name.length) % games.length];
+    const best = [...this.party.alive].sort((a, b) => abilityModifier(b.abilities[game.ability]) - abilityModifier(a.abilities[game.ability]))[0];
+    if (!best) return;
+    const { result, event } = this.rollHeld(() => abilityCheck(abilityModifier(best.abilities[game.ability]) + best.profBonus, 13, `${best.name} \u2014 ${game.label}`));
+    void this.presentRolls([{ roll: event, line: result.success
+      ? `\ud83c\udfaa ${best.name} enters ${game.name} and wins it going away. ${town.name} cheers, and the purse is 30 gold heavier.`
+      : `\ud83c\udfaa ${best.name} enters ${game.name} and loses narrowly to a farmer's daughter who has clearly done this before.`, color: result.success ? '#ffd700' : '#a98' }]).then(() => {
+      if (result.success) { this.addGold(30); this.adjustTownReputation(town.id, 1); this.tally('games_won'); }
+    });
+  }
+
+  /** Cleared places point to the next: the witch knows the grove, the grove the tomb. */
+  private chainFrom(poi: OverworldPOI): void {
+    const next: Record<string, string> = { witch_hut: 'enchanted_grove', enchanted_grove: 'lost_tomb', lost_tomb: 'dragon_lair', ancient_ruins: 'lost_tomb', hidden_shrine: 'crystal_cave', bandit_outpost: 'abandoned_mine', watchtower: 'ancient_battlefield', abandoned_mine: 'crystal_cave' };
+    const kind = next[poi.kind];
+    if (!kind) return;
+    const target = this.pois.find(p => !p.discovered && p.kind === kind);
+    if (!target) return;
+    target.discovered = true;
+    if (this.overworld) this.overworld.map.reveal(target.tile.x, target.tile.y, 3);
+    this.hud.addCombatMessage(`\ud83d\uddfa Something at ${poi.name} points the way on: ${target.name} lies ${target.tile.x < poi.tile.x ? 'west' : 'east'} and ${target.tile.y < poi.tile.y ? 'north' : 'south'} of here, and is on the map now.`, '#ff9');
+    this.expeditionJournal.push(`${poi.name} led to ${target.name}`);
+  }
+
+  /** A cleared ruin the party stands at becomes a base: a bed, a roof, torches. */
+  private claimRuins(): void {
+    if (this.mode !== GameMode.Overworld) { this.hud.addCombatMessage('Ruins are claimed from the surface, standing at them.', '#886'); return; }
+    const here = this.party.leader.tile;
+    const ruin = this.pois.find(p => p.cleared && /ruins|watchtower|failed_settlement/.test(p.kind) && manhattan(p.tile, here) <= 2);
+    if (!ruin) { this.hud.addCombatMessage('There are no cleared ruins here to claim. Clear one, stand on it, and say so.', '#886'); return; }
+    this.base = { x: ruin.tile.x, y: ruin.tile.y, name: ruin.name };
+    this.hud.addCombatMessage(`\ud83c\udfda ${ruin.name} is the party's now: a roof, a bed, a chest, a door that shuts. Come back to it and rest.`, '#ffd700');
+    this.expeditionJournal.push(`Claimed ${ruin.name} as a base`);
+    this.tally('bases');
+  }
+
+  private restAtBase(tile: Vector2): void {
+    if (!this.base || tile.x !== this.base.x || tile.y !== this.base.y) return;
+    if (this.merchantOffers.has(`base:${this.dayIndex}`)) return;
+    this.merchantOffers.add(`base:${this.dayIndex}`);
+    this.hud.addCombatMessage(`\ud83c\udfda Home, of a kind. The party sleeps at ${this.base.name} behind a door that shuts.`, '#8cf');
+    for (const msg of this.party.longRest()) this.hud.addCombatMessage(msg, '#7c7');
+    for (const m of this.party.members) if (m.exhaustion > 0) m.exhaustion--;
+    this.torches = Math.max(this.torches, 4);
+    this.hud.setParty(this.party);
+  }
+
+  /** A merchant on the road has one rare thing, once a day, at a price. */
+  private merchantOnTheRoad(): void {
+    const leader = this.party.leader;
+    const merchant = this.wanderers.find(w => w.kind === 'merchant' && manhattan(w.tile, leader.tile) <= 2);
+    if (!merchant) return;
+    const key = `${merchant.id}:${this.dayIndex}`;
+    if (this.merchantOffers.has(key)) return;
+    this.merchantOffers.add(key);
+    const pool = MAGIC_ITEMS.filter(i => i.rarity === 'uncommon' || i.rarity === 'rare');
+    const item = pool[Math.floor(Math.random() * pool.length)];
+    if (!item) return;
+    const price = item.rarity === 'rare' ? 260 : 120;
+    const buys = this.partyGold() >= price + 60 && this.party.leader.personality.greed >= 4;
+    if (buys) {
+      this.spendGold(price);
+      this.party.leader.addToInventory({ id: item.id, name: item.name, type: 'treasure', description: item.description, value: price, rarity: item.rarity });
+      this.hud.addCombatMessage(`\ud83d\uded2 ${merchant.name} unrolls a cloth on the road: ${item.name}, ${price} gold, and no haggling on the road. The party pays.`, '#ffd700');
+    } else {
+      this.hud.addCombatMessage(`\ud83d\uded2 ${merchant.name} unrolls a cloth on the road: ${item.name}, ${price} gold. The party has a look and walks on.`, '#a98');
+    }
+  }
+
+  /** The beast of the region: born with the world, roaming until slain. */
+  private spawnRoamer(): void {
+    if (!this.overworld || this.roamer) return;
+    const cr = 3 + Math.floor(this.party.leader.level / 2);
+    const pool = MONSTER_TEMPLATES.filter(m => m.cr >= cr - 0.5 && m.cr <= cr + 1 && (m.type === 'beast' || m.type === 'monstrosity' || m.type === 'dragon' || m.type === 'giant') && !isUnseeableMonster(m.id));
+    const t = pool[Math.floor(Math.random() * pool.length)] ?? getRandomMonster(cr);
+    const region = regionAt(this.worldRegions, this.party.leader.tile);
+    let spot: Vector2 | null = null;
+    for (let i = 0; i < 60 && !spot; i++) {
+      const x = 4 + Math.floor(Math.random() * (this.overworld.map.width - 8)), y = 4 + Math.floor(Math.random() * (this.overworld.map.height - 8));
+      if (this.overworld.map.isWalkable(x, y) && manhattan({ x, y }, this.party.leader.tile) > 25) spot = { x, y };
+    }
+    if (!spot) return;
+    this.roamer = { templateId: t.id, name: `the ${t.name} of ${region?.name.replace(/^The /, '') ?? 'the Wilds'}`, x: spot.x, y: spot.y };
+    this.hud.addCombatMessage(`\ud83d\udc3e Word in every tavern: something has been taking sheep and shepherds along the far roads. They call it ${this.roamer.name}. Whoever brings its head home will drink free for a year.`, '#e8b45a');
+  }
+
+  private stepRoamer(): void {
+    if (!this.roamer || !this.overworld || this.mode !== GameMode.Overworld) return;
+    if (++this.roamerTicks % 3 !== 0) return;
+    const r = this.roamer;
+    const lead = this.party.leader.tile;
+    const d = manhattan({ x: r.x, y: r.y }, lead);
+    const towardParty = d <= 30;
+    const dx = towardParty ? Math.sign(lead.x - r.x) : (Math.random() < 0.5 ? 1 : -1);
+    const dy = towardParty ? Math.sign(lead.y - r.y) : (Math.random() < 0.5 ? 1 : -1);
+    const nx = r.x + (Math.random() < 0.5 ? dx : 0), ny = r.y + (Math.random() < 0.5 ? 0 : dy);
+    if (this.overworld.map.isWalkable(nx, ny) && !townAt(this.overworld, nx, ny)) { r.x = nx; r.y = ny; }
+    if (d <= 8 && !this.roamerWarned) { this.roamerWarned = true; this.hud.addCombatMessage(`\ud83d\udc3e Something large moves along the ridge, keeping pace. ${r.name} has the party's scent.`, '#c84'); }
+    if (d > 12) this.roamerWarned = false;
+    if (manhattan({ x: r.x, y: r.y }, lead) <= 1 && this.phase === GamePhase.Exploration) {
+      const t = getMonsterTemplate(r.templateId);
+      if (!t) { this.roamer = null; return; }
+      const spot = findAmbushTiles(this.map, lead, 1)[0];
+      if (!spot) return;
+      const m = this.spawnMonster({ ...t, name: `\ud83d\udc80 ${r.name.charAt(0).toUpperCase() + r.name.slice(1)} (Boss)`, xp: t.xp * 3 }, spot);
+      m.maxHp = Math.round(m.maxHp * 1.6); m.hp = m.maxHp; m.alertLevel = 2;
+      this.roamer = null;
+      this.hud.addCombatMessage(`\ud83d\udc3e ${r.name} comes down off the ridge. It has been following since the last town, and it is done following.`, '#e0705f');
+      this.tally('roamers');
+      this.startCombat([m]);
+    }
+  }
+
+  private trackRoamer(): void {
+    if (!this.roamer) { this.hud.addCombatMessage('There is no beast abroad that the party knows of.', '#886'); return; }
+    const lead = this.party.leader.tile;
+    const dx = this.roamer.x - lead.x, dy = this.roamer.y - lead.y;
+    const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+    const d = Math.abs(dx) + Math.abs(dy);
+    this.hud.addCombatMessage(`\ud83d\udc3e ${this.party.leader.name} reads the ground: ${this.roamer.name} passed ${d <= 6 ? 'this hour' : d <= 20 ? 'today' : 'days ago'}, heading ${dir}. About ${d} tiles off. The map has the mark.`, '#e8b45a');
+    if (this.overworld) this.overworld.map.reveal(this.roamer.x, this.roamer.y, 2);
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3625,6 +3852,7 @@ class Game {
               this.expeditionJournal.push(`Forged the legendary Moonfall at ${this.activePOI.name}`);
             }
             this.activePOI.cleared = true;
+            this.chainFrom(this.activePOI);
             this.hud.addCombatMessage(`${poiIcon(this.activePOI.kind)} ${this.activePOI.name} has been cleared!`, '#8f8');
             this.expeditionJournal.push(`Cleared ${this.activePOI.name}`);
             this.activePOI = null;
@@ -5282,6 +5510,9 @@ class Game {
     this.runMode = options.mode;
     this.hardcore = options.hardcore;
     this.difficulty = options.difficulty ?? 'normal';
+    this.base = null;
+    this.roamer = null;
+    setTimeout(() => this.spawnRoamer(), 800);
     if (readBank() > 0) setTimeout(() => this.hud.addCombatMessage(`\ud83c\udfe6 A counting-house somewhere holds ${readBank()} gold in the name of a party that did not come back. Any bank will pay it out.`, '#ffd700'), 600);
     this.sieges = {};
     this.dungeonLevel = 0;
@@ -5570,7 +5801,7 @@ class Game {
     // when weather mires the route (sandstorm, deep snow, heavy rain).
     const paceSteps = Math.max(
       1,
-      Math.round((this.mounted ? 3 : 2) / (this.weather?.moveCostMultiplier ?? 1)) - (this.isEncumbered() ? 1 : 0)
+      Math.round((this.mounted ? 3 : 2) / (this.weather?.moveCostMultiplier ?? 1)) - (this.isEncumbered() ? 1 : 0) + this.roadQuality(leader.tile)
     );
     let moved = 0;
     for (let step = 0; step < paceSteps; step++) {
@@ -5683,6 +5914,10 @@ class Game {
     this.maybeMoonSurfaceEvent();
     this.maybeRoadEvent();
     this.maybeSiege();
+    this.nameTheRiver(leader.tile);
+    this.stepRoamer();
+    this.restAtBase(leader.tile);
+    this.merchantOnTheRoad();
   }
 
   /** A weather-blessed surge of undead/fiendish reinforcements on the surface ambush. */
@@ -6126,6 +6361,7 @@ class Game {
           for (const m of this.party.members) { if (m.isAlive) m.addXp(xp); }
           this.expeditionJournal.push(`Explored ${poi.name}: found ${gold}gp in ancient treasure`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6141,6 +6377,7 @@ class Game {
           const xp = 10 + this.party.members.length * 4;
           for (const m of this.party.members) { if (m.isAlive) m.addXp(xp); }
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6157,6 +6394,7 @@ class Game {
           this.hud.addCombatMessage(`The hag ${Math.random() < 0.5 ? 'grudgingly teaches' : 'cackles and shares'} a secret: ${member.name} learns ${spell}!`, '#a8f');
           this.expeditionJournal.push(`Visited ${poi.name}: learned ${spell}`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6179,6 +6417,7 @@ class Game {
           this.hud.addCombatMessage(`${leader.name} claims a relic from the field: ${weapon}!`, '#dd0');
           this.expeditionJournal.push(`Explored ${poi.name}: recovered ${weapon}`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6206,6 +6445,7 @@ class Game {
         }
         this.expeditionJournal.push(`Prayed at ${poi.name}: received divine blessing`);
         poi.cleared = true;
+        this.chainFrom(poi);
         break;
       }
       case 'crystal_cave': {
@@ -6231,6 +6471,7 @@ class Game {
           this.hud.addCombatMessage('The crystal energy restores arcane power — spell slots partially restored.', '#a8f');
           this.expeditionJournal.push(`Explored ${poi.name}: harvested crystals worth ${gemValue}gp`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6255,6 +6496,7 @@ class Game {
           this.hud.addCombatMessage(`${leader.name} opens the sarcophagus and finds: ${item.name}!`, '#dd0');
           this.expeditionJournal.push(`Plundered ${poi.name}: found ${item.name}`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6295,6 +6537,7 @@ class Game {
         }
         this.expeditionJournal.push(`Visited ${poi.name}: fey encounter`);
         poi.cleared = true;
+        this.chainFrom(poi);
         break;
       }
       case 'watchtower': {
@@ -6314,6 +6557,7 @@ class Game {
           }
           this.expeditionJournal.push(`Climbed ${poi.name}: the realm mapped from above`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6339,6 +6583,7 @@ class Game {
           this.hud.addCombatMessage(`The abandoned study yields ${scroll}, and ${member.name} restores spent slots at the mana font!`, '#8f8');
           this.expeditionJournal.push(`Studied at ${poi.name}: found ${scroll}`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6357,6 +6602,7 @@ class Game {
           this.hud.addCombatMessage(`The party navigates by starlight and finds a dead ranger's cache: ${gold} gold, and hard-won experience.`, '#dd0');
           this.expeditionJournal.push(`Traversed ${poi.name}: a grim passage`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6376,6 +6622,7 @@ class Game {
         }
         this.expeditionJournal.push(`Bathed at ${poi.name}: the waters restored them`);
         poi.cleared = true;
+        this.chainFrom(poi);
         break;
       }
       case 'failed_settlement': {
@@ -6394,6 +6641,7 @@ class Game {
           }
           this.expeditionJournal.push(`Searched ${poi.name}: the town's last coin`);
           poi.cleared = true;
+          this.chainFrom(poi);
         }
         break;
       }
@@ -6496,6 +6744,7 @@ class Game {
     if (this.siegeAtGate(town)) return;
     this.maybeOfferRetirement(town);
     this.mountTrophies(town);
+    this.townArrivalExtras(town);
 
     // The town's rumor sets the mood — and reshapes the quest board.
     const tl = this.townLife?.byTown[town.id];
@@ -6848,6 +7097,25 @@ class Game {
         this.mounted = true;
         this.hud.addCombatMessage('\ud83d\udc0e A sound horse, a saddle that fits, and the road a third shorter for it.', '#e8b45a');
         this.hud.townPanel.refresh();
+        break;
+      }
+      case 'ship_passage': {
+        const cost = 60;
+        if (!this.overworld || !this.currentTown) return;
+        const far = this.overworld.towns.filter(t => t.id !== this.currentTown!.id && manhattan(t.tile, this.currentTown!.tile) >= 30);
+        if (far.length === 0) { this.hud.addCombatMessage('No boat sails from here to anywhere worth the fare.', '#886'); return; }
+        if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for passage.', '#c66'); return; }
+        this.addGold(-cost);
+        const dest = far[Math.floor(Math.random() * far.length)];
+        const here = this.currentTown.name;
+        this.hud.townPanel.hide();
+        this.mode = GameMode.Overworld;
+        this.currentTown = null;
+        this.party.setPosition({ x: dest.tile.x, y: dest.tile.y + 1 });
+        this.map.reveal(dest.tile.x, dest.tile.y, 8);
+        this.hud.addCombatMessage(`\u26f5 Three days of grey water from ${here}, and the party comes ashore at ${dest.name} with its legs still rolling.`, '#8cf');
+        this.tally('voyages');
+        this.arriveAtTown(dest);
         break;
       }
       case 'bank_deposit': {
@@ -7553,6 +7821,10 @@ class Game {
         : `\u25b6 ${members.map(m => m.name).join(', ')} may act again.`, '#8cf');
       return;
     }
+    // "map": the world as seen. "claim the ruins": a base. "track": where the beast is.
+    if (/^(?:map|world map|show (?:the )?map)$/i.test(text)) { this.hud.showWorldMap(); return; }
+    if (/^claim(?: the)? (?:ruins?|keep|tower)$/i.test(text)) { this.claimRuins(); return; }
+    if (/^track(?: the)? (?:beast|roamer|it)?$/i.test(text)) { this.trackRoamer(); return; }
     // "new name": the party takes a name from the generator.
     if (/^(?:new|another|fresh) (?:party )?name$/i.test(text)) {
       this.party.partyName = randomPartyName();
@@ -7751,6 +8023,24 @@ function startGame() {
   const saves = listSaves();
   game.hud.onStartChoice = (choice, slot) => game.handleStartChoice(choice, slot);
   game.hud.onMainMenu = () => game.returnToMainMenu();
+  game.hud.worldMapProvider = () => {
+    const ow = game.overworld;
+    if (!ow || game.mode === GameMode.Dungeon) return null;
+    const active = game.quests.find(q => q.id === game.activeQuestId);
+    const target = active ? ow.entrances.find(e => e.id === active.entranceId) : undefined;
+    return {
+      width: ow.map.width, height: ow.map.height,
+      tile: (x, y) => ow.map.getTile(x, y),
+      explored: (x, y) => ow.map.explored[y]?.[x] ?? false,
+      towns: ow.towns.map(t => ({ name: t.name, x: t.tile.x, y: t.tile.y, capital: t.id === ow.spawnTownId })),
+      entrances: ow.entrances.map(e => ({ name: e.name, x: e.tile.x, y: e.tile.y })),
+      pois: game.pois.filter(p => p.discovered).map(p => ({ name: p.name, x: p.tile.x, y: p.tile.y, cleared: p.cleared })),
+      party: { x: game.party.leader.tile.x, y: game.party.leader.tile.y },
+      target: target ? { name: target.name, x: target.tile.x, y: target.tile.y } : null,
+      roamer: game.roamer ? { name: game.roamer.name, x: game.roamer.x, y: game.roamer.y } : null,
+      base: game.base ? { x: game.base.x, y: game.base.y } : null,
+    };
+  };
   game.hud.statisticsProvider = () => ({
     kills: game.history.kills,
     victories: game.history.victories,

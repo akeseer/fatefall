@@ -10,6 +10,8 @@
  * this spends it on goods.
  */
 
+import { seasonFor, seasonPriceMod } from '../world/Seasons';
+import { townTier } from '../world/TownLife';
 import { slotForItem, type InventoryItem } from '../entities/Character';
 import type { Party } from '../entities/Party';
 import type { HUD } from '../ui/HUD';
@@ -35,6 +37,8 @@ export interface MarketHost {
   spendGold(n: number): boolean;
   /** A big purchase can be argued down: the game rolls the Charisma and returns the price paid. */
   haggle?(cost: number, itemName: string): number;
+  /** The day of the run, for the season. */
+  readonly dayIndex?: number;
 }
 
 export class MarketController {
@@ -88,7 +92,10 @@ export class MarketController {
       const dynamicMod = townPriceModifier(this.game.townLife, this.game.currentTown.id, archetype?.priceModifier ?? 1);
       // Market day: goods are abundant and the squares are thronged — 10% off.
       const marketMod = this.game.calendar.isMarketday ? 0.9 : 1;
-      cost = Math.max(1, Math.floor(baseCost * dynamicMod * marketMod));
+      // Winter is dear and the harvest is cheap; a town that has grown gives a little back.
+      const seasonMod = seasonPriceMod(seasonFor(this.game.dayIndex ?? 0));
+      const tierMod = 1 - 0.03 * (townTier(this.game.townLife.byTown[this.game.currentTown.id]) - 1);
+      cost = Math.max(1, Math.floor(baseCost * dynamicMod * marketMod * seasonMod * tierMod));
     }
     if (cost >= 80 && this.game.haggle) cost = this.game.haggle(cost, item.name);
     if (!this.game.spendGold(cost)) {

@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 23;
+export const SAVE_VERSION = 24;
 
 export interface SavedCharacter {
   id: string;
@@ -171,6 +171,10 @@ export interface SaveData {
   pacts?: Record<string, { demand: string; target: number; progress: number; done: boolean }>;
   /** Boss heads taken, and whether each hangs in a tavern yet. v23+. */
   trophies?: { name: string; dungeon: string; floor: number; mounted: string | null }[];
+  /** A claimed ruin the party rests at. v24+. */
+  base?: { x: number; y: number; name: string } | null;
+  /** The beast that roams the surface, until it is slain. v24+. */
+  roamer?: { templateId: string; name: string; x: number; y: number } | null;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -372,7 +376,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 21) current = migrateV21toV22(current);
   if (!current) return null;
   if (current.version === 22) current = migrateV22toV23(current);
+  if (!current) return null;
+  if (current.version === 23) current = migrateV23toV24(current);
   return current;
+}
+
+/** v23 → v24: the base and the roamer. Absent means neither. */
+function migrateV23toV24(data: SaveData): SaveData | null {
+  return { ...data, version: 24 };
 }
 
 /** v22 → v23: trophies. Absent means no heads taken. */

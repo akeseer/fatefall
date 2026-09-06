@@ -1003,3 +1003,10 @@ export function sanitizeTownLife(state: TownLifeState | undefined, overworld: Ov
 export function isCaravanWanderer(w: Wanderer): boolean {
   return w.id.startsWith('wanderer_caravan_');
 }
+
+/** How far a town has grown on the party's custom and good name: 1, 2 or 3. */
+export function townTier(entry: { prosperitySpent?: number; townReputation?: number } | undefined): 1 | 2 | 3 {
+  if (!entry) return 1;
+  const score = (entry.prosperitySpent ?? 0) + (entry.townReputation ?? 0) * 40;
+  return score >= 1200 ? 3 : score >= 400 ? 2 : 1;
+}

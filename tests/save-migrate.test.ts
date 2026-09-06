@@ -240,3 +240,12 @@ describe('v22 -> v23 trophies', () => {
     expect(migrateSave({ version: SAVE_VERSION, trophies: t } as any)!.trophies).toEqual(t);
   });
 });
+
+describe('v23 -> v24 the base and the roamer', () => {
+  it('leaves an older run without either and carries them through', () => {
+    const out = migrateSave({ version: 23, party: { members: [] } } as any)!;
+    expect(out.base).toBeUndefined();
+    const r = { templateId: 'owlbear', name: 'the Beast of the Downs', x: 10, y: 12 };
+    expect(migrateSave({ version: SAVE_VERSION, roamer: r, base: { x: 1, y: 2, name: 'Old Keep' } } as any)!.roamer).toEqual(r);
+  });
+});
