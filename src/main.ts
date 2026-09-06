@@ -38,7 +38,7 @@ import { SpriteRenderer } from './entities/Sprites';
 import { MapRenderer } from './rendering/MapRenderer';
 import type { FloaterKind, EffectKind } from './rendering/MapRenderer';
 import { CombatEngine } from './combat/CombatEngine';
-import type { PartyCommand } from './combat/CombatEngine';
+import type { PartyCommand, CombatLog } from './combat/CombatEngine';
 import { BattleView, type MenuConsumable } from './ui/BattleView';
 import { AIDirector, planDyingRescue } from './ai/AIDirector';
 import { HUD, GameSpeed } from './ui/HUD';
@@ -81,6 +81,7 @@ import { getMusic, type MusicMood } from './audio/Music';
 import { getAmbience, NIGHT_BELOW } from './audio/Ambience';
 import { StoryController } from './game/StoryController';
 import { resolveDeadEnd, stuckStage } from './ai/DeadEnd';
+import { getDiceHistory, type DiceRollEvent } from './rules/DiceEvents';
 import type { BattleScene } from './ui/BattleScenes';
 import { STORY_BOSS_HP_SCALE, type StoryState } from './story/Story';
 
@@ -260,6 +261,8 @@ class Game {
   private tickTimer: number = 0;
   public tickInterval: number = 800; // ms between AI actions
   private combatTickTimer: number = 0;
+  /** True while a step's blows are being shown one at a time; no new step until it is done. */
+  private presenting = false;
   private combatTickInterval: number = BattleView.TURN_MS; // ms between combat turns at 1x
   public monsterIdCounter: number = 0;
   private stuckDirCount: number = 0;
@@ -1760,6 +1763,67 @@ class Game {
   }
 
   /**
+   * Show one engine step as a sequence. The engine resolves a whole turn at
+   * once and narrates it; shown all at once, a turn with two attacks read as
+   * two things happening together, and the dice for them came afterwards.
+   * Here each attack line waits for its die to land first, then plays its
+   * blow, then the next line follows after a beat. The window's state (health
+   * bars, the turn order) is refreshed with each piece.
+   */
+  private async presentStep(log: CombatLog, lines: string[], actor: GameCharacter | Monster | null, rolls: DiceRollEvent[]): Promise<void> {
+    // Every phrase COMBAT_NARRATION and the engine use for a blow that was
+    // rolled for: hits, crits and misses alike. Rolls no line claims are
+    // played before the tail of the turn, so no die is ever skipped.
+    const attackLine = /\b(bites deep|smashes through|finds a gap|connects with|feints low|strikes a vital|lands a massive|pierces|struck a telling|swing goes wide|narrowly sidesteps|glances harmlessly|overcommits|strikes|hits|misses|slashes|stabs|shoots|fires|hurls|lunges|claws|bites)\b/i;
+    const sleep = (ms: number) => new Promise<void>(r => window.setTimeout(r, ms));
+    const round = this.combatEngine.log.round;
+    const show = (messages: string[], last: boolean) => {
+      if (messages.length === 0 && !last) return;
+      const piece: CombatLog = { ...log, messages };
+      this.hud.addCombatLogBatch(piece);
+      this.kickCameraFor(messages);
+      this.popCombatNumbers(messages, actor);
+      this.hud.setParty(this.party);
+      this.refreshBossBar();
+      this.hud.battleView.update({
+        round,
+        actors: this.combatEngine.initiativeOrder,
+        currentActorId: this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex]?.id ?? null,
+        messages,
+        over: last ? log.isOver : false,
+        winner: last ? log.winner : null,
+      });
+    };
+    let batch: string[] = [];
+    let ri = 0;
+    try {
+      for (const msg of lines) {
+        if (attackLine.test(msg) && ri < rolls.length) {
+          // The die first, then the blow it decided.
+          show(batch, false);
+          batch = [];
+          if (!this.running || this.phase !== GamePhase.Combat) break;
+          await this.hud.dice.playRoll(rolls[ri++]);
+          await sleep(90);
+        }
+        batch.push(msg);
+      }
+      while (ri < rolls.length && this.running && this.phase === GamePhase.Combat) {
+        show(batch, false);
+        batch = [];
+        await this.hud.dice.playRoll(rolls[ri++]);
+        await sleep(90);
+      }
+      show(batch, false);
+      // Let the last blow land before the next combatant moves.
+      if (lines.length > 0) await sleep(Math.min(450, this.combatTickInterval * 0.5));
+    } finally {
+      this.hud.dice.deferCombat = false;
+      show([], true);
+    }
+  }
+
+  /**
    * Keep the engine in step with the battle window's Manual/Auto toggle.
    * The toggle used to change only the button: the engine stayed paused on a
    * hero who would never be given an order, and the fight stopped for good.
@@ -1780,25 +1844,23 @@ class Game {
     // FF command menu: when a hero awaits the DM's order, hold the tick
     // clock — the fight literally waits for the menu pick, then resumes.
     if (this.combatEngine.decisionActor) return;
+    // A step is shown blow by blow; the next one waits for the last to land.
+    if (this.presenting) return;
     if (this.combatTickTimer >= this.combatTickInterval) {
       this.combatTickTimer = 0;
 
       const actor = this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex] ?? null;
+      const rollsBefore = getDiceHistory().length;
+      // The engine's log runs for the whole fight; only what this step added
+      // is new. Feeding the whole log to the window every tick replayed every
+      // earlier blow again, which is what made the fight look simultaneous.
+      const linesBefore = this.combatEngine.log.messages.length;
+      this.hud.dice.deferCombat = true;
       const log = this.combatEngine.step();
-      this.hud.addCombatLogBatch(log);
-      this.kickCameraFor(log.messages);
-      this.popCombatNumbers(log.messages, actor);
-      this.hud.setParty(this.party);
-      this.refreshBossBar();
-      // Keep the FF-style battle window in sync with each combat tick.
-      this.hud.battleView.update({
-        round: this.combatEngine.log.round,
-        actors: this.combatEngine.initiativeOrder,
-        currentActorId: this.combatEngine.initiativeOrder[this.combatEngine.currentTurnIndex]?.id ?? null,
-        messages: log.messages,
-        over: log.isOver,
-        winner: log.winner,
-      });
+      const fresh = log.messages.slice(linesBefore);
+      const rolls = getDiceHistory().slice(rollsBefore).filter(e => e.kind === 'attack' || e.kind === 'save' || e.kind === 'death-save');
+      this.presenting = true;
+      void this.presentStep(log, fresh, actor, rolls).finally(() => { this.presenting = false; });
 
       // FF command menu: the engine paused on a conscious hero's turn —
       // surface the Attack/Spell/Item/Flee menu and wait for the DM.
@@ -2248,7 +2310,9 @@ class Game {
     // renderer and the sprite functions are unchanged; they simply receive a
     // recorder where they used to receive a canvas context.
     this.recorder.begin('#0a0a12', this.sceneMood());
-    const moveMs = Math.max(140, Math.min(600, this.tickInterval * 0.55));
+    // Most of the tick is spent gliding, so a march is motion rather than a
+    // step and a pause; the remainder lets a stop read as a stop.
+    const moveMs = Math.max(160, Math.min(720, this.tickInterval * 0.88));
     if (this.mode === GameMode.Overworld || this.mode === GameMode.Town) {
       const campTiles = this.banditCamps.camps.filter(c => c.discovered && !c.resolved).map(c => c.tile);
       // The active quest's destination: its target entrance while hunting, or

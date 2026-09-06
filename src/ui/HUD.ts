@@ -28,6 +28,8 @@ export class HUD {
   private charSheetEl: HTMLElement;
   private compendium: DnDCompendium;
   private diceTray: DiceTray;
+  /** The dice tray, for the game to play combat rolls in sequence. */
+  get dice(): DiceTray { return this.diceTray; }
   private diceSounds: DiceSounds;
 
   public onSpeedChange?: (speed: GameSpeed) => void;

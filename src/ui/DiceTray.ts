@@ -54,6 +54,14 @@ export class DiceTray {
   private revealTimer?: number;
   /** The latest roll waiting for the current die to finish. */
   private pendingRoll: DiceRollEvent | null = null;
+  /**
+   * When set, combat d20s are not shown the moment they are rolled. The game
+   * plays them itself, one at a time, in step with the blow each one decides
+   * (see Game.presentStep); the strip still logs every roll as it happens.
+   */
+  public deferCombat = false;
+  /** Who is waiting for the current big die to finish. */
+  private idleWaiters: (() => void)[] = [];
   /** Whether a big-die animation cycle is currently running. */
   private bigRollActive: boolean = false;
   /** Generation counter so superseded animations never touch the DOM. */
@@ -107,8 +115,10 @@ export class DiceTray {
     }
 
     // Combat d20s: queue when one is already rolling so dice keep tumbling.
-    // Crits and fumbles jump the queue for the slow-motion zoom.
+    // Crits and fumbles jump the queue for the slow-motion zoom. When the
+    // game is presenting the fight itself, it asks for each die by hand.
     if (BIG_DIE_KINDS.has(e.kind)) {
+      if (this.deferCombat) return;
       if (dramatic) {
         this.pendingRoll = null;
         this.showBigRoll(e, true, 'dramatic');
@@ -142,9 +152,9 @@ export class DiceTray {
     // Combat rolls are brisk: the die is one beat of a turn, not the turn.
     // A fight with a three-second die on every swing read as a slideshow, and
     // when the die finally cleared the queued turns tumbled out on top of each other.
-    const tumble = dramatic ? 2600 : pace === 'combat' ? 650 : 1500;
-    const revealDelay = dramatic ? 900 : pace === 'combat' ? 200 : 550;
-    const dwell = dramatic ? 3200 : pace === 'combat' ? 650 : 2600;
+    const tumble = dramatic ? 2600 : pace === 'combat' ? 550 : 1500;
+    const revealDelay = dramatic ? 900 : pace === 'combat' ? 160 : 550;
+    const dwell = dramatic ? 3200 : pace === 'combat' ? 480 : 2600;
     this.watchdogTimer = window.setTimeout(() => this.forceFinishBigRoll(), tumble + revealDelay + dwell + 1200);
 
     if (e.diceType === 'd100') {
@@ -246,7 +256,7 @@ export class DiceTray {
     // and the "camera" zooms in on the landing face. Combat rolls are
     // snappier so the queue keeps moving.
     const theta0 = (dramatic ? 4.5 + Math.random() * 1.5 : pace === 'combat' ? 2 + Math.random() * 1.5 : 2.5 + Math.random() * 2) * Math.PI * 2;
-    const duration = dramatic ? 2600 : pace === 'combat' ? 650 : 1500;
+    const duration = dramatic ? 2600 : pace === 'combat' ? 550 : 1500;
     const decay = dramatic ? 3.4 : pace === 'combat' ? 1.9 : 2.2;
     const start = performance.now();
 
@@ -381,6 +391,7 @@ export class DiceTray {
       this.watchdogTimer = undefined;
     }
     this.bigRollActive = false;
+    this.settleWaiters();
     const next = this.pendingRoll;
     this.pendingRoll = null;
     if (next) {
@@ -391,9 +402,29 @@ export class DiceTray {
   }
 
   /** Emergency release — the game must never freeze on a stalled die. */
+  /**
+   * Play one roll's die now and resolve when it has landed and cleared. Used
+   * by the game to put a die in front of the blow it decided.
+   */
+  playRoll(e: DiceRollEvent): Promise<void> {
+    const dramatic = e.outcome === 'crit' || e.outcome === 'fumble';
+    return new Promise<void>(resolve => {
+      this.idleWaiters.push(resolve);
+      this.pendingRoll = null;
+      this.showBigRoll(e, dramatic, dramatic ? 'dramatic' : 'combat');
+    });
+  }
+
+  private settleWaiters(): void {
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    for (const w of waiters) w();
+  }
+
   private forceFinishBigRoll() {
     if (!this.bigRollActive) return;
     this.bigRollActive = false;
+    this.settleWaiters();
     this.pendingRoll = null;
     this.overlay.querySelectorAll('.big-die').forEach(el => el.remove());
     this.overlay.querySelector('#big-die-result')?.remove();

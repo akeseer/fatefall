@@ -1462,9 +1462,11 @@ export class MapRenderer {
 
       const visual = this.getVisual(member, dt, moveMs);
       const sx = visual.x - camera.x + 2;
-      // A gentle bob while a step is in progress sells the walk.
+      // Two footfalls per tile: the sprite rises on each stride and lands
+      // between them, which reads as walking rather than sliding.
+      const stride = visual.moving ? Math.abs(Math.sin(visual.progress * Math.PI * 2)) : 0;
       const step = visual.moving ? Math.sin(visual.progress * Math.PI) : 0;
-      const sy = visual.y - camera.y + 2 - step * 2;
+      const sy = visual.y - camera.y + 2 - stride * 2;
 
       // Soft shadow under the feet so the glide reads as walking.
       ctx.fillStyle = 'rgba(0,0,0,0.35)';

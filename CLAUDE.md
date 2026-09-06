@@ -154,3 +154,10 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
 - The DM regex cascade is the labelling oracle for the intent model. When you change
   a command's wording, regenerate the canonical fixture and retrain (see
   `tools/train/README.md`).
+- **Combat is presented, not dumped.** `CombatEngine.log.messages` accumulates for the
+  whole fight, so `updateCombat` takes only the lines a `step()` added and hands them to
+  `Game.presentStep`, which plays each attack's die (`DiceTray.playRoll`, with
+  `deferCombat` set so the tray does not also show it) before the line that narrates the
+  blow, then flushes the rest. `presenting` gates the next step. Feeding the whole log to
+  the window every tick replayed every earlier blow and made the fight look simultaneous;
+  that bug has happened.
