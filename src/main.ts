@@ -47,7 +47,12 @@ import { Direction, GAME_HEIGHT, GAME_WIDTH, TILE_SIZE, Vector2, manhattan, vec2
 import { TileType } from './world/TileMap';
 import { rollDice, abilityModifier, getSpellById, isCaster, ordinal, CLASSES, RACES, SPELLS } from './data/gameData';
 import { CompendiumEntry } from './ui/DnDCompendium';
-import { rollD20, savingThrow } from './rules/Rules';
+import { rollD20, savingThrow, abilityCheck } from './rules/Rules';
+import { hazardByKind, hazardDc, readHazard, type HazardRoll } from './events/Hazards';
+import { pickCampScene, readWatch, type CampMember } from './events/CampScenes';
+import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
+import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
+import { banditGang } from './world/Ambushes';
 import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules/DiceEvents';
 import { grantLuckDie, onLuckDieSpent } from './rules/LuckDie';
 import { SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
@@ -263,6 +268,10 @@ class Game {
   private combatTickTimer: number = 0;
   /** True while a step's blows are being shown one at a time; no new step until it is done. */
   private presenting = false;
+  /** Monsters the party has already talked to: a parley happens once. */
+  private parleyed = new Set<string>();
+  /** No road event until this timestamp, so the road is not a carnival. */
+  private roadEventCooldownUntil = 0;
   private combatTickInterval: number = BattleView.TURN_MS; // ms between combat turns at 1x
   public monsterIdCounter: number = 0;
   private stuckDirCount: number = 0;
@@ -835,6 +844,7 @@ class Game {
       for (const restMsg of this.party.longRest()) {
         this.hud.addCombatMessage(restMsg, '#7c7');
       }
+      this.campScene();
     }
 
     this.phase = GamePhase.Exploration;
@@ -1292,6 +1302,7 @@ class Game {
       }
       case 'attack': {
         if (action.target && this.dmStance !== 'cautious') {
+          if (this.tryParley(visibleMonsters)) break;
           this.hud.addCombatMessage(action.message, '#c84');
           this.startCombat(visibleMonsters);
         } else if (action.target) {
@@ -1437,6 +1448,8 @@ class Game {
       this.bulletinScoutProgress(1);
       this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
       this.manualHold('a new room');
+      const entered = this.currentRoom()?.feature;
+      if (entered?.kind === 'hazard' && !entered.used) void this.runHazard(entered);
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
       // closes a little of the party's hurts.
       if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
@@ -1760,6 +1773,318 @@ class Game {
         legendary: b.legendaryActions,
       }))
     );
+  }
+
+  // ── Events beyond combat: hazards, camps, parleys, the road ──────────
+
+  /**
+   * Show a run of dice and lines in order: each die tumbles and lands, then
+   * its line is posted. Lines without a die post at once. The tray is told
+   * to leave these dice to us so it does not also show them.
+   */
+  private async presentRolls(items: { roll: DiceRollEvent | null; line: string; color: string }[]): Promise<void> {
+    const sleep = (ms: number) => new Promise<void>(r => window.setTimeout(r, ms));
+    this.hud.dice.deferCombat = true;
+    try {
+      for (const it of items) {
+        if (it.roll && this.running) {
+          await this.hud.dice.playRoll(it.roll);
+          await sleep(80);
+        }
+        this.hud.addCombatMessage(it.line, it.color);
+      }
+    } finally {
+      this.hud.dice.deferCombat = false;
+    }
+    this.hud.setParty(this.party);
+  }
+
+  /** Roll with the tray held back, and hand back the roll's event for presenting. */
+  private rollHeld<T>(roll: () => T): { result: T; event: DiceRollEvent | null } {
+    this.hud.dice.deferCombat = true;
+    const before = getDiceHistory().length;
+    const result = roll();
+    const event = getDiceHistory()[before] ?? null;
+    return { result, event };
+  }
+
+  /** The room itself is the danger: every member saves, and the failures pay. */
+  private async runHazard(feature: RoomFeature): Promise<void> {
+    if (!feature.hazard) return;
+    feature.used = true;
+    const def = hazardByKind(feature.hazard);
+    const dc = hazardDc(def, this.dungeonLevel);
+    const members = this.party.conscious;
+    if (members.length === 0) return;
+    const items: { roll: DiceRollEvent | null; line: string; color: string }[] = [];
+    items.push({ roll: null, line: `\u26a0 ${def.name.charAt(0).toUpperCase() + def.name.slice(1)} \u2014 ${def.checkName}, DC ${dc}.`, color: '#e8b45a' });
+    const rolls: HazardRoll[] = [];
+    const events: (DiceRollEvent | null)[] = [];
+    for (const m of members) {
+      const mod = abilityModifier(m.abilities[def.ability]);
+      const label = `${m.name} \u2014 ${def.checkName}`;
+      const { result, event } = this.rollHeld(() => def.checkName.endsWith('save')
+        ? savingThrow(mod, dc, { label })
+        : abilityCheck(mod, dc, label));
+      rolls.push({ memberName: m.name, success: result.success });
+      events.push(event);
+    }
+    const outcome = readHazard(def, rolls);
+    // One line per member follows its die; the group line closes.
+    for (let i = 0; i < rolls.length; i++) {
+      items.push({ roll: events[i], line: outcome.lines[i], color: rolls[i].success ? '#8c8' : '#c66' });
+    }
+    items.push({ roll: null, line: outcome.lines[outcome.lines.length - 1], color: outcome.success && outcome.punished.length === 0 ? '#8cf' : '#c84' });
+    await this.presentRolls(items);
+    // What the failures cost.
+    const punished = members.filter(m => outcome.punished.includes(m.name));
+    if (punished.length > 0) {
+      const p = def.penalty;
+      if (p.kind === 'damage') {
+        for (const m of punished) this.hud.addCombatMessage(m.takeDamage(rollDice(p.dice[0], p.dice[1])), '#c66');
+      } else if (p.kind === 'exhaustion') {
+        for (const m of punished) this.hud.addCombatMessage(m.gainExhaustion(), '#c66');
+      } else if (p.kind === 'encounter') {
+        const templates: MonsterTemplate[] = [];
+        for (let i = 0; i < p.count; i++) templates.push(getRandomMonster(Math.max(p.cr, Math.ceil(this.dungeonLevel * 0.75))));
+        this.spawnEncounter(templates);
+      }
+      this.hud.setParty(this.party);
+    }
+    if (outcome.success) {
+      this.grantXp(() => def.xp + this.dungeonLevel * 5);
+    }
+    this.noteProgress();
+  }
+
+  /** One short scene by the fire, with whatever it leaves behind. */
+  private campScene(): void {
+    const members: CampMember[] = this.party.alive.map(m => ({
+      name: m.name,
+      className: m.charClass.name,
+      raceName: m.race.name,
+      hpPct: m.hp / m.maxHp,
+      loyalty: m.personality.loyalty,
+      caution: m.personality.caution,
+      greed: m.personality.greed,
+      wisMod: m.wisMod,
+      deity: m.deity,
+      background: m.background,
+    }));
+    const scene = pickCampScene(members, {
+      placeName: this.entranceBaseName || this.dungeonName,
+      floor: this.dungeonLevel,
+      nextActTitle: this.storyController.nextPosting()?.title,
+    });
+    if (!scene) return;
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryCard({ kicker: 'Camp', title: scene.title, body: scene.body }, () => {
+      if (!wasPaused) this.setPaused(false);
+      const fx = scene.effect;
+      switch (fx.kind) {
+        case 'edge':
+          this.grantBattleEdge(fx.attack, fx.fights);
+          this.hud.addCombatMessage(`\ud83d\udd25 The talk by the fire steadies them: +${fx.attack} to attack rolls for the next ${fx.fights} fights.`, '#e8b45a');
+          break;
+        case 'heal': {
+          const healed = this.party.alive.filter(m => m.hp < m.maxHp);
+          for (const m of healed) m.heal(rollDice(fx.dice[0], fx.dice[1]));
+          this.hud.addCombatMessage(healed.length > 0 ? `\ud83d\udd25 A good night: ${healed.map(m => m.name).join(', ')} wake stronger than the rest alone would leave them.` : '\ud83d\udd25 A good night. Everyone wakes whole.', '#8cf');
+          this.hud.setParty(this.party);
+          break;
+        }
+        case 'watch': {
+          const watcher = this.party.alive.find(m => m.name === fx.watcher) ?? this.party.leader;
+          const { result, event } = this.rollHeld(() => abilityCheck(watcher.wisMod, fx.dc, `${watcher.name} \u2014 Perception`));
+          const read = readWatch(watcher.name, result.success, result.natural);
+          void this.presentRolls([{ roll: event, line: `\ud83d\udd6f ${read.lines[0]}`, color: result.success ? '#8c8' : '#c84' }]).then(() => {
+            if (read.gold > 0) { this.addGold(read.gold); this.hud.addCombatMessage(`\ud83d\udcb0 +${read.gold} gold from the lost pack.`, '#ffd700'); }
+            if (read.ambush && this.mode === GameMode.Dungeon) {
+              const cr = Math.max(0.5, this.dungeonLevel * 0.75);
+              this.spawnEncounter([getRandomMonster(cr), getRandomMonster(cr)]);
+            }
+          });
+          break;
+        }
+        case 'omen':
+          this.hud.addCombatMessage('\ud83c\udf19 The dream stays with them into the morning. Whatever waits below has their names already.', '#a8a');
+          break;
+        case 'none':
+          break;
+      }
+    }, { seconds: 12 });
+  }
+
+  /** The party's weight and temper, for the parley's judgment. */
+  private parleyParty(): ParleyParty {
+    const leader = this.party.leader;
+    const alive = this.party.alive;
+    const avgHpPct = alive.length > 0 ? alive.reduce((s, m) => s + m.hp / m.maxHp, 0) / alive.length : 0;
+    return {
+      level: leader.level,
+      aliveCount: alive.length,
+      avgHpPct,
+      gold: this.partyGold(),
+      alignment: leader.alignment,
+      aggression: leader.personality.aggression,
+      caution: leader.personality.caution,
+      greed: leader.personality.greed,
+      bestChaMod: Math.max(...alive.map(m => this.talkMod(m))),
+    };
+  }
+
+  /** Charisma, with training where the class has it. */
+  private talkMod(m: GameCharacter): number {
+    const trained = ['bard', 'paladin', 'warlock', 'sorcerer'].includes(m.charClass.id);
+    return m.chaMod + (trained ? m.profBonus : 0);
+  }
+
+  /**
+   * Foes that can talk sometimes would rather. True when the meeting is
+   * handled here (peace, or a fight this starts itself once the die lands);
+   * false when the caller should simply fight.
+   */
+  private tryParley(monsters: Monster[], forced?: ParleyOffer): boolean {
+    if (this.dmStance === 'aggressive' || this.phase !== GamePhase.Exploration) return false;
+    if (monsters.length === 0 || monsters.some(m => this.parleyed.has(m.id))) return false;
+    const foes: ParleyFoe[] = monsters.map(m => ({
+      name: m.template.name,
+      type: m.template.type,
+      cr: m.template.cr,
+      isBoss: m.isBoss || /\(Boss\)/.test(m.template.name),
+    }));
+    const party = this.parleyParty();
+    const offer = forced ?? parleyOffer(foes, party);
+    if (!offer) return false;
+    for (const m of monsters) this.parleyed.add(m.id);
+    const speaker = [...this.party.alive].sort((a, b) => this.talkMod(b) - this.talkMod(a))[0];
+    const band = [...new Set(monsters.map(m => m.template.name))].join(' and ');
+    const opening: Record<ParleyOffer, string> = {
+      surrender: `\ud83d\udde3 The ${band} see what they are facing and lower their weapons. One of them offers coin for their lives.`,
+      toll: `\ud83d\udde3 The ${band} do not attack. Their leader names a toll for the road, and waits.`,
+      truce: `\ud83d\udde3 The ${band} stop short. Neither side is sure of the other. Someone has to speak first.`,
+    };
+    this.hud.addCombatMessage(opening[offer], '#d8c88a');
+    const response = chooseParleyResponse(offer, party);
+    let check: { success: boolean; natural: number } | null = null;
+    let event: DiceRollEvent | null = null;
+    if (response === 'persuade') {
+      const dc = parleyDc(offer, foes);
+      const rolled = this.rollHeld(() => abilityCheck(this.talkMod(speaker), dc, `${speaker.name} \u2014 Persuasion`));
+      check = rolled.result;
+      event = rolled.event;
+    }
+    const result = resolveParley(offer, response, foes, party, speaker.name, check);
+    void this.presentRolls(result.lines.map((line, i) => ({ roll: i === 0 ? event : null, line, color: result.fight ? '#c84' : '#8cf' }))).then(() => {
+      if (!this.running) return;
+      if (result.gold > 0) { this.addGold(result.gold); this.hud.addCombatMessage(`\ud83d\udcb0 +${result.gold} gold.`, '#ffd700'); }
+      else if (result.gold < 0) { this.spendGold(-result.gold); this.hud.addCombatMessage(`\ud83d\udcb0 \u2212${-result.gold} gold.`, '#c8a860'); }
+      if (result.xp > 0) this.grantXp(() => result.xp);
+      if (result.foesLeave) {
+        for (const m of monsters) m.fled = true;
+        this.monsters = this.monsters.filter(m => !monsters.includes(m));
+        this.noteProgress();
+      }
+      if (result.fight && this.phase === GamePhase.Exploration) {
+        this.startCombat(monsters.filter(m => m.isAlive));
+      }
+      this.hud.setParty(this.party);
+    });
+    return true;
+  }
+
+  /** Between towns the road holds more than ambushes. */
+  private maybeRoadEvent(): void {
+    if (this.mode !== GameMode.Overworld || this.phase !== GamePhase.Exploration) return;
+    if (Date.now() < this.roadEventCooldownUntil || Date.now() < this.ambushCooldownUntil) return;
+    const leader = this.party.leader;
+    const nearTown = (this.overworld?.towns ?? []).some(tn => manhattan(tn.tile, leader.tile) <= 12);
+    const event = rollRoadEvent({
+      gold: this.partyGold(),
+      partyLevel: leader.level,
+      weather: this.weather?.type ?? null,
+      isSacredDay: this.calendar.isSacredDay,
+      nearTown,
+      woundedCount: this.party.alive.filter(m => m.hp < m.maxHp / 2).length,
+    });
+    if (!event) return;
+    this.roadEventCooldownUntil = Date.now() + 90000;
+    for (const line of event.lines) this.hud.addCombatMessage(line, '#d8c88a');
+    this.applyRoadEvent(event);
+  }
+
+  private applyRoadEvent(event: RoadEvent): void {
+    const leader = this.party.leader;
+    const fx = event.effect;
+    const say = (line: string | undefined, color: string) => { if (line) this.hud.addCombatMessage(line.replace('{name}', leader.name), color); };
+    switch (fx.kind) {
+      case 'physician':
+        if (this.spendGold(fx.cost)) {
+          for (const m of this.party.alive) m.heal(rollDice(fx.heal[0], fx.heal[1]));
+          say(event.pass, '#8cf');
+        } else {
+          say(event.fail, '#a98');
+        }
+        this.hud.setParty(this.party);
+        break;
+      case 'blessing':
+        this.grantBattleEdge(fx.attack, fx.fights);
+        say(event.pass, '#e8b45a');
+        this.hud.addCombatMessage(`\u2728 +${fx.attack} to attack rolls for the next ${fx.fights} fights.`, '#e8b45a');
+        break;
+      case 'toll': {
+        const spots = findAmbushTiles(this.map, leader.tile, 3);
+        const spawned: Monster[] = [];
+        const gang = banditGang(leader.level);
+        for (let i = 0; i < gang.length && i < spots.length; i++) {
+          const m = this.spawnMonster(gang[i], spots[i]);
+          m.alertLevel = 2;
+          spawned.push(m);
+        }
+        if (spawned.length === 0) { this.hud.addCombatMessage('The bridge-keepers think better of it and let the party pass.', '#888'); break; }
+        if (!this.tryParley(spawned, 'toll')) this.startCombat(spawned);
+        break;
+      }
+      case 'exposure': {
+        const items: { roll: DiceRollEvent | null; line: string; color: string }[] = [];
+        let failed = 0;
+        for (const m of this.party.alive) {
+          const { result, event: ev } = this.rollHeld(() => savingThrow(m.conMod, fx.dc, { label: `${m.name} \u2014 Constitution save` }));
+          if (result.success) {
+            items.push({ roll: ev, line: `${m.name} keeps their head down and their feet moving.`, color: '#8c8' });
+          } else {
+            failed++;
+            items.push({ roll: ev, line: m.takeDamage(rollDice(fx.damage[0], fx.damage[1])), color: '#c66' });
+          }
+        }
+        void this.presentRolls(items).then(() => say(failed === 0 ? event.pass : event.fail, failed === 0 ? '#8cf' : '#c84'));
+        break;
+      }
+      case 'contest': {
+        const mods: Record<'str' | 'cha' | 'dex', number> = { str: leader.strMod, cha: this.talkMod(leader), dex: leader.dexMod };
+        const best = fx.abilities.reduce((a, b) => (mods[b] > mods[a] ? b : a));
+        const names: Record<'str' | 'cha' | 'dex', string> = { str: 'Athletics', cha: 'Persuasion', dex: 'Acrobatics' };
+        const { result, event: ev } = this.rollHeld(() => abilityCheck(mods[best], fx.dc, `${leader.name} \u2014 ${names[best]}`));
+        void this.presentRolls([{ roll: ev, line: (result.success ? event.pass ?? '' : event.fail ?? '').replace('{name}', leader.name), color: result.success ? '#8cf' : '#c84' }]).then(() => {
+          if (result.success) {
+            this.addGold(fx.gold);
+            this.grantXp(() => fx.xp);
+            this.hud.addCombatMessage(`\ud83d\udcb0 +${fx.gold} gold, and a story worth telling.`, '#ffd700');
+          } else if (fx.lossGold > 0) {
+            this.spendGold(fx.lossGold);
+            this.hud.addCombatMessage(`\ud83d\udcb0 \u2212${fx.lossGold} gold.`, '#c8a860');
+          }
+          this.hud.setParty(this.party);
+        });
+        break;
+      }
+      case 'gift':
+        this.addGold(fx.gold);
+        this.grantXp(() => fx.xp);
+        this.hud.addCombatMessage(`\ud83d\udcb0 +${fx.gold} gold when the walls come in sight, and thanks that are worth more.`, '#ffd700');
+        break;
+    }
   }
 
   /**
@@ -4058,6 +4383,7 @@ class Game {
     }
     // The moon is more than decoration: some nights menace, others bare old secrets.
     this.maybeMoonSurfaceEvent();
+    this.maybeRoadEvent();
   }
 
   /** A weather-blessed surge of undead/fiendish reinforcements on the surface ambush. */
@@ -4354,6 +4680,7 @@ class Game {
     if (spawned.length === 0) return;
     const names = [...new Set(spawned.map(m => m.template.name))].join(', ');
     this.hud.addCombatMessage(`The party is surrounded by ${names} on the open road.`, '#ca8');
+    if (this.tryParley(spawned)) return;
     this.startCombat(spawned);
     this.hud.addCombatMessage(generatePartyCommentary(
       leader.name,

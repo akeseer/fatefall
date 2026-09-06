@@ -158,6 +158,29 @@ export function savingThrow(mod: number, dc: number, opts?: { disadvantage?: boo
   return { success, natural, total, dc };
 }
 
+/**
+ * An ability check outside combat: Stealth past a sleeper, Athletics up a
+ * wall, Persuasion at a parley. Same die, same crit and fumble rules, logged
+ * as a check so the tray shows it as one.
+ */
+export function abilityCheck(mod: number, dc: number, label: string): SaveResult {
+  const natural = rollD20();
+  const total = natural + mod;
+  let success = total >= dc;
+  if (natural === 20) success = true;
+  if (natural === 1) success = false;
+  pushDiceRoll({
+    kind: 'check',
+    diceType: 'd20',
+    label: `${label} vs DC ${dc}`,
+    expression: `d20${mod >= 0 ? '+' : ''}${mod}`,
+    rolls: [natural],
+    total,
+    outcome: natural === 20 ? 'crit' : natural === 1 ? 'fumble' : success ? 'success' : 'failure',
+  });
+  return { success, natural, total, dc };
+}
+
 // ── Death saves & exhaustion ────────────────────────
 
 export const DEATH_SAVE_DC = 10;

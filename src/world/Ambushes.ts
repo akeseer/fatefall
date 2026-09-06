@@ -47,7 +47,7 @@ export function nearTileType(map: TileMap, pos: Vector2, type: TileType, range: 
 }
 
 /** A bandit gang for the roads. The captain shows up for tougher parties. */
-function banditGang(partyLevel: number): MonsterTemplate[] {
+export function banditGang(partyLevel: number): MonsterTemplate[] {
   const gang: MonsterTemplate[] = [bandit(), bandit()];
   if (partyLevel >= 2 && Math.random() < 0.6) gang.push(highwayman());
   if (partyLevel >= 3) gang.push(highwayman());

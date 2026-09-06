@@ -74,7 +74,7 @@ export class HUD {
    * A story card: a kicker, a title and a passage, over everything, until the
    * player reads it and clicks. The game pauses behind it.
    */
-  showStoryCard(card: { kicker: string; title: string; body: string }, onClose: () => void): void {
+  showStoryCard(card: { kicker: string; title: string; body: string }, onClose: () => void, auto?: { seconds: number }): void {
     this.overlay.querySelector('#story-card')?.remove();
     const screen = document.createElement('div');
     screen.id = 'story-card';
@@ -90,11 +90,29 @@ export class HUD {
         </div>
       </div>`;
     this.overlay.appendChild(screen);
-    screen.querySelector('#story-card-ok')!.addEventListener('click', () => {
-      sfx.click();
+    const ok = screen.querySelector<HTMLButtonElement>('#story-card-ok')!;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const finish = () => {
+      if (timer !== null) clearInterval(timer);
       screen.remove();
       onClose();
-    });
+    };
+    ok.addEventListener('click', () => { sfx.click(); finish(); });
+    // A vignette rather than a decision: it reads itself out after a while,
+    // and hovering the card holds it for a slow reader.
+    if (auto) {
+      let left = auto.seconds;
+      let held = false;
+      ok.textContent = `Continue (${left})`;
+      screen.addEventListener('mouseenter', () => { held = true; ok.textContent = 'Continue'; });
+      screen.addEventListener('mouseleave', () => { held = false; });
+      timer = setInterval(() => {
+        if (held || !screen.isConnected) { if (!screen.isConnected && timer !== null) clearInterval(timer); return; }
+        left--;
+        ok.textContent = `Continue (${left})`;
+        if (left <= 0) finish();
+      }, 1000);
+    }
   }
 
   /**

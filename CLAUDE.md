@@ -161,3 +161,17 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   blow, then flushes the rest. `presenting` gates the next step. Feeding the whole log to
   the window every tick replayed every earlier blow and made the fight look simultaneous;
   that bug has happened.
+- **`src/events/`** — what happens besides fights, all pure and tested in `tests/events.test.ts`;
+  `Game` rolls the dice and applies the effects. `Hazards.ts`: a room feature kind (`hazard`,
+  with `RoomFeature.hazard` naming which) that fires once on first entry; every conscious member
+  saves (or the party makes a group check, half or more to pass) and `readHazard` says who pays.
+  `CampScenes.ts`: one vignette per stairwell long rest, shown as a self-closing story card
+  (`showStoryCard(..., { seconds })`), with a small effect (battle edge, extra healing, a watch
+  Perception roll that can find coin or wake the camp to a fight, an omen naming the next act).
+  `Parley.ts`: talking bands (humanoid, giant, fey, fiend, dragon; never a boss) sometimes offer
+  a surrender, a toll or a truce before a fight; the party answers in character and a Charisma
+  check settles it. `Game.tryParley` returns true when it has handled the meeting, and starts the
+  fight itself if talks fail. `RoadEvents.ts`: caravans, pilgrims, toll bridges (a forced toll
+  parley with a bandit gang), storms, rivals and travellers on overworld steps, on a cooldown.
+  Dice outside combat go through `Game.rollHeld` + `presentRolls`, which hold the tray back and
+  play each die before its line; `Rules.abilityCheck` is the check-kind roll.

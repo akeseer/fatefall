@@ -8,13 +8,14 @@
  * Effects live in main.ts; this module is the data + placement logic.
  */
 
-import { Room } from './DungeonGenerator';
+import type { Room } from './DungeonGenerator';
+import { HAZARDS, pickHazard, type HazardKind } from '../events/Hazards';
 
 export type RoomFeatureKind =
   | 'altar' | 'vault' | 'prison' | 'chokepoint' | 'forge'
   | 'library' | 'fountain' | 'sarcophagus' | 'throne'
   | 'trapped_corridor' | 'treasure_room' | 'merchant_camp'
-  | 'puzzle_room' | 'ritual_chamber' | 'war_room' | 'chest';
+  | 'puzzle_room' | 'ritual_chamber' | 'war_room' | 'chest' | 'hazard';
 
 export interface RoomFeature {
   id: string;
@@ -40,6 +41,8 @@ export interface RoomFeature {
    * describe splinters and glue instead of an open lid.
    */
   mimic?: boolean;
+  /** Hazards only: which danger the room is. Fires once, on first entry. */
+  hazard?: HazardKind;
 }
 
 interface FeatureVariant {
@@ -49,6 +52,8 @@ interface FeatureVariant {
 }
 
 const VARIANTS: Record<RoomFeatureKind, FeatureVariant[]> = {
+  // The room itself is the danger; the text comes from the hazard table.
+  hazard: HAZARDS.map(h => ({ name: h.name, entryLine: h.entryLine, inspect: h.inspect })),
   altar: [
     {
       name: 'a rusted altar to a forgotten god',
@@ -279,6 +284,8 @@ const GENERAL_KINDS: RoomFeatureKind[] = [
   'puzzle_room', 'ritual_chamber', 'war_room',
   // Chests are the common find, so they are weighted heavier than the rest.
   'chest', 'chest', 'chest',
+  // And a floor has a hazard or two: a bridge, a flood, a sleeper.
+  'hazard', 'hazard',
 ];
 
 let featureCounter = 0;
@@ -307,6 +314,13 @@ export function assignFeature(
     inspect: variant.inspect,
     used: false,
   };
+  if (kind === 'hazard') {
+    const def = pickHazard();
+    feature.hazard = def.kind;
+    feature.name = def.name;
+    feature.entryLine = def.entryLine;
+    feature.inspect = def.inspect;
+  }
   if (kind === 'chest') {
     // Deeper floors guard their chests better.
     feature.locked = Math.random() < 0.35;

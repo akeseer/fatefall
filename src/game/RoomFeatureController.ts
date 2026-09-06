@@ -60,6 +60,7 @@ export class RoomFeatureController {
 
   /** What to type to use each feature, quoted back when the party inspects one. */
   static readonly HINT: Record<RoomFeatureKind, string> = {
+    hazard: 'The room itself is the danger \u2014 the party crosses it as best it can.',
     altar: 'pray at the altar',
     vault: 'search the vault',
     prison: 'free the prisoners',
