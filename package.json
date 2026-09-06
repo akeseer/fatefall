@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build-dungeons": "python tools/dungeons/build_prebuilt.py",
     "typecheck": "tsc && tsc -p tests/tsconfig.json",
     "export-vocab": "esbuild tools/train/export_vocab.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.export_vocab.mjs && node tools/train/data/.export_vocab.mjs",
     "label-data": "esbuild tools/train/label.ts --bundle --platform=node --format=esm --log-level=warning --outfile=tools/train/data/.label.mjs && node tools/train/data/.label.mjs",

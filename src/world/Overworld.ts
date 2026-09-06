@@ -8,6 +8,7 @@
  * town and entrance is reachable from the spawn town by walkable tiles.
  */
 
+import { pickPrebuilt } from './Prebuilt';
 import { TileMap, TileType } from './TileMap';
 import { OVERWORLD_WIDTH, OVERWORLD_HEIGHT, Vector2, manhattan } from '../engine/types';
 import { archetypeForTown, TOWN_ARCHETYPES, TownArchetypeId } from './TownTypes';
@@ -38,6 +39,8 @@ export interface OverworldEntrance {
   /** How deep this delve goes, in floors. Drives quest difficulty. */
   depth: number;
   description: string;
+  /** The pre-built dungeon behind this gate: fixed floors, monsters and bosses. Absent on older worlds. */
+  prebuiltId?: string;
 }
 
 export interface Overworld {
@@ -514,6 +517,7 @@ export function generateOverworld(): Overworld {
   // ── 5. Dungeon entrances: 1–2 per town, path to the nearest road ──
   const entrances: OverworldEntrance[] = [];
   const usedEntranceNames = new Set<string>();
+  const usedPrebuilt = new Set<string>();
   let entranceId = 1;
   for (const town of towns) {
     const perTown = 1 + (Math.random() < 0.6 ? 1 : 0);
@@ -556,13 +560,19 @@ export function generateOverworld(): Overworld {
         const description = themed && themed.length > 0
           ? themed[randInt(0, themed.length - 1)]
           : ENTRANCE_DESCRIPTIONS[randInt(0, ENTRANCE_DESCRIPTIONS.length - 1)];
+        // Every gate leads to one of the hundred pre-built dungeons: fixed
+        // floors, fixed monsters, a boss in its hall. The land picks the
+        // theme; the theme picks the dungeon.
+        const prebuilt = pickPrebuilt(themeId, usedPrebuilt);
+        if (prebuilt) usedPrebuilt.add(prebuilt.id);
         entrances.push({
           id: `entrance_${entranceId++}`,
-          name: pickName(ENTRANCE_NAMES, usedEntranceNames),
+          name: prebuilt?.name ?? pickName(ENTRANCE_NAMES, usedEntranceNames),
           tile: { x, y },
-          themeId,
-          depth: randInt(2, 5),
-          description,
+          themeId: prebuilt?.themeId ?? themeId,
+          depth: prebuilt?.floors.length ?? randInt(2, 5),
+          description: prebuilt ? `${description} \u2014 ${prebuilt.description}` : description,
+          prebuiltId: prebuilt?.id,
         });
         placed = true;
       }

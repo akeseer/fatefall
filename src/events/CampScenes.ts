@@ -137,8 +137,13 @@ const SCENES: Scene[] = [
  */
 export function pickCampScene(members: CampMember[], ctx: CampContext, rng: () => number = Math.random): CampScene | null {
   if (members.length === 0) return null;
-  for (let tries = 0; tries < 6; tries++) {
+  for (let tries = 0; tries < 8; tries++) {
     const scene = pick(SCENES, rng)(members, ctx, rng);
+    if (scene) return scene;
+  }
+  // The dice kept landing on scenes that need more people: take the first that fits.
+  for (const make of SCENES) {
+    const scene = make(members, ctx, rng);
     if (scene) return scene;
   }
   return null;

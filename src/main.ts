@@ -2,6 +2,7 @@ import { Renderer } from './engine/Renderer';
 import { Camera } from './engine/Camera';
 import { TileMap } from './world/TileMap';
 import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
+import { getPrebuilt, loadPrebuiltFloor, type PrebuiltFloor } from './world/Prebuilt';
 import { assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
 import { RoomFeatureController } from './game/RoomFeatureController';
 import { RecordingContext } from './rendering/RecordingContext';
@@ -806,7 +807,12 @@ class Game {
     setDiceFloor(this.dungeonLevel);
     this.map = new TileMap();
     this.camera.setBounds(this.map.width, this.map.height);
-    this.rooms = generateDungeon(this.map, 14 + Math.min(6, this.dungeonLevel), 4, 10, this.dungeonSeed());
+    // A gate to a pre-built dungeon has this floor already laid out; anything
+    // else is generated from the delve's seed as before.
+    const fixedFloor = this.currentPrebuilt()?.floors[this.dungeonLevel - 1] ?? null;
+    this.rooms = fixedFloor
+      ? loadPrebuiltFloor(this.map, fixedFloor)
+      : generateDungeon(this.map, 14 + Math.min(6, this.dungeonLevel), 4, 10, this.dungeonSeed());
     assignFeaturesToRooms(this.rooms, this.dungeonLevel);
     this.monsters = [];
     this.monsterIdCounter = 0;
@@ -838,7 +844,8 @@ class Game {
     }
 
     // Populate the floor: monsters, boss, traps.
-    this.populateDungeonFloor();
+    if (fixedFloor) this.populatePrebuiltFloor(fixedFloor);
+    else this.populateDungeonFloor();
     if (this.traps.length > 0) {
       this.hud.addCombatMessage(`The dungeon is riddled with ${this.traps.length} hidden hazard${this.traps.length === 1 ? '' : 's'} — watch your step.`, '#a86');
     }
@@ -2506,6 +2513,44 @@ class Game {
     );
   }
 
+  /** The pre-built dungeon behind the gate the party came in by, if it was one. */
+  private currentPrebuilt() {
+    const entrance = this.overworld?.entrances.find(e => e.id === this.dungeonEntranceId);
+    return getPrebuilt(entrance?.prebuiltId);
+  }
+
+  /**
+   * A pre-built floor: every creature on its own tile, the boss in its hall.
+   * An accepted hunt still gets its quarry, placed in a room or two, so a
+   * fixed roster never makes a posting impossible.
+   */
+  private populatePrebuiltFloor(floor: PrebuiltFloor): void {
+    for (const [id, x, y] of floor.monsters) {
+      const template = getMonsterTemplate(id);
+      if (!template) continue;
+      if (!this.map.isWalkable(x, y) || this.monsters.some(m => m.tile.x === x && m.tile.y === y)) continue;
+      this.spawnMonster(template, { x, y });
+    }
+    const hunt = this.activeHuntTarget();
+    if (hunt && hunt.remaining > 0 && hunt.template.cr <= Math.max(0.25, Math.floor(this.dungeonLevel / 2))) {
+      let placed = 0;
+      for (let i = 1; i < this.rooms.length - 1 && placed < Math.min(2, hunt.remaining); i++) {
+        const pos = findEmptyTile(this.map, this.rooms[i], this.monsters);
+        if (!pos) continue;
+        this.spawnMonster(hunt.template, pos);
+        placed++;
+      }
+      if (placed > 0) this.narrateHuntEncounter(hunt);
+    }
+    if (this.rooms.length > 1) {
+      const [bossId, bx, by] = floor.boss;
+      const template = getMonsterTemplate(bossId);
+      const hall = this.rooms[this.rooms.length - 1];
+      this.spawnFloorBoss(hall, template ? { template, pos: { x: bx, y: by } } : undefined);
+    }
+    this.traps = placeTraps(this.map, this.rooms, this.monsters, this.dungeonLevel);
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3634,7 +3679,7 @@ class Game {
    * floor is laid out, and by the fail-safe when a posting still wants a boss
    * that is nowhere to be found.
    */
-  private spawnFloorBoss(room: { cx: number; cy: number }): Monster {
+  private spawnFloorBoss(room: { cx: number; cy: number }, fixed?: { template: MonsterTemplate; pos: Vector2 }): Monster {
     const bossCr = Math.min(5, this.dungeonLevel);
     const themeId = this.dungeonTheme?.id;
     const bossTemplates = MONSTER_TEMPLATES.filter(m => m.cr >= bossCr - 0.5 && m.cr <= bossCr + 0.5 && !isUnseeableMonster(m.id));
@@ -3646,15 +3691,18 @@ class Game {
       : bossTemplates.length > 0
         ? bossTemplates[Math.floor(Math.random() * bossTemplates.length)]
         : getRandomMonster(bossCr, themeId);
+    // A pre-built hall names its own boss.
+    if (fixed) bossTemplate = fixed.template;
     // The story's antagonist takes the last room on the act's floor.
     const storyBoss = this.storyController.bossOverride(this.dungeonLevel);
     if (storyBoss) {
       bossTemplate = storyBoss.template;
       this.hud.addCombatMessage(`\u2620 ${storyBoss.name} is here. The air knows it.`, '#e0705f');
     }
-    // Somewhere it can stand: a free tile in the room, else any walkable tile
-    // in it, else the room's centre as a last resort.
-    const pos = findEmptyTile(this.map, room as Room, this.monsters) ?? this.walkableIn(room as Room) ?? { x: room.cx, y: room.cy };
+    // Somewhere it can stand: its fixed tile when it has one, a free tile in
+    // the room, any walkable tile in it, or the room's centre as a last resort.
+    const fixedFree = fixed && this.map.isWalkable(fixed.pos.x, fixed.pos.y) && !this.monsters.some(m => m.isAlive && m.tile.x === fixed.pos.x && m.tile.y === fixed.pos.y);
+    const pos = (fixedFree ? fixed!.pos : null) ?? findEmptyTile(this.map, room as Room, this.monsters) ?? this.walkableIn(room as Room) ?? { x: room.cx, y: room.cy };
     const boss = this.spawnMonster(bossTemplate, pos);
     boss.maxHp = Math.floor(boss.maxHp * (storyBoss ? 1.5 * STORY_BOSS_HP_SCALE : 1.5));
     boss.hp = boss.maxHp;
