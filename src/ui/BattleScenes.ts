@@ -59,6 +59,10 @@ const THEME_MOTIF: Record<string, Motif> = {
   abyssal_rift: 'embers',
   elemental_node_fire: 'embers',
   shadowfell_crossing: 'mist',
+  salt_mine_deeps: 'cave',
+  drowned_lighthouse: 'water',
+  plague_hospice: 'pillars',
+  giants_causeway: 'stars',
 };
 
 function rgb(c: [number, number, number], scale = 1, alpha?: number): string {

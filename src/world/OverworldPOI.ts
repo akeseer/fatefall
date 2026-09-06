@@ -63,7 +63,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'abandoned_mine',
-    names: ['The Hollow Depths', 'Shadow Shaft Mine', 'The Abandoned Dig', 'Rustpick Mine', 'The Deep Cut'],
+    names: ['The Hollow Depths', 'Shadow Shaft Mine', 'The Abandoned Dig', 'Rustpick Mine', 'The Deep Cut', 'The Kneeling Colonnade', 'Hall of the Last Census', 'The Sunken Amphitheatre'],
     descriptions: [
       'A collapsed mine entrance, timbers rotting. A draft from below suggests it goes deeper than anyone knows.',
       'Old mining equipment litters the entrance. Someone left in a hurry — and left their pickaxe behind.',
@@ -73,7 +73,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'witch_hut',
-    names: ['The Crooked House', 'Granny Moss\'s Hollow', 'The Hag\'s Perch', 'Bramble Rest', 'The Thorn Cottage'],
+    names: ['The Crooked House', 'Granny Moss\'s Hollow', 'The Hag\'s Perch', 'Bramble Rest', 'The Thorn Cottage', 'The Choir Shaft', 'Widowmaker Level', 'The Salt Gallery'],
     descriptions: [
       'A leaning hut made of twisted branches and old bones. Smoke curls from a chimney made of stacked skulls.',
       'A cottage surrounded by a garden of strange plants. Some of them appear to be watching you.',
@@ -83,7 +83,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'dragon_lair',
-    names: ['The Scorched Cavern', 'Wyrm\'s Roost', 'The Ember Maw', 'Dragon\'s Tooth Lair', 'The Flame Den'],
+    names: ['The Scorched Cavern', 'Wyrm\'s Roost', 'The Ember Maw', 'Dragon\'s Tooth Lair', 'The Flame Den', 'The House That Turns', 'Mother Nettle\'s', 'The Loom Cottage'],
     descriptions: [
       'The ground is scorched black for a hundred yards. Claw marks gouge the rock, and the air shimmers with heat.',
       'A massive cave mouth, ringed with the bones of livestock and the occasional adventurer.',
@@ -93,7 +93,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'ancient_battlefield',
-    names: ['The Fields of Sorrow', 'The Bone Garden', 'The Bloodied Meadow', 'The War Scar', 'Fallen Glory'],
+    names: ['The Fields of Sorrow', 'The Bone Garden', 'The Bloodied Meadow', 'The War Scar', 'Fallen Glory', 'The Amber Hollow', 'The Cinder Throat', 'Old Rust\'s Den'],
     descriptions: [
       'Rusted weapons and shattered shields litter the field. The grass grows red here, even in spring.',
       'Bones protrude from the earth in every direction. Something about them suggests they were arranged.',
@@ -103,7 +103,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'hidden_shrine',
-    names: ['The Silent Chapel', 'The Whispering Stone', 'The Hidden Altar', 'The Unmarked Shrine', 'The Forgotten Holy Place'],
+    names: ['The Silent Chapel', 'The Whispering Stone', 'The Hidden Altar', 'The Unmarked Shrine', 'The Forgotten Holy Place', 'The Field of Broken Banners', 'Widow\'s Furrow', 'The Standing Dead'],
     descriptions: [
       'A small stone shrine, almost invisible behind overgrown vines. A faint golden light pulses within.',
       'A circle of standing stones with a single altar at the center. The air feels sacred here.',
@@ -113,7 +113,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'crystal_cave',
-    names: ['The Prismatic Grotto', 'Crystal Depths', 'The Shimmering Cavern', 'Gemheart Cave', 'The Crystal Hollow'],
+    names: ['The Prismatic Grotto', 'Crystal Depths', 'The Shimmering Cavern', 'Gemheart Cave', 'The Crystal Hollow', 'The Shrine of the Turned Face', 'The Well of Small Mercies', 'The Nine Candles'],
     descriptions: [
       'A cave mouth glittering with reflected light. Inside, crystals the size of a man jut from every surface.',
       'The entrance is framed by massive quartz formations. A faint hum emanates from deep within.',
@@ -123,7 +123,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'bandit_outpost',
-    names: ['The Black Camp', 'Thieves\' Roost', 'The Outlaw Den', 'Bandit\'s Rest', 'The Stolen Ground'],
+    names: ['The Black Camp', 'Thieves\' Roost', 'The Outlaw Den', 'Bandit\'s Rest', 'The Stolen Ground', 'The Chiming Deep', 'The Glass Orchard', 'Mirrorroot Cavern'],
     descriptions: [
       'A crude camp with sharpened stakes and watchtowers. Stolen goods are piled under tarps.',
       'A fortified hideout with makeshift walls. The smell of cookfire and unwashed bodies drifts on the wind.',
@@ -133,7 +133,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'lost_tomb',
-    names: ['The Sealed Barrow', 'The King\'s Rest', 'The Mound of Whispers', 'The Eternal Dormitory', 'The Silent Vault'],
+    names: ['The Sealed Barrow', 'The King\'s Rest', 'The Mound of Whispers', 'The Eternal Dormitory', 'The Silent Vault', 'The Toll Gallows', 'Halfway House', 'The Hanging Lantern'],
     descriptions: [
       'A massive burial mound with a sealed stone door. Runes glow faintly around the frame.',
       'An underground tomb entrance, its door decorated with funerary art. The dead here were important.',
@@ -143,7 +143,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'enchanted_grove',
-    names: ['The Fey Circle', 'The Moonlit Glade', 'The Dancing Trees', 'The Whispering Wood', 'The Fairy Ring'],
+    names: ['The Fey Circle', 'The Moonlit Glade', 'The Dancing Trees', 'The Whispering Wood', 'The Fairy Ring', 'The Tomb of the Unnamed Queen', 'The Salt King\'s Rest', 'The Barrow of Nine Doors'],
     descriptions: [
       'A perfect circle of mushrooms surrounds a clearing where the fireflies never stop dancing.',
       'Trees with silver bark grow in a spiral. The air shimmers with faerie dust and faint music.',
@@ -153,7 +153,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'watchtower',
-    names: ['The Old Watchtower', 'Rook\'s Perch', 'The Border Spire', 'The Sentinel Tower', 'The Farsight Keep'],
+    names: ['The Old Watchtower', 'Rook\'s Perch', 'The Border Spire', 'The Sentinel Tower', 'The Farsight Keep', 'The Court of Thorns', 'The Singing Copse', 'Hollowheart Grove'],
     descriptions: [
       'A lonely watchtower on a hill, its beacon long cold. The view from the top would be extraordinary — if the stairs held.',
       'A dwarven-built tower of black stone, still standing after centuries. Its door groans when the wind blows.',
@@ -163,7 +163,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'wizard_tower',
-    names: ['The Spire of Whispers', 'Mage\'s Bastion', 'The Arcanum Tower', 'The Black Spire', 'The Floating Needle'],
+    names: ['The Spire of Whispers', 'Mage\'s Bastion', 'The Arcanum Tower', 'The Black Spire', 'The Floating Needle', 'The Bell Tower of Fennick', 'Crow\'s Rest', 'The Beacon of the Downs'],
     descriptions: [
       'A tower too tall for its footprint, leaning slightly as if the wind is holding it up. Faint lights move behind the windows.',
       'A wizard\'s tower wrapped in scaffolding that was never removed. Runes crawl across its stones.',
@@ -173,7 +173,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'haunted_forest',
-    names: ['The Dreadwood', 'The Whispering Pines', 'Gallow\'s Grove', 'The Moaning Thicket', 'The Pale Copse'],
+    names: ['The Dreadwood', 'The Whispering Pines', 'Gallow\'s Grove', 'The Moaning Thicket', 'The Pale Copse', 'The Tower of Seven Doors', 'Vesper\'s Folly', 'The Inkwell Spire'],
     descriptions: [
       'The trees here grow in grasping shapes, and the air is several degrees colder than the surrounding land.',
       'A wood where fog pools between the trunks even at noon. Something calls your name in a voice you almost recognize.',
@@ -183,7 +183,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'mineral_spring',
-    names: ['The Bubbling Pools', 'Crystal Spring', 'The Warm Waters', 'The Miner\'s Blessing', 'The Fizzing Grotto'],
+    names: ['The Bubbling Pools', 'Crystal Spring', 'The Warm Waters', 'The Miner\'s Blessing', 'The Fizzing Grotto', 'The Widow\'s Weald', 'The Wood of Turned Backs', 'Lanternless Wood'],
     descriptions: [
       'A spring bubbling with mineral-rich water that sparkles like gemstones. Locals swear it heals aches and mends bones.',
       'Warm water pools in terraces of smooth stone. Steam rises in columns, and the water tastes of iron and gold.',
@@ -193,7 +193,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'failed_settlement',
-    names: ['The Ruined Hamlet', 'Dead Man\'s Village', 'The Empty Commons', 'The Burnt Township', 'The Hollow Steading'],
+    names: ['The Ruined Hamlet', 'Dead Man\'s Village', 'The Empty Commons', 'The Burnt Township', 'The Hollow Steading', 'The Copper Pools', 'Saint Wren\'s Bath', 'The Steaming Stair'],
     descriptions: [
       'A village that failed: collapsed houses, an overgrown well, and a bell that rings itself in the wind.',
       'Rows of empty cottages with doors left open. A single chair still sits on a porch, facing the road as if waiting.',
@@ -203,7 +203,7 @@ const POI_TEMPLATES: POITemplate[] = [
   },
   {
     kind: 'goblin_camp',
-    names: ['The Scrag Pile', 'Snagtooth Camp', 'The Trash Midden', 'Wilgebog\'s Den', 'The Gutter Camp'],
+    names: ['The Scrag Pile', 'Snagtooth Camp', 'The Trash Midden', 'Wilgebog\'s Den', 'The Gutter Camp', 'Thistlecombe Rest', 'The Half-Built Church', 'Sorrowgate Steading', 'The Stinkpot', 'Old Gutter\'s Hole', 'The Bone Kite Camp'],
     descriptions: [
       'A ramshackle camp of scrap wood and stolen banners. Something in a cage is being very loudly unhappy about it.',
       'A goblin camp reeking of rot and bad decisions. Trash is stacked in tottering heaps, and the guards are fighting each other.',

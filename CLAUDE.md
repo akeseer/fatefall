@@ -195,3 +195,14 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   Constitution save or exhaustion). **Level-up ceremony**: `checkLevelUps` runs after every sim
   step and compares levels, so a level gained anywhere queues a choice card (`levelUpCeremony`:
   +3 HP, +1 key ability, or a fated 17 via the Luck die), one at a time and never mid-fight.
+- **Bestiary expansion** (`src/entities/MonsterExpansion.ts`): a hundred more templates, merged
+  into `MONSTER_TEMPLATES` and `THEME_MONSTERS` at module load, with their riders and boss kits
+  merged into `MONSTER_SPECIALS` and `BOSS_KITS` from `Rules`. Each carries an `art` spec.
+  **Composed art** (`src/entities/MonsterArt.ts`, pure): `drawComposedMonster` builds a sprite
+  from a body, palette and traits on the same 28-unit grid the hand routines use; `Sprites`'
+  `drawMonster` default arm composes anything without a hand routine, with `artForTemplate`
+  deriving a spec from type and name (it used to draw a goblin). Four new dungeon themes
+  (`salt_mine_deeps`, `drowned_lighthouse`, `plague_hospice`, `giants_causeway`) need entries in
+  `LOCATIONS`, `THEME_MONSTERS`, `ThemeLight`, `BattleScenes.THEME_MOTIF` and the themed
+  entrance descriptions, which is the checklist for any theme after them. New combat
+  narration lines must keep a verb `presentStep`'s attack regex knows.

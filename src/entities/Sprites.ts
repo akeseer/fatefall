@@ -1,6 +1,8 @@
 import { TILE_SIZE } from '../engine/types';
 import { GameCharacter } from './Character';
-import { Monster } from './Monster';
+import { Monster, getMonsterTemplate } from './Monster';
+import { artForTemplate, drawComposedMonster } from './MonsterArt';
+import { EXPANSION_ART } from './MonsterExpansion';
 import { TileMap, TileType } from '../world/TileMap';
 
 /**
@@ -1359,8 +1361,19 @@ export class SpriteRenderer {
       case 'zariel_boss': this.drawZarielBoss(ctx, s, baseColor); break;
       case 'tiamat_avatar': this.drawTiamatAvatar(ctx, s, baseColor); break;
       case 'bahamut_aspect': this.drawBahamutAspect(ctx, s, baseColor); break;
-      default: this.drawGoblin(ctx, s, baseColor);
+      default: this.drawComposed(ctx, s, monsterId, baseColor);
     }
+  }
+
+  /**
+   * A creature with no hand-drawn routine is composed from parts: its own
+   * spec if the expansion gave it one, otherwise a spec read off its type
+   * and name. It used to wear the goblin's face.
+   */
+  private drawComposed(ctx: CanvasRenderingContext2D, s: number, monsterId: string, flash?: string) {
+    const template = getMonsterTemplate(monsterId);
+    const spec = EXPANSION_ART[monsterId] ?? artForTemplate(template ?? { id: monsterId, name: monsterId.replace(/_/g, ' '), type: 'monstrosity', size: 'Medium' });
+    drawComposedMonster(this.grid(ctx, s), spec, flash);
   }
 
   /**

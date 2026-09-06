@@ -647,6 +647,9 @@ export function generateDungeonLore(dungeonLevel: number): string {
     'Ironhall, the Fallen Forge', 'The Obsidian Maw', 'Silverpeak Crypts',
     'The Charnel Path', 'Nithalor\'s Rest', 'The Weeping Caverns',
     'Aurelian Gaol', 'The Shadow Rift', 'Tomb of the Nine',
+    'The Salt King\'s Vault', 'Wren\'s Hospice', 'The Lantern Deep', 'The Giants\' Stair',
+    'The Drowned Choir', 'Hollowcrown', 'The Amber Hall', 'The First Forge',
+    'The Oubliette of Ravensfall', 'The Bell Vaults', 'Thornhollow', 'The Glass Cathedral',
   ];
 
   const ancientBuilders = [

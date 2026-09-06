@@ -1,3 +1,4 @@
+import { EXPANSION_MONSTERS, EXPANSION_THEMES } from './MonsterExpansion';
 import { Ability, abilityModifier, rollDice } from '../data/gameData';
 import { Vector2 } from '../engine/types';
 import {
@@ -6027,6 +6028,9 @@ export const MONSTER_TEMPLATES: MonsterTemplate[] = [
   },
 ];
 
+// The second hundred join the table before anything indexes it.
+MONSTER_TEMPLATES.push(...EXPANSION_MONSTERS);
+
 export function getMonsterTemplate(id: string): MonsterTemplate | undefined {
   return MONSTER_TEMPLATES.find(m => m.id === id);
 }
@@ -6087,4 +6091,9 @@ export function getRandomMonster(maxCr: number, themeId?: string): MonsterTempla
     }
   }
   return generic[Math.floor(Math.random() * generic.length)];
+}
+
+// The expansion's theme affinities, and the new themes themselves.
+for (const [theme, ids] of Object.entries(EXPANSION_THEMES)) {
+  (THEME_MONSTERS[theme] ??= []).push(...ids);
 }

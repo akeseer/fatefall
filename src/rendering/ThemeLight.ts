@@ -29,6 +29,10 @@ const THEME_LIGHT: Record<string, [number, number, number]> = {
   elemental_node_fire: [1.0, 0.69, 0.38],
   vampire_castle: [1.0, 0.48, 0.6],
   celestial_observatory: [0.6, 0.75, 1.0],
+  salt_mine_deeps: [1.0, 0.95, 0.85],
+  drowned_lighthouse: [0.55, 0.85, 1.0],
+  plague_hospice: [0.85, 0.9, 0.6],
+  giants_causeway: [0.8, 0.85, 1.0],
 };
 
 /** Plain flame, for the surface and for any theme not in the table. */

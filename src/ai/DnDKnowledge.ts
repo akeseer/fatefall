@@ -857,6 +857,34 @@ export const LOCATIONS: LocationTemplate[] = [
     features: ['Cracked orrery (still turning)', 'Silver star charts', 'Prayer cells', 'Telescope aimed inward', 'Fallen angel\'s roost'],
     atmosphere: ['Hymns gone discordant', 'Starlight in wrong colors', 'Weight of divine attention', 'Perfume of myrrh and ozone'],
   },
+  {
+    id: 'salt_mine_deeps', name: 'Salt Mine Deeps', category: 'underdark',
+    description: 'A mine that went down for salt and found something older under it. The walls are white and glitter in torchlight; the air dries the mouth in a minute and the eyes in ten. Old galleries branch off into dark that smells of brine and something sweet beneath it.',
+    commonMonsters: ['salt mummy', 'duergar', 'cellar leech', 'crystal basilisk', 'clay sentinel'],
+    features: ['Crystal galleries', 'A flooded lower shaft', 'Preserved bodies in the walls', 'A wheelhouse with the wheel still turning', 'Rails that end at a wall'],
+    atmosphere: ['Dry, cracking air', 'Torchlight thrown back a thousandfold', 'The drip of brine', 'Footsteps that crunch'],
+  },
+  {
+    id: 'drowned_lighthouse', name: 'Drowned Lighthouse', category: 'dungeon',
+    description: 'A lighthouse the sea took, standing now in a cave the tide fills twice a day. Its lamp still burns below the waterline, and things swim up toward it. Stairs spiral down where they should spiral up.',
+    commonMonsters: ['brine zombie', 'lantern wight', 'sea hag', 'drowned knight', 'kraken spawn'],
+    features: ['The inverted stair', 'The lamp room, underwater', 'A keeper\'s log written in salt', 'Tide-pools with eyes in them', 'A bell that rings when the water reaches it'],
+    atmosphere: ['Salt and rot', 'The lamp\'s slow turning', 'Tide coming in', 'A bell, far down'],
+  },
+  {
+    id: 'plague_hospice', name: 'Plague Hospice', category: 'urban',
+    description: 'A hospice sealed with its patients inside when the plague turned. The wards are still made up; the sisters still make their rounds. Nobody who lies down in a bed here gets up the same.',
+    commonMonsters: ['plague priest', 'ghoul', 'rot grub swarm', 'tomb moth', 'harrow hag'],
+    features: ['The long ward', 'A chapel with the doors nailed', 'The apothecary\'s locked cabinet', 'The pit behind the kitchen', 'Beds that are still warm'],
+    atmosphere: ['Camphor and rot', 'Coughing from empty rooms', 'Bells for the dead', 'Sheets that move'],
+  },
+  {
+    id: 'giants_causeway', name: 'Giants\' Causeway', category: 'wilderness',
+    description: 'A road built by giants for giants, each step a wall, climbing into cloud. The ruins along it were homes once; the things in them now are not the builders, but they are large.',
+    commonMonsters: ['hill giant', 'ogre', 'cloud giant exile', 'winter wolf', 'roc'],
+    features: ['Steps a fathom tall', 'A giant\'s hearth, still warm', 'A bridge over nothing', 'A throne facing the wind', 'Bones of something that could carry a giant'],
+    atmosphere: ['Wind that never stops', 'Cloud below and above', 'Stone that hums', 'Very old cold'],
+  },
 ];
 
 // ── Dungeon dressing tables ──────────────────────────
@@ -878,6 +906,12 @@ export const COMBAT_NARRATION = {
     '{attacker} finds a gap in the armor and drives the point home.',
     'A savage overhead chop from {attacker} connects with {defender}.',
     '{attacker} feints low and strikes high, catching {defender} off guard.',
+    '{attacker} hooks the blade in under {defender}\'s guard and it connects with a sound like a dropped plate.',
+    'A short, ugly strike from {attacker} bites into {defender}\'s side.',
+    '{attacker} turns {defender}\'s parry aside and the follow-through connects.',
+    '{attacker} steps in close, too close, and the blow strikes home.',
+    '{defender} sees it coming and it connects anyway; {attacker} was faster.',
+    '{attacker} strikes at the shoulder and finds it.',
   ],
   criticalHits: [
     'A devastating blow! {attacker} strikes a vital point on {defender}!',
@@ -890,6 +924,11 @@ export const COMBAT_NARRATION = {
     '{defender} narrowly sidesteps {attacker}\'s attack.',
     'The blow glances harmlessly off {defender}\'s armor.',
     '{attacker} overcommits and stumbles, missing {defender} entirely.',
+    '{defender} sidesteps and {attacker}\'s blade whistles through the space where a neck was.',
+    '{attacker}\'s blow glances harmlessly from {defender}\'s shoulder-plate.',
+    'The swing goes wide; {attacker} was aiming at where {defender} had been.',
+    '{defender} narrowly sidesteps, and {attacker} hits the wall hard enough to feel it in the teeth.',
+    '{attacker} misses, and knows it before the swing is finished.',
   ],
   spellCasts: [
     'Arcane energy crackles around {caster}\'s hands as they unleash {spell}!',

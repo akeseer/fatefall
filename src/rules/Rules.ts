@@ -1,3 +1,4 @@
+import { EXPANSION_SPECIALS, EXPANSION_BOSS_KITS } from '../entities/MonsterExpansion';
 import { Ability, abilityModifier, rollDice } from '../data/gameData';
 import { pushDiceRoll } from './DiceEvents';
 
@@ -1235,3 +1236,7 @@ export const BOSS_KITS: Record<string, BossKit> = {
   },
 
 };
+
+// The expansion's riders and legendary kits.
+Object.assign(MONSTER_SPECIALS, EXPANSION_SPECIALS);
+Object.assign(BOSS_KITS, EXPANSION_BOSS_KITS);

@@ -21,6 +21,8 @@ const REGION_NAMES = [
   'The Frostline Reach', 'The Crown of Pines', 'The Glasswind Expanse', 'The Greenmantle',
   'The Old Kings Road', 'The Shale Coast', 'The Mireward', 'The Ember Sands',
   'The Sunken Fen', 'The Saltwind Coast', 'The Far Marches', 'The Starfall Vale',
+  'The Salt Barrens', 'The Kingsgrave Downs', 'The Whitethorn Weald', 'The Cinderwash',
+  'The Drowning Shore', 'The Hollow Hills', 'The Widow\'s Reach', 'The Bellwether Plains',
 ];
 
 const BIOME_INFO: Record<RegionBiome, { description: string; advice: string; danger: number }> = {

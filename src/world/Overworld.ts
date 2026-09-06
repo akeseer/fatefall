@@ -55,6 +55,9 @@ export const TOWN_NAMES = [
   'Emberwatch', 'Duskhollow', 'Silverbark', 'Ravenmere', 'Stonebridge',
   'Greymarch', 'Frosthaven', 'Thornwick', 'Highwater', 'Mistfeld',
   'Oakshade', 'Brimstone', 'Willowrun', 'Ashvale', 'Corvusport',
+  'Saltmarrow', 'Kingsfold', 'Hollowbrook', 'Ironmoor', 'Larkspire',
+  'Wyndmere', 'Bittercross', 'Gallowsend', 'Fennick', 'Stormreach',
+  'Copperdown', 'Vesperhold', 'Marrowgate', 'Thistlecombe', 'Old Harrow',
 ];
 
 export const ENTRANCE_NAMES = [
@@ -62,6 +65,10 @@ export const ENTRANCE_NAMES = [
   'Gloomhollow Keep', 'The Serpent Maws', 'Ashen Spire', 'The Drowned Chapel',
   'Cinderfen Ruins', 'The Frozen Vaults', 'Obsidian Delve', 'The Whispering Labyrinth',
   'The Bone Galleries', 'Vermilion Catacombs', 'The Shattered Sanctum', 'Murkdeep Fane',
+  'The Salt Deeps', 'Lantern Reach', 'The Hospice of Saint Wren', 'The Giants\' Stair',
+  'Hollowcrown Barrow', 'The Weeping Foundry', 'Nightjar Warrens', 'The Bellows Below',
+  'Kingsgrave', 'The Whitewater Sepulchre', 'Thornhollow Delve', 'The Glass Cathedral',
+  'Ravensfall Oubliette', 'The Rimewell', 'Sorrowgate', 'The Undercroft of Aldric',
 ];
 
 const TOWN_DESCRIPTIONS = [
@@ -70,6 +77,12 @@ const TOWN_DESCRIPTIONS = [
   'a sleepy village of thatched roofs, temple bells, and farmers who lock their doors at dusk',
   'a trade hub where the roads meet and the inns never sleep',
   'a grim frontier outpost on the edge of the wilds, where adventurers are welcome and questions are not',
+  'a river port of tarred piers and shouting fishwives, where every third building is a chandler and every fourth a tavern',
+  'a hill town built in rings up a crag, each ring older and stranger than the one below',
+  'a mining town of soot and lamplight whose bells ring shifts, not hours',
+  'a pilgrim town grown around a shrine, its streets lined with hostels and relic-sellers of doubtful honesty',
+  'a crossroads garrison gone half to seed, its walls patched with old gravestones',
+  'a marsh town on stilts where the roads are planks and the dead are buried in boats',
 ];
 
 const ENTRANCE_DESCRIPTIONS = [
@@ -78,10 +91,31 @@ const ENTRANCE_DESCRIPTIONS = [
   'a collapsed tower whose basement still breathes cold air, as if something below keeps the door',
   'a cave mouth choked with roots, and a draft that smells of dust and coin',
   'an iron gate half-rusted open, its hinges groaning with every gust',
+  'a well whose rope goes down further than any rope should, and comes up wet with something that is not water',
+  'a shrine sunk into the hillside, its door an altar tipped on its side',
+  'a mine head with the winding gear still greased, as though the last shift meant to come back',
+  'a cleft in a cliff face marked with a hundred hand-prints in old ochre, all pointing down',
+  'a barrow mound split open by a fallen oak, breathing cold from the gap',
 ];
 
 /** Flavor for entrances, keyed by the dungeon theme the land gave them. */
 const THEMED_ENTRANCE_DESCRIPTIONS: Record<string, string[]> = {
+  salt_mine_deeps: [
+    'a mine head of white stone, its rails vanishing down into a glitter that is not quite light',
+    'a salt-crusted adit propped with timber gone to white, the air out of it dry as a tomb',
+  ],
+  drowned_lighthouse: [
+    'a sea-cave at the foot of a broken lighthouse, a slow light turning somewhere under the water',
+    'a stair cut into the cliff that goes down to the tide-line and then, somehow, further',
+  ],
+  plague_hospice: [
+    'a hospice gate chained shut from the outside, the bell-rope still hanging within reach',
+    'a walled house of the sick, every window bricked but one, and that one lit',
+  ],
+  giants_causeway: [
+    'a stair of stones each the height of a man, climbing into cloud toward a door built for something taller',
+    'a causeway of giant-cut slabs that leads not along the land but down into it',
+  ],
   sunken_temple: [
     'a waterlogged stairway swallowed by reeds, exhaling damp rot and old prayers',
     'a stone arch half-drowned in the mire, its carvings worn smooth by centuries of murk',
