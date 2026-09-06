@@ -18,7 +18,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 ## B. Combat depth (11–25)
 
-- [ ] 11. Reactions: shield block, parry, counterspell as real reactions with one use per round.
+- [x] 11. Reactions: shield block, parry, counterspell as real reactions with one use per round.
 - [ ] 12. Opportunity attacks shown as their own beat in the presenter.
 - [ ] 13. Cover: pillars and water in the battle scene grant +2 AC to the side behind them.
 - [x] 14. Flanking: two allies adjacent to a foe give advantage. (already in)
@@ -32,16 +32,16 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 22. Ammunition: arrows and bolts counted, restocked in town, running out mid-fight.
 - [ ] 23. Two-weapon fighting and shields as real choices on the equip pass.
 - [x] 24. Combat summaries: "the fight in numbers" line after each victory.
-- [ ] 25. Difficulty setting on the party builder: story, normal, hard, with monster HP and DC scaling.
+- [x] 25. Difficulty setting on the party builder: story, normal, hard, with monster HP and DC scaling.
 
 ## C. Magic (26–35)
 
 - [ ] 26. Ritual casting out of combat: detect magic on a chest, identify at camp.
-- [ ] 27. Concentration: one concentration spell at a time, broken on damage by a Con save.
+- [x] 27. Concentration: one concentration spell at a time, broken on damage by a Con save. (already in: concentration breaks on damage)
 - [ ] 28. Spell scrolls learnable by wizards at camp.
 - [ ] 29. Cantrip scaling by level, shown in the spell list.
 - [ ] 30. Summons: a druid's beast or a wizard's elemental as a temporary combatant.
-- [ ] 31. Wild magic surges for sorcerers, with a table of twenty results.
+- [x] 31. Wild magic surges for sorcerers, with a table of twenty results.
 - [ ] 32. Warlock pacts with a patron who asks for things in dreams.
 - [ ] 33. Spell components: a rare spell needs an item the party must find.
 - [ ] 34. Counter-magic from monsters: casters that dispel the party's buffs.
@@ -54,7 +54,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 38. Crafting: the forge and the town smith turn monster parts into gear.
 - [ ] 39. Monster parts as loot: hides, fangs, glands, sold or crafted.
 - [ ] 40. Weight and encumbrance: a laden party moves slower on the overworld.
-- [ ] 41. Shops with stock that changes with the calendar and the town's mood.
+- [x] 41. Shops with stock that changes with the calendar and the town's mood.
 - [ ] 42. Haggling: a Charisma check on big purchases.
 - [ ] 43. A bank in the capital: deposits survive a lost party in hardcore.
 - [x] 44. Legendary items with names, histories, and a card when found.
@@ -65,7 +65,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 46. Weather that affects the dungeon: rain floods the first floor, snow slows the road.
 - [ ] 47. Seasons that change the overworld palette and the markets.
 - [ ] 48. Roads that improve as towns prosper, and decay when they are raided.
-- [ ] 49. Town sieges: a monster band camps outside a town until the party breaks it.
+- [x] 49. Town sieges: a monster band camps outside a town until the party breaks it.
 - [ ] 50. Town growth: quests done raise a town's tier and unlock buildings.
 - [ ] 51. A capital city with a court, a bank, and quests from the crown.
 - [ ] 52. Ships: a port town sells passage to a far coast with its own gates.
@@ -83,9 +83,9 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [x] 61. Locked doors and keys carried by a named monster on the floor.
 - [x] 62. Secret doors found by Investigation, leading to a hidden room with a hoard.
 - [ ] 63. Multi-floor pre-built dungeons with a set-piece: a bridge, a drowned hall, a throne.
-- [ ] 64. Dungeon maps as loot: a map reveals the floor.
+- [x] 64. Dungeon maps as loot: a map reveals the floor.
 - [x] 65. Light: torches burn down; darkness gives monsters advantage until relit.
-- [ ] 66. Shrines with a choice: a boon for a cost, remembered by the deity.
+- [x] 66. Shrines with a choice: a boon for a cost, remembered by the deity.
 - [ ] 67. Traps that the party can set: caltrops, a tripwire in a corridor.
 - [ ] 68. Dungeon factions: two monster bands at war, the party can side with one.
 - [ ] 69. A rescue floor: prisoners in cells scattered across a floor, all to be freed.
@@ -97,7 +97,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 - [x] 73. Act interludes: a card between acts telling what the antagonist did meanwhile.
 - [ ] 74. Companions from the story: an NPC who joins for one act.
-- [ ] 75. Multiple endings by flags, with an epilogue card per member.
+- [x] 75. Multiple endings by flags, with an epilogue card per member.
 - [ ] 76. Story choices with delayed consequences: a spared enemy returns later.
 - [x] 77. Rumours that foreshadow the next act's antagonist by name. (taverns already name the act's villain; the interlude card adds to it)
 - [x] 78. A villain's lieutenant on the floor before the boss.

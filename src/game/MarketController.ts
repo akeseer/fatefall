@@ -55,11 +55,13 @@ export class MarketController {
     if (!this.game.currentTown) return base;
     // Tiered gear: rolled fresh when the party arrives in a new town.
     // Wealthier towns (higher priceModifier) stock higher tiers.
-    if (this.shopTieredTownId !== this.game.currentTown.id) {
+    const stockKey = `${this.game.currentTown.id}:${this.game.calendar.weekdayIndex}`;
+    if (this.shopTieredTownId !== stockKey) {
       const archetype = TOWN_ARCHETYPES[this.game.currentTown.archetypeId as keyof typeof TOWN_ARCHETYPES];
       const wealth = archetype?.priceModifier ?? 1;
-      const maxBonus = wealth >= 1.25 ? 3 : wealth >= 1.0 ? 2 : 1;
-      const count = 2 + Math.floor(Math.random() * 3); // 2-4 pieces per visit
+      const maxBonus = Math.min(3, (wealth >= 1.25 ? 3 : wealth >= 1.0 ? 2 : 1) + (this.game.calendar.isMarketday ? 1 : 0));
+      // Market day brings the traders in: more pieces, and a better one among them.
+      const count = 2 + Math.floor(Math.random() * 3) + (this.game.calendar.isMarketday ? 2 : 0);
       const stock: InventoryItem[] = [];
       const seen = new Set<string>();
       for (let i = 0; i < count * 3 && stock.length < count; i++) {
@@ -69,7 +71,7 @@ export class MarketController {
         stock.push(piece);
       }
       this.shopTieredStock = stock;
-      this.shopTieredTownId = this.game.currentTown.id;
+      this.shopTieredTownId = stockKey;
     }
     return [...base, ...this.shopTieredStock];
   }

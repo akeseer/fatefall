@@ -187,3 +187,17 @@ describe('v17 -> v18 torches', () => {
     expect(migrateSave({ version: SAVE_VERSION, torches: 7 } as any)!.torches).toBe(7);
   });
 });
+
+describe('v18 -> v19 difficulty and sieges', () => {
+  it('leaves an older run at normal with nobody at the gates', () => {
+    const out = migrateSave({ version: 18, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.difficulty).toBeUndefined();
+    expect(out.sieges).toBeUndefined();
+  });
+  it('carries them through', () => {
+    const out = migrateSave({ version: SAVE_VERSION, difficulty: 'hard', sieges: { town_1: { strength: 3, since: 5 } } } as any)!;
+    expect(out.difficulty).toBe('hard');
+    expect(out.sieges).toEqual({ town_1: { strength: 3, since: 5 } });
+  });
+});

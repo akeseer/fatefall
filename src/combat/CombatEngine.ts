@@ -1,3 +1,4 @@
+import { surgeFor } from './WildMagic';
 import { isUndeadKind, isUnholyKind } from '../entities/MonsterKinds';
 import { GameCharacter } from '../entities/Character';
 import { Monster } from '../entities/Monster';
@@ -125,6 +126,10 @@ export class CombatEngine {
   public hearthBlessedUndeadBonus: number = 0;
   /** The party's light has gone out: monsters strike with advantage. */
   public darkness: boolean = false;
+  /** Added to every monster special's DC: the difficulty setting. */
+  public dcShift: number = 0;
+  /** Heroes who have spent their reaction this round: a parry, a shield block, a counterspell. */
+  private reactionsUsed = new Set<string>();
   /** Bosses that have entered their second phase this fight. */
   private phaseTwo = new Set<string>();
   /** Gloom delve: fear bites harder — added to every frightful-presence DC. */
@@ -297,6 +302,7 @@ export class CombatEngine {
     if (this.currentTurnIndex >= this.initiativeOrder.length) {
       this.currentTurnIndex = 0;
       this.log.round++;
+      this.reactionsUsed.clear();
       // Pools refill a little each round and skills come off cooldown.
       for (const m of this.party.members) {
         if (!m.isAlive) continue;
@@ -1245,6 +1251,37 @@ export class CombatEngine {
 
   /** Resolve a character spell; returns true when the turn is spent casting. */
   private castSpell(caster: GameCharacter, spell: Spell, forcedMonsterTarget?: Monster, forcedAllyTarget?: GameCharacter): boolean {
+    const ok = this.castSpellInner(caster, spell, forcedMonsterTarget, forcedAllyTarget);
+    if (ok && caster.charClass.id === 'sorcerer' && spell.level > 0 && Math.random() < 0.1) this.wildSurge(caster);
+    return ok;
+  }
+
+  /** The sorcerer's magic gets away from them: one of twenty things happens. */
+  private wildSurge(caster: GameCharacter): void {
+    const surge = surgeFor(rollD20(), caster.name);
+    this.log.messages.push(surge.text);
+    const fx = surge.effect;
+    const foes = this.monsters.filter(m => m.isAlive && !m.fled);
+    switch (fx.kind) {
+      case 'heal_party':
+        for (const m of this.party.alive) { const n = rollDice(fx.dice[0], fx.dice[1]); m.heal(n); this.log.messages.push(`${m.name} heals ${n}.`); }
+        break;
+      case 'heal_self': { const n = rollDice(fx.dice[0], fx.dice[1]); caster.heal(n); this.log.messages.push(`${caster.name} heals ${n}.`); break; }
+      case 'burn_self': this.log.messages.push(caster.takeDamage(rollDice(fx.dice[0], fx.dice[1]))); break;
+      case 'burn_foe': {
+        const t = foes[Math.floor(Math.random() * foes.length)];
+        if (t) { const n = rollDice(fx.dice[0], fx.dice[1]); this.log.messages.push(t.takeDamage(n)); }
+        break;
+      }
+      case 'burn_all_foes':
+        for (const t of foes) { const n = rollDice(fx.dice[0], fx.dice[1]); this.log.messages.push(t.takeDamage(n)); }
+        break;
+      case 'bless': this.partyBlessRounds = Math.max(this.partyBlessRounds, fx.rounds); break;
+      case 'none': break;
+    }
+  }
+
+  private castSpellInner(caster: GameCharacter, spell: Spell, forcedMonsterTarget?: Monster, forcedAllyTarget?: GameCharacter): boolean {
     // ── Control & support effects ──
     if (spell.id === 'remove_curse') {
       // Castable out of combat too: the AI lifts an ally's curse if it can.
@@ -1820,6 +1857,14 @@ export class CombatEngine {
     }
     const result = monster.attack(effectiveAc, mods);
     if (gloom > 0 && result.hit) result.damage += 2;
+    // A reaction: a fighter's kind turns a plain hit aside once a round.
+    if (result.hit && !result.message.includes('CRIT') && !target.isDying
+      && ['fighter', 'rogue', 'monk', 'ranger', 'paladin', 'blood_hunter'].includes(target.charClass.id)
+      && !this.reactionsUsed.has(target.id) && Math.random() < 0.3) {
+      this.reactionsUsed.add(target.id);
+      this.log.messages.push(`\u2694 ${target.name} turns ${monster.template.name}'s blow aside with a parry.`);
+      return;
+    }
     // Rich combat narration
     const narration = generateCombatTurnNarration({
       attackerName: monster.template.name,
@@ -1833,6 +1878,15 @@ export class CombatEngine {
     if (result.hit) {
       // Strikes against a downed character are automatic critical hits.
       const crit = result.message.includes('CRIT') || target.isDying;
+      // A reaction: a shield takes some of it, once a round.
+      if (target.equipment.shield && !this.reactionsUsed.has(target.id) && !target.isDying) {
+        const blocked = Math.min(result.damage, rollDice(1, 6) + 1);
+        if (blocked > 0) {
+          this.reactionsUsed.add(target.id);
+          result.damage -= blocked;
+          this.log.messages.push(`\ud83d\udee1 ${target.name} catches ${blocked} of it on the shield.`);
+        }
+      }
       this.log.messages.push(target.takeDamage(result.damage, { crit }));
       this.applyMonsterSpecial(monster, target);
       this.handleConcentrationBreak(target);
@@ -1854,6 +1908,13 @@ export class CombatEngine {
   private applyMonsterSpecial(monster: Monster, target: GameCharacter): void {
     const special = MONSTER_SPECIALS[monster.template.id];
     if (!special) return;
+    // A reaction: a caster with a slot to spare counters the rider, once a round.
+    const counter = this.party.alive.find(m => ['wizard', 'sorcerer', 'artificer'].includes(m.charClass.id) && m.canCastSpell(1) && !this.reactionsUsed.has(m.id));
+    if (counter && special.kind !== 'drain' && Math.random() < 0.45) {
+      this.reactionsUsed.add(counter.id);
+      this.log.messages.push(`\u270b ${counter.name} counters the ${special.description} with a word and a gesture.`);
+      return;
+    }
 
     if (special.kind === 'drain') {
       const extra = rollDice(1, 6);
@@ -1870,7 +1931,7 @@ export class CombatEngine {
 
     // Every other rider is a real 5e condition resolved against a save.
     const meta = CONDITION_META[special.kind as keyof typeof CONDITION_META];
-    const save = target.makeSavingThrow(special.saveAbility, special.dc);
+    const save = target.makeSavingThrow(special.saveAbility, special.dc + this.dcShift);
     if (save.success) {
       this.log.messages.push(`${target.name} saves against the ${special.description}. (${special.saveAbility.toUpperCase()} ${save.total} vs DC ${special.dc})`);
       return;

@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 18;
+export const SAVE_VERSION = 19;
 
 export interface SavedCharacter {
   id: string;
@@ -151,6 +151,10 @@ export interface SaveData {
   fallen?: { name: string; className: string; level: number; where: string; day: number }[];
   /** Torches in the pack. Absent on older runs, which are handed a few. v18+. */
   torches?: number;
+  /** How hard the world hits. Absent means normal. v19+. */
+  difficulty?: 'story' | 'normal' | 'hard';
+  /** Towns under siege, by id, with the band's strength. v19+. */
+  sieges?: Record<string, { strength: number; since: number }>;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -342,7 +346,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 16) current = migrateV16toV17(current);
   if (!current) return null;
   if (current.version === 17) current = migrateV17toV18(current);
+  if (!current) return null;
+  if (current.version === 18) current = migrateV18toV19(current);
   return current;
+}
+
+/** v18 → v19: difficulty and sieges. Absent means normal, and nobody at the gates. */
+function migrateV18toV19(data: SaveData): SaveData | null {
+  return { ...data, version: 19 };
 }
 
 /** v17 → v18: torches. Absent means a few in the pack, as every party sets out with. */

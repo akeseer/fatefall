@@ -42,6 +42,8 @@ export interface StoryHost {
   grantXp(amountFor: (member: { level: number }) => number): void;
   adjustTownReputation(townId: string, delta: number): void;
   setPaused(paused: boolean): void;
+  /** Each member's own road, for the epilogues. */
+  readonly personalQuests: { memberName: string; done: boolean; perk: { title: string } }[];
   inTown: boolean;
 }
 
@@ -176,7 +178,10 @@ export class StoryController {
     if (act.kind === 'finale') {
       const ending = endingText(s);
       this.game.expeditionJournal.push('The tale of the shattered die was told to its end');
-      this.showCard('The tale is told', 'Fatefall', `${ending}\n\nThe party goes on. The acts that follow are theirs alone, and harder.`, () => this.planAndPost(true));
+      this.showCard('The tale is told', 'Fatefall', `${ending}\n\nThe party goes on. The acts that follow are theirs alone, and harder.`, () => {
+        const lines = this.game.party.members.map(m => this.memberEpilogue(m.name, m.charClass.id, m.level, m.isDead));
+        this.showCard('Epilogues', 'What became of them', lines.join('\n\n'), () => this.planAndPost(true));
+      });
       return;
     }
     this.planAndPost(true);
@@ -231,6 +236,30 @@ export class StoryController {
 
   journalLines(): string[] {
     return this.game.story ? journalLines(this.game.story) : [];
+  }
+
+  /** One line each, from what the run made of them. */
+  private memberEpilogue(name: string, classId: string, level: number, dead: boolean): string {
+    const road = this.game.personalQuests.find(q => q.memberName === name);
+    const title = road?.done ? ` ${road.perk.title}` : '';
+    if (dead) return `${name} did not see the end of it. The others carry the name.`;
+    const byClass: Record<string, string> = {
+      fighter: 'kept the sword sharp and the door held, and was never once the first to run',
+      wizard: 'wrote it all down, and the writing outlived the writer',
+      cleric: 'buried more than a cleric should, and prayed for every one',
+      rogue: 'is still not saying where the second key went',
+      ranger: 'went back to the road afterward, and the road was glad',
+      paladin: 'kept the oath, which was the hard part',
+      barbarian: 'was calmer after, the way a fire is after',
+      druid: 'planted something on every floor, and some of it took',
+      bard: 'made the song, and the song made everyone in it braver than they were',
+      sorcerer: 'never did find out where the magic came from, and stopped minding',
+      warlock: 'paid the patron what was owed, and not a coin more',
+      monk: 'sat down at the end of it and did not get up for a long, contented while',
+      artificer: 'built a better version of everything that nearly killed them',
+      blood_hunter: 'bled for all of them, and would again',
+    };
+    return `${name}${title}, level ${level}, ${byClass[classId] ?? 'walked out into daylight and kept walking'}.`;
   }
 
   private showCard(kicker: string, title: string, body: string, then?: () => void): void {

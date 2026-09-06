@@ -308,6 +308,10 @@ class Game {
   private secretDoors: { x: number; y: number; room: Room; found: boolean; tries: number }[] = [];
   /** Torches in the pack. Rides in the save. */
   public torches = 4;
+  /** How hard the world hits. Rides in the save. */
+  public difficulty: 'story' | 'normal' | 'hard' = 'normal';
+  /** Towns with a band at the gates, by id. Rides in the save. */
+  public sieges: Record<string, { strength: number; since: number }> = {};
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
   /** The party's light has gone out. */
@@ -916,6 +920,7 @@ class Game {
     this.hud.addCombatMessage(`Welcome to ${this.dungeonName}!`, '#ffd700');
     this.placeRivals();
     this.placeLieutenant();
+    this.useDungeonMap();
     // A quest that cares about depth may complete the moment this floor lands.
     this.checkActiveQuestProgress();
     this.hud.addCombatMessage(generateDungeonLore(this.dungeonLevel), '#a8a');
@@ -986,6 +991,9 @@ class Game {
       template = visible ?? template;
     }
     const monster = new Monster(id, template, pos);
+    // The challenge setting: a story party meets softer monsters, a hard one sturdier.
+    const hpScale = this.difficulty === 'story' ? 0.75 : this.difficulty === 'hard' ? 1.33 : 1;
+    if (hpScale !== 1) { monster.maxHp = Math.max(1, Math.round(monster.maxHp * hpScale)); monster.hp = monster.maxHp; }
     // Adaptive difficulty: the director's pressure quietly shapes the
     // dungeon. Rising stakes: monsters fight fit (scaled-up HP). A battered
     // party gets mercy: weakened spawns so a run can breathe again.
@@ -1536,6 +1544,7 @@ class Game {
       if (banter) for (const line of banter) this.hud.addCombatMessage(line, '#c9c2b0');
       if (entered?.kind === 'hazard' && !entered.used) void this.runHazard(entered);
       if (entered?.kind === 'puzzle_room' && !entered.used) this.poseRiddle(entered);
+      if (entered?.kind === 'altar' && !entered.used) this.shrineChoice(entered);
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
       // closes a little of the party's hurts.
       if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
@@ -2899,6 +2908,85 @@ class Game {
     lt.alertLevel = 1;
     this.tally('lieutenants');
     this.hud.addCombatMessage(`\ud83d\udc41 Somewhere on this floor, ${act.bossName}'s lieutenant keeps the stair. The master is one floor further down, and knows the party is coming.`, '#e8b45a');
+  }
+
+  /** A map in the pack lays the floor out the moment the party arrives. */
+  private useDungeonMap(): void {
+    const holder = this.party.members.find(m => m.hasItem('dungeon_map'));
+    if (!holder || this.mode !== GameMode.Dungeon) return;
+    holder.useItem('dungeon_map');
+    for (const r of this.rooms) this.map.reveal(r.cx, r.cy, Math.max(r.width, r.height) + 1);
+    this.hud.addCombatMessage(`\ud83d\uddfa ${holder.name} unfolds the map. It is this floor, and it is good: every room, every turn, the stair.`, '#8cf');
+  }
+
+  /** An altar asks for something, and gives something back, or is passed by. */
+  private shrineChoice(feature: RoomFeature): void {
+    const options = [
+      { id: 'gold', label: 'Offer coin', text: '25 gold on the stone, for a blessing on the blades: +1 to attack rolls for three fights.' },
+      { id: 'blood', label: 'Offer blood', text: 'Every member gives 1d4 of their own. The old gods pay better: +2 to attack rolls for three fights, and the wounds close again after.' },
+      { id: 'pass', label: 'Pass by', text: 'Whatever it was for, it is not for the party.' },
+    ];
+    const leader = this.party.leader;
+    const fallback = () => leader.personality.greed >= 6 ? options[2] : leader.personality.aggression >= 6 ? options[1] : this.partyGold() >= 25 ? options[0] : options[2];
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryChoice(`\u26e9 ${feature.entryLine} The stone wants something, and says nothing.`, options, (o) => {
+      if (!wasPaused) this.setPaused(false);
+      if (o.id === 'gold') {
+        if (!this.spendGold(25)) { this.hud.addCombatMessage('The party has not the coin, and the stone does not take promises.', '#886'); return; }
+        feature.used = true;
+        this.grantBattleEdge(1, 3);
+        this.tally('offerings');
+        this.hud.addCombatMessage('\u26e9 The coin is gone before it lands. Something is pleased. +1 to attack rolls for three fights.', '#e8b45a');
+      } else if (o.id === 'blood') {
+        feature.used = true;
+        for (const m of this.party.alive) this.hud.addCombatMessage(m.takeDamage(Math.max(1, Math.min(m.hp - 1, rollDice(1, 4)))), '#c66');
+        this.grantBattleEdge(2, 3);
+        this.tally('offerings');
+        this.hud.addCombatMessage('\u26e9 The blood soaks into the stone and does not stain it. +2 to attack rolls for three fights, and the wounds already itch with healing.', '#e8b45a');
+        for (const m of this.party.alive) m.heal(rollDice(1, 4));
+        this.hud.setParty(this.party);
+      } else {
+        this.hud.addCombatMessage('The party passes the altar without touching it. The stone remembers that too.', '#887');
+      }
+    }, { seconds: 15, fallback });
+  }
+
+  /** Word comes along the road that a town has a band at its gates. */
+  private maybeSiege(): void {
+    if (!this.overworld || Object.keys(this.sieges).length > 0 || Math.random() > 0.006) return;
+    const towns = this.overworld.towns.filter(t => t.id !== this.currentTown?.id);
+    if (towns.length === 0) return;
+    const town = towns[Math.floor(Math.random() * towns.length)];
+    const strength = 2 + Math.floor(this.party.leader.level / 2);
+    this.sieges[town.id] = { strength, since: Math.floor(this.clock.elapsed / DAY_MS) + 1 };
+    this.hud.addCombatMessage(`\ud83c\udff0 A rider on a lathered horse: ${town.name} has a band at its gates and cannot get its harvest in. Whoever breaks the siege will not pay for a drink there again.`, '#e8b45a');
+    this.expeditionJournal.push(`${town.name} besieged`);
+  }
+
+  /** A besieged town is entered through its besiegers. True when the gate fight has started. */
+  private siegeAtGate(town: OverworldTown): boolean {
+    const siege = this.sieges[town.id];
+    if (!siege) return false;
+    delete this.sieges[town.id];
+    const gang = banditGang(this.party.leader.level);
+    while (gang.length < siege.strength + 1) gang.push(gang[gang.length - 1]);
+    const spots = findAmbushTiles(this.map, this.party.leader.tile, gang.length);
+    const spawned: Monster[] = [];
+    for (let i = 0; i < gang.length && i < spots.length; i++) {
+      const m = this.spawnMonster(gang[i], spots[i]);
+      m.alertLevel = 2;
+      spawned.push(m);
+    }
+    if (spawned.length === 0) return false;
+    this.hud.addCombatMessage(`\ud83c\udff0 The band at the gates of ${town.name} turns from the walls to the road. ${spawned.length} of them, and the town watching from the ramparts.`, '#c84');
+    this.adjustTownReputation(town.id, 3);
+    this.grantXp(() => 30 * siege.strength);
+    this.addGold(20 * siege.strength);
+    this.hud.addCombatMessage(`\u2b50 ${town.name} will remember who came. Reputation rises, and the purse is ${20 * siege.strength} gold heavier for it.`, '#ffd700');
+    this.tally('sieges');
+    this.startCombat(spawned);
+    return true;
   }
 
   /**
@@ -4266,6 +4354,7 @@ class Game {
    * comes back the way it was played.
    */
   private applyRunMode(): void {
+    this.combatEngine.dcShift = this.difficulty === 'story' ? -2 : this.difficulty === 'hard' ? 2 : 0;
     this.hud.battleView.setMode(this.runMode === 'manual' ? 'manual' : 'auto');
     // A restored fight must not sit waiting on a decision Auto will never ask for.
     if (this.phase === GamePhase.Combat) this.combatEngine.setDecisionPause(this.runMode === 'manual');
@@ -4433,6 +4522,11 @@ class Game {
     if (loot.items.length > 0 || loot.goldValue > 0) sfx.chest();
     for (const line of loot.narration) {
       this.hud.addCombatMessage(line, '#dd0');
+    }
+    // Now and then a hoard holds a map of the floor below.
+    if (this.mode === GameMode.Dungeon && Math.random() < 0.12 && !this.party.members.some(m => m.hasItem('dungeon_map'))) {
+      this.party.leader.addToInventory({ id: 'dungeon_map', name: 'Dungeon Map', type: 'treasure', description: 'A hand-drawn map of the floor below, folded small. Whoever drew it did not come back for it.', value: 0 });
+      this.hud.addCombatMessage('\ud83d\uddfa Folded into the take: a map of the floor below.', '#8cf');
     }
     for (const mi of loot.magicItems) {
       if (mi.rarity !== 'legendary' && mi.rarity !== 'very rare' && mi.rarity !== 'artifact') continue;
@@ -4844,10 +4938,12 @@ class Game {
   }
 
   /** Wipe the active slot and start over: fresh party, fresh floor 1. */
-  startFreshRun(classIds: string[] = [], options: { mode: 'auto' | 'manual'; hardcore: boolean } = { mode: 'auto', hardcore: false }): void {
+  startFreshRun(classIds: string[] = [], options: { mode: 'auto' | 'manual'; hardcore: boolean; difficulty?: 'story' | 'normal' | 'hard' } = { mode: 'auto', hardcore: false }): void {
     clearSlot(this.activeSlot);
     this.runMode = options.mode;
     this.hardcore = options.hardcore;
+    this.difficulty = options.difficulty ?? 'normal';
+    this.sieges = {};
     this.dungeonLevel = 0;
     this.history = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
     this.dungeonTheme = null;
@@ -5245,6 +5341,7 @@ class Game {
     // The moon is more than decoration: some nights menace, others bare old secrets.
     this.maybeMoonSurfaceEvent();
     this.maybeRoadEvent();
+    this.maybeSiege();
   }
 
   /** A weather-blessed surge of undead/fiendish reinforcements on the surface ambush. */
@@ -6055,6 +6152,7 @@ class Game {
     this.hud.setDungeonTitle(`${this.party.partyName} — ${town.name}`);
     this.hud.addCombatMessage(`The party reaches ${town.name} — ${town.description}.`, '#ffd700');
     this.personalArrival(town);
+    if (this.siegeAtGate(town)) return;
 
     // The town's rumor sets the mood — and reshapes the quest board.
     const tl = this.townLife?.byTown[town.id];

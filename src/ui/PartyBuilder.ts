@@ -48,6 +48,8 @@ export interface RunOptions {
   mode: 'auto' | 'manual';
   /** A dead adventurer is gone for good, and a dead party ends the run. */
   hardcore: boolean;
+  /** How hard the world hits: story, normal, or hard. */
+  difficulty: 'story' | 'normal' | 'hard';
 }
 
 export interface PartyBuilderOptions {
@@ -60,7 +62,7 @@ export interface PartyBuilderOptions {
 
 export class PartyBuilder {
   private chosen: string[] = [];
-  private options: RunOptions = { mode: 'auto', hardcore: false };
+  private options: RunOptions = { mode: 'auto', hardcore: false, difficulty: 'normal' };
   private root: HTMLElement | null = null;
   private opts: PartyBuilderOptions | null = null;
   private readonly portraits = new Map<string, string>();
@@ -71,7 +73,7 @@ export class PartyBuilder {
     this.hide();
     this.opts = opts;
     this.chosen = [];
-    this.options = { mode: 'auto', hardcore: false };
+    this.options = { mode: 'auto', hardcore: false, difficulty: 'normal' };
     const root = document.createElement('div');
     root.id = 'party-builder';
     root.style.cssText = `position:absolute; inset:0; z-index:100; overflow:auto; background:radial-gradient(ellipse at 50% 20%, #14100c 0%, #0a0808 55%, #050405 100%); display:flex; flex-direction:column; align-items:center; font-family:${T.bodyFont}; color:${T.text};`;
@@ -124,6 +126,15 @@ export class PartyBuilder {
             </div>
             <div class="pb-opt-desc" id="pb-stakes-desc"></div>
           </div>
+          <div class="pb-opt">
+            <div class="pb-opt-title">CHALLENGE</div>
+            <div class="pb-seg">
+              <button data-opt="difficulty" data-value="story">Story</button>
+              <button data-opt="difficulty" data-value="normal">Normal</button>
+              <button data-opt="difficulty" data-value="hard">Hard</button>
+            </div>
+            <div class="pb-opt-desc" id="pb-challenge-desc"></div>
+          </div>
         </div>
         <div style="display:flex; gap:12px; justify-content:center; margin-top:22px; align-items:center;">
           <button data-pb="back" class="dp-btn dp-title pb-btn">← Back</button>
@@ -153,6 +164,7 @@ export class PartyBuilder {
       if (opt) {
         sfx.click();
         if (opt.dataset.opt === 'mode') this.options.mode = opt.dataset.value === 'manual' ? 'manual' : 'auto';
+        else if (opt.dataset.opt === 'difficulty') this.options.difficulty = (opt.dataset.value as RunOptions['difficulty']) ?? 'normal';
         else this.options.hardcore = opt.dataset.value === 'true';
         this.render();
         return;
@@ -223,7 +235,7 @@ export class PartyBuilder {
       }
     }
     for (const b of Array.from(root.querySelectorAll<HTMLElement>('[data-opt]'))) {
-      const on = b.dataset.opt === 'mode' ? b.dataset.value === this.options.mode : (b.dataset.value === 'true') === this.options.hardcore;
+      const on = b.dataset.opt === 'mode' ? b.dataset.value === this.options.mode : b.dataset.opt === 'difficulty' ? b.dataset.value === this.options.difficulty : (b.dataset.value === 'true') === this.options.hardcore;
       b.classList.toggle('on', on);
       b.classList.toggle('grim', on && b.dataset.opt === 'hardcore' && b.dataset.value === 'true');
     }
@@ -233,6 +245,11 @@ export class PartyBuilder {
     (root.querySelector('#pb-stakes-desc') as HTMLElement).textContent = this.options.hardcore
       ? 'Death is final. A fallen adventurer leaves the party for good, and when the last one falls the run is over and the slot is cleared.'
       : 'A lost fight is a retreat: the survivors drag everyone out, exhausted but alive.';
+    (root.querySelector('#pb-challenge-desc') as HTMLElement).textContent = this.options.difficulty === 'story'
+      ? 'Monsters carry three-quarters of their hit points and their tricks are easier to shrug off. For the tale, not the fight.'
+      : this.options.difficulty === 'hard'
+        ? 'Monsters carry a third more hit points and their tricks bite harder. Rewards are the same; the graves are not.'
+        : 'The world as written.';
     const begin = root.querySelector('[data-pb="begin"]') as HTMLButtonElement;
     begin.disabled = this.chosen.length !== PARTY_SIZE;
     begin.textContent = this.chosen.length === PARTY_SIZE ? '✦ Set Out' : `✦ Set Out (${this.chosen.length}/${PARTY_SIZE})`;

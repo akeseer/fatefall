@@ -142,6 +142,8 @@ export interface SaveHost {
   notes: string[];
   fallen: { name: string; className: string; level: number; where: string; day: number }[];
   torches: number;
+  difficulty: 'story' | 'normal' | 'hard';
+  sieges: Record<string, { strength: number; since: number }>;
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -224,6 +226,8 @@ export class SaveSerializer {
       notes: this.game.notes,
       fallen: this.game.fallen,
       torches: this.game.torches,
+      difficulty: this.game.difficulty,
+      sieges: this.game.sieges,
       hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
@@ -422,6 +426,8 @@ export class SaveSerializer {
     this.game.notes = [...(save.notes ?? [])];
     this.game.fallen = [...(save.fallen ?? [])];
     this.game.torches = save.torches ?? 4;
+    this.game.difficulty = save.difficulty ?? 'normal';
+    this.game.sieges = { ...(save.sieges ?? {}) };
     this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();
