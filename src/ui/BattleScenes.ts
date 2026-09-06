@@ -21,6 +21,8 @@ export interface BattleScene {
   /** Overworld region biome, on the surface. */
   biome?: string | null;
   weather?: string | null;
+  /** The town's archetype id, in a town, for its own backdrop. */
+  townArchetype?: string | null;
   /** 0 midnight .. 1 noon. */
   daylight: number;
 }
@@ -263,7 +265,7 @@ function weatherWash(weather: string | null | undefined, night: number): string 
 
 export function battleSceneCss(scene: BattleScene): BattleSceneCss {
   if (scene.place === 'dungeon') return dungeonScene(scene.themeId ?? null);
-  if (scene.place === 'town') return townScene(scene.daylight, scene.weather);
+  if (scene.place === 'town') return townScene(scene.daylight, scene.weather, scene.townArchetype);
   return surfaceScene(scene.biome ?? 'grassland', scene.daylight, scene.weather);
 }
 
@@ -339,8 +341,16 @@ function surfaceScene(biome: string, daylight: number, weather: string | null | 
   };
 }
 
-function townScene(daylight: number, weather: string | null | undefined): BattleSceneCss {
+function townScene(daylight: number, weather: string | null | undefined, archetype?: string | null): BattleSceneCss {
   const night = Math.max(0, 1 - daylight);
+  // Each kind of town has its own silhouette behind the roofs.
+  const a = archetype ?? '';
+  const extra = /port|fish|coast|harbor|harbour/.test(a) ? water(`rgba(120,170,200,${(0.14 + 0.1 * night).toFixed(2)})`)
+    : /garrison|fort|keep|military|border/.test(a) ? pillars(`rgba(${Math.round(60 - 20 * night)},${Math.round(58 - 20 * night)},${Math.round(62 - 20 * night)},0.9)`, `rgba(120,118,124,0.5)`)
+    : /market|trade|merchant|hub/.test(a) ? velvet(`rgba(${Math.round(110 - 40 * night)},${Math.round(40 - 15 * night)},${Math.round(40 - 15 * night)},0.55)`, `rgba(255,200,120,${(0.3 + 0.4 * night).toFixed(2)})`)
+    : /farm|village|rural|hamlet/.test(a) ? trees(`rgba(${Math.round(22 - 8 * night)},${Math.round(40 - 16 * night)},${Math.round(20 - 8 * night)},0.9)`)
+    : /mine|mining|dwar/.test(a) ? cave(`rgba(${Math.round(50 - 20 * night)},${Math.round(44 - 18 * night)},${Math.round(40 - 16 * night)},0.8)`)
+    : '';
   const skyTop = mix([0.04, 0.05, 0.12], [0.5, 0.62, 0.8], daylight);
   const skyBot = mix([0.08, 0.07, 0.1], [0.85, 0.8, 0.7], daylight);
   return {
@@ -349,7 +359,7 @@ function townScene(daylight: number, weather: string | null | undefined): Battle
     horizon: 'rgba(255,220,150,0.45)',
     lines: 'rgba(255,230,190,0.10)',
     glow: 'rgba(255,200,120,0.16)',
-    scenery: roofs(`rgba(${Math.round(40 - 20 * night)},${Math.round(34 - 16 * night)},${Math.round(34 - 14 * night)},0.95)`, `rgba(255,190,100,${(0.25 + 0.35 * night).toFixed(2)})`),
+    scenery: [roofs(`rgba(${Math.round(40 - 20 * night)},${Math.round(34 - 16 * night)},${Math.round(34 - 14 * night)},0.95)`, `rgba(255,190,100,${(0.25 + 0.35 * night).toFixed(2)})`), extra].filter(Boolean).join(', '),
     weather: weatherWash(weather, night),
   };
 }

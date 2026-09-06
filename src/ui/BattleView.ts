@@ -541,6 +541,13 @@ export class BattleView {
         @keyframes bv-vine { 0% { transform: scaleY(0) rotate(var(--rot)); opacity: 0; } 30% { opacity: 1; } 100% { transform: scaleY(1) rotate(var(--rot)); opacity: 0; } }
         .battle-card.bv-shiver .bv-sprite { animation: bv-shiver 0.6s ease-in-out; }
         @keyframes bv-shiver { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-2px); } 40%, 80% { transform: translateX(2px); } }
+        #battle-field.bv-rain::after, #battle-field.bv-snow::after, #battle-field.bv-fog::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+        #battle-field.bv-rain::after { background: repeating-linear-gradient(100deg, transparent 0 7px, rgba(190,210,240,0.22) 7px 8px); background-size: 40px 60px; animation: bv-rain 0.45s linear infinite; }
+        @keyframes bv-rain { from { background-position: 0 0; } to { background-position: -12px 60px; } }
+        #battle-field.bv-snow::after { background: radial-gradient(circle 1.5px, rgba(240,246,255,0.8) 90%, transparent 100%) 0 0 / 34px 34px, radial-gradient(circle 1px, rgba(240,246,255,0.6) 90%, transparent 100%) 17px 11px / 46px 46px; animation: bv-snow 3.2s linear infinite; }
+        @keyframes bv-snow { from { background-position: 0 0, 17px 11px; } to { background-position: 10px 34px, 27px 57px; } }
+        #battle-field.bv-fog::after { background: radial-gradient(ellipse 60% 40% at 30% 60%, rgba(200,206,214,0.22), transparent 70%), radial-gradient(ellipse 60% 40% at 75% 50%, rgba(200,206,214,0.18), transparent 70%); animation: bv-fog 9s ease-in-out infinite alternate; }
+        @keyframes bv-fog { from { transform: translateX(-3%); } to { transform: translateX(3%); } }
         .battle-card.bv-tint-frozen .bv-sprite { filter: grayscale(0.9) brightness(1.15) drop-shadow(0 0 6px #bfe8ff); transition: filter .3s; }
         .battle-card.bv-tint-fear .bv-sprite { filter: saturate(0.5) brightness(0.85) drop-shadow(0 0 6px #6a4a8a); animation: bv-shiver 0.35s ease-in-out infinite; }
         .battle-card.bv-tint-stunned .bv-sprite { filter: brightness(1.2) drop-shadow(0 0 6px #ffe95c); animation: bv-shiver 0.9s ease-in-out infinite; }
@@ -718,6 +725,11 @@ export class BattleView {
     field.style.setProperty('--bv-glow', css.glow);
     field.style.setProperty('--bv-scenery', css.scenery || 'none');
     field.style.setProperty('--bv-weather', css.weather || 'none');
+    // The weather falls through the window: rain streaks, snow drifts, fog rolls.
+    const w = scene.weather ?? '';
+    field.classList.toggle('bv-rain', /rain|storm|thunder/.test(w));
+    field.classList.toggle('bv-snow', /snow|blizzard/.test(w));
+    field.classList.toggle('bv-fog', /fog|mist/.test(w));
   }
 
   open(party: Party, monsters: Monster[], sprites: SpriteRenderer, scene?: BattleScene): void {

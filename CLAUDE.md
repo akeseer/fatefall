@@ -237,3 +237,17 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   monsters advantage (`CombatEngine.darkness`) and `SceneMood.lightScale` shrinks the light.
   A click on the map canvas sets `waypoint`; `followWaypoint` walks it before any AI decision.
   Boss phases live in `CombatEngine.monsterTurn` (`phaseTwo`), keyed on the `(Boss)` name too.
+- **The roadmap's later batches** (`ROADMAP.md`, all hundred ticked): most systems follow one
+  shape — a pure module or a `Game` method, a hook at the event that causes it, a `tally(key)`
+  for the achievements, and a save field with a `migrateVNtoVN+1` step (the save is at v25;
+  `SaveHost` in `SaveSerializer.ts` and the two fake hosts in `tests/` must grow with it).
+  Orders the parser never sees are regexes at the top of `handleDMCommand`, in this order:
+  riddle answers, `narrate:`, `note:`, `export`, `stats`, `hold`/`release`, `new name`, `dice
+  <theme>`, `photo`, `set a trap`, `new game plus`, `map`, `claim the ruins`, `track`, then the
+  standing orders. Town services are a union in `TownTypes.ts` plus an entry in `SERVICES` and
+  a place in each archetype's list (everything with `svc('rest')` now carries torches, arrows,
+  a horse, the bank and ship's passage); their arms live in `useTownService`. Per-floor state
+  (`floorFactions`, `rescue`, `floorWeather`, `partyTraps`, locks, secret doors) is reset in
+  `dressFloor`/`dressFloorMore` and deliberately not saved. `MusicMood` now branches on the
+  dungeon theme; a new mood needs a `Piece` in `PIECES`. The world map screen reads a provider
+  the game sets at start (`worldMapProvider`), as the chronicle and statistics do.

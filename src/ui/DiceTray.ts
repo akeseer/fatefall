@@ -21,7 +21,7 @@ const OUTCOME_COLOR: Record<DiceRollEvent['outcome'], string> = {
   none: '#888888',
 };
 
-const DICE_COLOR: Record<DiceType, string> = {
+const CLASSIC_DICE: Record<DiceType, string> = {
   d4: '#e8d44d',
   d6: '#d44',
   d8: '#4a8',
@@ -30,6 +30,28 @@ const DICE_COLOR: Record<DiceType, string> = {
   d20: '#c33',
   d100: '#da3',
 };
+
+/** The tray's dice come in a few materials; the choice is remembered. */
+export type DiceTheme = 'classic' | 'bone' | 'brass' | 'obsidian';
+const DICE_THEMES: Record<DiceTheme, Record<DiceType, string>> = {
+  classic: CLASSIC_DICE,
+  bone: { d4: '#e9e2cf', d6: '#e4dcc6', d8: '#ded5bd', d10: '#d8ceb4', d12: '#d2c7ab', d20: '#ede6d4', d100: '#cfc4a6' },
+  brass: { d4: '#d9b24a', d6: '#c9a23a', d8: '#b8922e', d10: '#caa640', d12: '#a88326', d20: '#e0bc55', d100: '#9e7a20' },
+  obsidian: { d4: '#3a3440', d6: '#332e3a', d8: '#2c2833', d10: '#3d3746', d12: '#26222c', d20: '#443c4e', d100: '#201c26' },
+};
+let DICE_COLOR: Record<DiceType, string> = { ...CLASSIC_DICE };
+export function setDiceTheme(theme: DiceTheme): void {
+  DICE_COLOR = { ...DICE_THEMES[theme] };
+  try { localStorage.setItem('fatefall.dice', theme); } catch { /* no storage */ }
+}
+export function loadDiceTheme(): DiceTheme {
+  try {
+    const t = localStorage.getItem('fatefall.dice') as DiceTheme | null;
+    if (t && DICE_THEMES[t]) { DICE_COLOR = { ...DICE_THEMES[t] }; return t; }
+  } catch { /* no storage */ }
+  return 'classic';
+}
+loadDiceTheme();
 
 /** Rolls that deserve the big 3D die (all the d20 moments). */
 const BIG_DIE_KINDS = new Set(['attack', 'save', 'check', 'death-save', 'initiative', 'free']);

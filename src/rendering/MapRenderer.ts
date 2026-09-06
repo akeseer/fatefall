@@ -1506,7 +1506,9 @@ export class MapRenderer {
       // between them, which reads as walking rather than sliding.
       const stride = visual.moving ? Math.abs(Math.sin(visual.progress * Math.PI * 2)) : 0;
       const step = visual.moving ? Math.sin(visual.progress * Math.PI) : 0;
-      const sy = visual.y - camera.y + 2 - stride * 2;
+      // Standing still, the sprite breathes: a pixel of rise and fall on its own beat.
+      const breath = visual.moving ? 0 : Math.round(Math.sin(this.renderTime / 640 + member.id.length * 1.7) * 0.5 + 0.5);
+      const sy = visual.y - camera.y + 2 - stride * 2 - breath;
 
       // Soft shadow under the feet so the glide reads as walking.
       ctx.fillStyle = 'rgba(0,0,0,0.35)';

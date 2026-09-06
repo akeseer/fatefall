@@ -57,6 +57,7 @@ import { banditGang } from './world/Ambushes';
 import { banterFor } from './events/Banter';
 import { randomPartyName } from './entities/PartyNames';
 import { THEME_MOTIF } from './ui/BattleScenes';
+import { setDiceTheme, type DiceTheme } from './ui/DiceTray';
 import { COMPONENT_ITEMS } from './combat/Components';
 import { rollTieredGear } from './loot/TieredGear';
 import { seasonFor, seasonLine, type Season } from './world/Seasons';
@@ -421,6 +422,7 @@ class Game {
       themeId: this.mode === GameMode.Dungeon ? (this.dungeonTheme?.id ?? null) : null,
       biome: region?.biome ?? null,
       weather: this.mode === GameMode.Dungeon ? null : (this.weather?.type ?? null),
+      townArchetype: this.mode === GameMode.Town ? (this.currentTown?.archetypeId ?? null) : null,
       daylight: this.clock.light,
     };
   }
@@ -3767,6 +3769,16 @@ class Game {
           await this.hud.dice.playRoll(rolls[ri++]);
           await sleep(90);
         }
+        if (msg.includes('CRITICAL')) {
+          // Hit-stop: the field holds on the critical for a beat, and shakes.
+          show(batch, false);
+          batch = [msg];
+          show(batch, false);
+          batch = [];
+          this.camera.shake(9, 260);
+          await sleep(170);
+          continue;
+        }
         if (msg.includes('opportunity attack')) {
           // A parting blow is its own beat: the field pauses on it.
           show(batch, false);
@@ -4246,7 +4258,12 @@ class Game {
       return this.combatEngine.getBosses().length > 0 ? 'boss' : 'battle';
     }
     if (this.mode === GameMode.Town) return 'town';
-    if (this.mode === GameMode.Dungeon) return 'dungeon';
+    if (this.mode === GameMode.Dungeon) {
+      const t = this.dungeonTheme?.id ?? '';
+      if (/clockwork_foundry|astral_wreck|ancient_dwarven_hall|salt_mine_deeps/.test(t)) return 'dungeon_clockwork';
+      if (/haunted_theatre|vampire_castle|plague_hospice|frozen_necropolis|shadowfell_crossing|royal_crypt/.test(t)) return 'dungeon_haunted';
+      return 'dungeon';
+    }
     return this.clock.light < 0.34 ? 'overworld_night' : 'overworld';
   }
 
@@ -8021,6 +8038,10 @@ class Game {
         : `\u25b6 ${members.map(m => m.name).join(', ')} may act again.`, '#8cf');
       return;
     }
+    // "dice bone": the tray's material. "photo": the map alone.
+    const diceOrder = /^dice\s+(classic|bone|brass|obsidian)$/i.exec(text);
+    if (diceOrder) { setDiceTheme(diceOrder[1].toLowerCase() as DiceTheme); this.hud.addCombatMessage(`\ud83c\udfb2 The dice are ${diceOrder[1].toLowerCase()} now.`, '#8cf'); return; }
+    if (/^(?:photo|photo mode|screenshot mode)$/i.test(text)) { this.hud.enterPhotoMode(); return; }
     // "set a trap" / "caltrops": the next fight in this room opens on the party's terms.
     if (/^(?:set (?:a )?trap|caltrops|tripwire|lay (?:a )?trap)$/i.test(text)) { this.setPartyTrap(); return; }
     // "new game plus": a finished tale reseeds, harder, with the party as it stands.
@@ -8036,7 +8057,7 @@ class Game {
     // "map": the world as seen. "claim the ruins": a base. "track": where the beast is.
     if (/^(?:map|world map|show (?:the )?map)$/i.test(text)) { this.hud.showWorldMap(); return; }
     if (/^claim(?: the)? (?:ruins?|keep|tower)$/i.test(text)) { this.claimRuins(); return; }
-    if (/^track(?: the)? (?:beast|roamer|it)?$/i.test(text)) { this.trackRoamer(); return; }
+    if (/^track(?:(?: the)? (?:beast|roamer|it))?$/i.test(text)) { this.trackRoamer(); return; }
     // "new name": the party takes a name from the generator.
     if (/^(?:new|another|fresh) (?:party )?name$/i.test(text)) {
       this.party.partyName = randomPartyName();

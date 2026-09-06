@@ -51,7 +51,7 @@
 
 import { getAudio } from './Audio';
 
-export type MusicMood = 'title' | 'overworld' | 'overworld_night' | 'town' | 'dungeon' | 'battle' | 'boss' | 'none';
+export type MusicMood = 'title' | 'overworld' | 'overworld_night' | 'town' | 'dungeon' | 'dungeon_clockwork' | 'dungeon_haunted' | 'battle' | 'boss' | 'none';
 
 // ── Tunables ──
 
@@ -493,8 +493,32 @@ const TITLE: Piece = {
   pad: { type: 'triangle', octave: 0, gain: 0.03, lowpass: 1400, attack: 0.6, detune: 6, sevenths: true },
 };
 
+/** The foundry and its kin: the same dark, but ticking, quicker, in a major key gone wrong. */
+const DUNGEON_CLOCKWORK: Piece = {
+  ...DUNGEON,
+  seed: 0xc10c,
+  bpm: 96,
+  root: 52,
+  scale: MAJOR,
+  //           I  I  bVII IV I  V  bVI V  I  bVII IV V  I  IV bVII I
+  progression: [0, 0, 6, 3, 0, 4, 5, 4, 0, 6, 3, 4, 0, 3, 6, 0],
+};
+
+/** The theatre, the castle, the hospice: slower than the deep, and sadder. */
+const DUNGEON_HAUNTED: Piece = {
+  ...DUNGEON,
+  seed: 0x4a07,
+  bpm: 48,
+  root: 47,
+  scale: AEOLIAN,
+  //           i  VI VII i  iv i  VII i  VI iv VII i  i  VI VII i
+  progression: [0, 5, 6, 0, 3, 0, 6, 0, 5, 3, 6, 0, 0, 5, 6, 0],
+};
+
 export const PIECES: Readonly<Record<Exclude<MusicMood, 'none'>, Piece>> = {
   title: TITLE,
+  dungeon_clockwork: DUNGEON_CLOCKWORK,
+  dungeon_haunted: DUNGEON_HAUNTED,
   overworld: OVERWORLD,
   overworld_night: OVERWORLD_NIGHT,
   town: TOWN,

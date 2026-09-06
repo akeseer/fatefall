@@ -175,6 +175,22 @@ export class HUD {
   /** What the world map screen draws, supplied by the game. */
   public worldMapProvider: () => { width: number; height: number; tile: (x: number, y: number) => number; explored: (x: number, y: number) => boolean; towns: { name: string; x: number; y: number; capital?: boolean }[]; entrances: { name: string; x: number; y: number }[]; pois: { name: string; x: number; y: number; cleared: boolean }[]; party: { x: number; y: number }; target: { name: string; x: number; y: number } | null; roamer: { name: string; x: number; y: number } | null; base: { x: number; y: number } | null } | null = () => null;
 
+  /** Photo mode: the map alone, until the chip is clicked or Escape is pressed. */
+  enterPhotoMode(): void {
+    if (document.body.classList.contains('photo')) return;
+    document.body.classList.add('photo');
+    const chip = document.createElement('button');
+    chip.id = 'photo-exit';
+    chip.className = 'dp-btn dp-title';
+    chip.textContent = '\ud83d\udcf7 Photo mode \u2014 click or press Escape to return';
+    chip.style.cssText = `padding:6px 14px; font-size:11px; letter-spacing:0.08em; border-radius:${T.r2}; opacity:0.75;`;
+    const leave = () => { document.body.classList.remove('photo'); chip.remove(); window.removeEventListener('keydown', onKey); };
+    const onKey = (e: KeyboardEvent) => { if (e.code === 'Escape') leave(); };
+    chip.addEventListener('click', leave);
+    window.addEventListener('keydown', onKey);
+    this.overlay.appendChild(chip);
+  }
+
   /** The world as the party has seen it, with pins. */
   showWorldMap(): void {
     this.overlay.querySelector('#world-map')?.remove();
@@ -494,6 +510,8 @@ export class HUD {
         #audio-pop .ap-seg button.on { background: ${T.rowHot}; color: ${T.gold}; }
         #audio-pop .ap-note { color: ${T.faint}; font-size: 10px; margin-top: 5px; font-style: italic; }
         /* Speed: one segmented control, not five loose buttons. */
+        body.photo #ui-overlay > *:not(#photo-exit) { display: none !important; }
+        #photo-exit { position: absolute; right: 14px; top: 12px; z-index: 200; }
         #combat-log.log-only-fight .dp-log-line:not([data-cat="fight"]):not([data-cat="order"]) { display: none; }
         #combat-log.log-only-story .dp-log-line:not([data-cat="story"]):not([data-cat="world"]):not(.dp-log-break) { display: none; }
         #combat-log.log-only-order .dp-log-line:not([data-cat="order"]) { display: none; }
