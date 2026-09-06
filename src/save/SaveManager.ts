@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 24;
+export const SAVE_VERSION = 25;
 
 export interface SavedCharacter {
   id: string;
@@ -175,6 +175,8 @@ export interface SaveData {
   base?: { x: number; y: number; name: string } | null;
   /** The beast that roams the surface, until it is slain. v24+. */
   roamer?: { templateId: string; name: string; x: number; y: number } | null;
+  /** Keys to the great vaults, from bosses deep down. v25+. */
+  vaultKeys?: number;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -378,7 +380,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 22) current = migrateV22toV23(current);
   if (!current) return null;
   if (current.version === 23) current = migrateV23toV24(current);
+  if (!current) return null;
+  if (current.version === 24) current = migrateV24toV25(current);
   return current;
+}
+
+/** v24 → v25: vault keys. Absent means none. */
+function migrateV24toV25(data: SaveData): SaveData | null {
+  return { ...data, version: 25 };
 }
 
 /** v23 → v24: the base and the roamer. Absent means neither. */

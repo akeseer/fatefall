@@ -154,6 +154,7 @@ export interface SaveHost {
   trophies: { name: string; dungeon: string; floor: number; mounted: string | null }[];
   base: { x: number; y: number; name: string } | null;
   roamer: { templateId: string; name: string; x: number; y: number } | null;
+  vaultKeys: number;
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -248,6 +249,7 @@ export class SaveSerializer {
       trophies: this.game.trophies,
       base: this.game.base,
       roamer: this.game.roamer,
+      vaultKeys: this.game.vaultKeys,
       hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
@@ -458,6 +460,7 @@ export class SaveSerializer {
     this.game.trophies = [...(save.trophies ?? [])];
     this.game.base = save.base ?? null;
     this.game.roamer = save.roamer ?? null;
+    this.game.vaultKeys = save.vaultKeys ?? 0;
     this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();

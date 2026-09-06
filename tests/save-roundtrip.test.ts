@@ -95,6 +95,7 @@ class TestHost implements SaveHost {
   trophies: SaveHost['trophies'] = [];
   base: SaveHost['base'] = null;
   roamer: SaveHost['roamer'] = null;
+  vaultKeys: SaveHost['vaultKeys'] = 0;
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {

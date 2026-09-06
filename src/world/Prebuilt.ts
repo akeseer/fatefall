@@ -34,6 +34,8 @@ export interface PrebuiltDungeon {
   style: string;
   description: string;
   floors: PrebuiltFloor[];
+  /** The thing the dungeon is remembered for: a room on one floor made a particular way. */
+  setPiece?: { floor: number; room: number; kind: string; hazard: string | null; line: string };
 }
 
 export const PREBUILT_BY_ID: ReadonlyMap<string, PrebuiltDungeon> = new Map(PREBUILT_DUNGEONS.map(d => [d.id, d]));

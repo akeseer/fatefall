@@ -42,6 +42,9 @@ export interface StoryHost {
   grantXp(amountFor: (member: { level: number }) => number): void;
   adjustTownReputation(townId: string, delta: number): void;
   setPaused(paused: boolean): void;
+  /** A companion joins for an act, and leaves when it ends. */
+  hireCompanion(act: { index: number; bossName: string; monsterType: string }): void;
+  dismissCompanion(): void;
   /** Each member's own road, for the epilogues. */
   readonly personalQuests: { memberName: string; done: boolean; perk: { title: string } }[];
   inTown: boolean;
@@ -135,6 +138,7 @@ export class StoryController {
     s.stage = 'choice';
     sfx.levelUp();
     this.game.expeditionJournal.push(`Took ${act.shard} from ${act.bossName} in ${act.entranceName}`);
+    this.game.dismissCompanion();
     const kicker = act.kind === 'epilogue' ? act.title : `Act ${roman(act.index)} ends`;
     this.showCard(kicker, act.kind === 'finale' ? 'The Die, Whole' : `${act.shard.replace(/^the /, 'The ')}`, act.fall, () => this.presentChoice());
   }
@@ -167,7 +171,15 @@ export class StoryController {
     const fx = applyChoice(s, option);
     if (option) {
       this.game.hud.addCombatMessage(`⚖ ${option.text}`, '#e8c56a');
-      this.game.expeditionJournal.push(`Chose to ${option.label.toLowerCase()} after ${act.title}`);
+      const costs: string[] = [];
+    if (fx.gold < 0) costs.push(`${-fx.gold} gold`);
+    if (fx.reputation < 0) costs.push(`${-fx.reputation} standing in ${act.giverTownId.replace(/_/g, ' ')}`);
+    if (option.difficulty && option.difficulty > 0) costs.push('a harder road ahead');
+    const gains: string[] = [];
+    if (fx.gold > 0) gains.push(`${fx.gold} gold`);
+    if (fx.xp > 0) gains.push(`${fx.xp} XP`);
+    if (fx.reputation > 0) gains.push('standing');
+    this.game.expeditionJournal.push(`Chose to ${option.label.toLowerCase()} after ${act.title}${costs.length ? ` (it cost ${costs.join(', ')})` : ''}${gains.length ? ` (it brought ${gains.join(', ')})` : ''}`);
       if (fx.gold > 0) this.game.addGold(fx.gold);
       else if (fx.gold < 0) this.game.spendGold(-fx.gold);
       if (fx.xp > 0) this.game.grantXp(() => fx.xp);
@@ -203,6 +215,7 @@ export class StoryController {
     if (!this.game.quests.some(q => q.id === act.questId)) this.game.quests.push(questForAct(act));
     if (announce) {
       const kicker = act.kind === 'epilogue' ? 'Epilogue' : act.kind === 'finale' ? 'The last act' : `Act ${roman(act.index)}`;
+      if (act.index > 1 && act.kind !== 'epilogue' && act.kind !== 'finale') this.game.hireCompanion({ index: act.index, bossName: act.bossName, monsterType: act.monsterType });
       if (act.index > 1 && act.kind !== 'epilogue') {
         // Meanwhile: what the world did while the party rested.
         const meanwhile = `While the party rested and counted its coin, the world did not. Word came down the roads of ${act.bossName}: ${act.rumor}.\n\nBelow ${act.entranceName}, on the ${act.targetFloor === 1 ? 'first' : act.targetFloor === 2 ? 'second' : act.targetFloor === 3 ? 'third' : `${act.targetFloor}th`} floor, it has begun.`;

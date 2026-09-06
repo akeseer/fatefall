@@ -249,3 +249,10 @@ describe('v23 -> v24 the base and the roamer', () => {
     expect(migrateSave({ version: SAVE_VERSION, roamer: r, base: { x: 1, y: 2, name: 'Old Keep' } } as any)!.roamer).toEqual(r);
   });
 });
+
+describe('v24 -> v25 vault keys', () => {
+  it('leaves an older run keyless and carries a count through', () => {
+    expect(migrateSave({ version: 24, party: { members: [] } } as any)!.vaultKeys).toBeUndefined();
+    expect(migrateSave({ version: SAVE_VERSION, vaultKeys: 2 } as any)!.vaultKeys).toBe(2);
+  });
+});

@@ -86,6 +86,9 @@ class FakeHost implements RoomFeatureHost {
   revealSecrets(): string | null { return null; }
   takeEscortee(): void {}
   attemptPuzzle(f: RoomFeature): void { f.used = true; }
+  notePrisonerFreed(): void {}
+  vaultKeysHeld(): number { return 0; }
+  spendVaultKeys(): void {}
 
   said(fragment: string): boolean { return this.log.some(l => l.includes(fragment)); }
 

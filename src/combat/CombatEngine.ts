@@ -137,6 +137,8 @@ export class CombatEngine {
   public onRangedShot: (() => boolean) | null = null;
   /** The room itself as a lair action, when the hall has an altar, a forge, a font. */
   public roomLair: LegendaryActionDef | null = null;
+  /** A floor whose air goes bad: from the third round, everyone standing takes this many d4 a round. */
+  public gasPerRound: number = 0;
   /** Spells refused for want of a component this fight, so the log says so once. */
   private componentRefused = new Set<string>();
   /** Heroes who have spent their reaction this round: a parry, a shield block, a counterspell. */
@@ -315,6 +317,10 @@ export class CombatEngine {
       this.currentTurnIndex = 0;
       this.log.round++;
       this.reactionsUsed.clear();
+      if (this.gasPerRound > 0 && this.log.round >= 3) {
+        this.log.messages.push('\u2601 The air is thick and yellow now, and every breath costs.');
+        for (const m of this.party.alive) this.log.messages.push(m.takeDamage(rollDice(this.gasPerRound, 4)));
+      }
       // Pools refill a little each round and skills come off cooldown.
       for (const m of this.party.members) {
         if (!m.isAlive) continue;

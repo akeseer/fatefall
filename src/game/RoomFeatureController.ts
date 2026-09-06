@@ -10,6 +10,7 @@
  * spread through a six-thousand-line class.
  */
 
+import { MAGIC_ITEMS } from '../ai/DnDKnowledge';
 import type { GameCharacter } from '../entities/Character';
 import type { MonsterTemplate } from '../entities/Monster';
 import type { Party } from '../entities/Party';
@@ -54,6 +55,11 @@ export interface RoomFeatureHost {
   takeEscortee(name: string, reward: number): void;
   /** The puzzle room's riddle: pose it, or have the party try its wits at it. */
   attemptPuzzle(f: RoomFeature, say: (l: string, c?: string) => void): void;
+  /** A prisoner freed, for floors that are about freeing them all. */
+  notePrisonerFreed(): void;
+  /** Vault keys the party holds, and the spending of three of them. */
+  vaultKeysHeld(): number;
+  spendVaultKeys(n: number): void;
 }
 
 /** Capitalise a sentence built from a feature name, which starts lowercase. */
@@ -397,6 +403,21 @@ export class RoomFeatureController {
 
   private featureVault(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The vault has been picked clean.', '#888'); return true; }
+    // The great lock: three keys from three floors, and what is behind it is worth them.
+    if (this.game.vaultKeysHeld() >= 3) {
+      f.used = true;
+      this.game.spendVaultKeys(3);
+      const great = MAGIC_ITEMS.filter(i => i.rarity === 'legendary' || i.rarity === 'very rare');
+      const prize = great[Math.floor(Math.random() * great.length)];
+      this.game.addGold(200);
+      say('\ud83d\udd11 Three keys, three locks, and the vault door swings on a hinge that has waited for exactly this. Inside: two hundred gold, and something older.', '#ffd700');
+      if (prize) {
+        this.game.party.leader.addToInventory({ id: prize.id, name: prize.name, type: 'treasure', description: prize.description, value: 800, rarity: prize.rarity });
+        say(`\u2726 Legendary: ${prize.name} \u2014 ${prize.description}`, '#ffd700');
+      }
+      return true;
+    }
+    if (this.game.vaultKeysHeld() > 0) say(`A second lock on the door, greater than the first, wants three keys. The party holds ${this.game.vaultKeysHeld()}.`, '#a98');
     f.used = true;
     const searcher = this.game.bestScout();
     const dc = 12 + Math.floor(this.game.dungeonLevel / 2);
@@ -430,6 +451,7 @@ export class RoomFeatureController {
   private featurePrison(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The cells are empty \u2014 whoever was here is long gone.', '#888'); return true; }
     f.used = true;
+    this.game.notePrisonerFreed();
     const scout = this.game.bestScout();
     // Who is in the deepest cell is the whole question.
     const roll = rollD20();

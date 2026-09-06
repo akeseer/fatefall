@@ -12,6 +12,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_001', name: 'Saltvault Delve', themeId: 'ancient_dwarven_hall', style: 'catacomb',
     description: 'old stone and older grief, and forges gone cold; a grid of cells and ossuaries, every one occupied, 4 floors down',
+    setPiece: { floor: 2, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 6,
@@ -46,6 +47,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_002', name: 'The Glade of Frosthollow', themeId: 'feywild_glade', style: 'ring',
     description: 'fairy rings and living bridges and laughter with no one there; chambers set in a ring about a great central hall, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 9, y0: 10,
@@ -80,6 +82,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_003', name: 'Irongate Shade', themeId: 'shadowfell_crossing', style: 'warren',
     description: 'a grey reflection drained of colour and hope; a knot of chambers and crooked passages, 5 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 3, y0: 4,
@@ -121,6 +124,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_004', name: 'Ironstair Cellars', themeId: 'thieves_guild_den', style: 'catacomb',
     description: 'safehouses under the city and traps on every vault; a grid of cells and ossuaries, every one occupied, 4 floors down',
+    setPiece: { floor: 2, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 6,
@@ -155,6 +159,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_005', name: 'The Oldcross Bonefield', themeId: 'dragon_graveyard', style: 'cavern',
     description: 'bones the size of ships and the things that nest in them; water-carved caves that open and close without warning, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -175,6 +180,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_006', name: 'The Hive of Bloodcross', themeId: 'illithid_colony', style: 'warren',
     description: 'a hive of minds that would like to add yours; a knot of chambers and crooked passages, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 7, y0: 3,
@@ -202,6 +208,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_007', name: 'The Miremoor Sanctum', themeId: 'sunken_temple', style: 'flooded',
     description: 'green water on mosaic floors and a scratched-out god; halls half-drowned, the way through a matter of wading, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'fountain', hazard: null, line: 'a drowned hall where the water stands waist-deep' },
     floors: [
       {
         x0: 2, y0: 2,
@@ -222,6 +229,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_008', name: 'The Tower of Harrowcrown', themeId: 'wizards_tower_lore_loc', style: 'temple',
     description: 'a tower that goes down as far as it went up; symmetrical halls built to a plan, and a plan built to a god, 3 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 17, y0: 4,
@@ -249,6 +257,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_009', name: 'The Holes of Mirewatch', themeId: 'goblin_warren', style: 'warren',
     description: 'traps, spikes, warning bones and a great many goblins; a knot of chambers and crooked passages, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -269,6 +278,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_010', name: 'The Ashfold Crypt', themeId: 'royal_crypt', style: 'temple',
     description: 'gilt and dust and a throne that is not empty; symmetrical halls built to a plan, and a plan built to a god, 3 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 15, y0: 4,
@@ -296,6 +306,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_011', name: 'Silvercross Pit', themeId: 'abyssal_rift', style: 'cavern',
     description: 'heat, screaming, and a great deal of red; water-carved caves that open and close without warning, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -323,6 +334,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_012', name: 'The Starcrown Kiln', themeId: 'elemental_node_fire', style: 'lair',
     description: 'vents, magma, and things that live in both; one great chamber with everything else leading to it, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 5, y0: 3,
@@ -357,6 +369,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_013', name: 'The Bloodfen Keep', themeId: 'vampire_castle', style: 'temple',
     description: 'a court kept for three centuries by a host who does not age; symmetrical halls built to a plan, and a plan built to a god, 4 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 16, y0: 4,
@@ -391,6 +404,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_014', name: 'The Orrery of Emberhold', themeId: 'celestial_observatory', style: 'ring',
     description: 'an orrery under a painted sky and guardians who take it seriously; chambers set in a ring about a great central hall, 5 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 11,
@@ -432,6 +446,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_015', name: 'The Blackfang Adit', themeId: 'salt_mine_deeps', style: 'gauntlet',
     description: 'white galleries that glitter and dry the mouth; a single long way down, with no way round anything, 5 floors down',
+    setPiece: { floor: 2, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 11,
@@ -473,6 +488,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_016', name: 'The Lighthouse of Copperfold', themeId: 'drowned_lighthouse', style: 'gauntlet',
     description: 'a stair that spirals down where it should spiral up; a single long way down, with no way round anything, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 9,
@@ -500,6 +516,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_017', name: 'Mothreach Wards', themeId: 'plague_hospice', style: 'catacomb',
     description: 'a chapel with the doors nailed and beds still warm; a grid of cells and ossuaries, every one occupied, 3 floors down',
+    setPiece: { floor: 1, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -527,6 +544,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_018', name: 'The Stair of Stormfen', themeId: 'giants_causeway', style: 'gauntlet',
     description: 'steps a fathom tall climbing into cloud; a single long way down, with no way round anything, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 10,
@@ -554,6 +572,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_019', name: 'Bloodwell Works', themeId: 'clockwork_foundry', style: 'ring',
     description: 'brass and steam, still working, still building; chambers set in a ring about a great central hall, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 9, y0: 10,
@@ -588,6 +607,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_020', name: 'The Saltdeep Ziggurat', themeId: 'jungle_ziggurat', style: 'gauntlet',
     description: 'stepped stone under vine, loud with insects and drums; a single long way down, with no way round anything, 6 floors down',
+    setPiece: { floor: 3, room: 7, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 13,
@@ -636,6 +656,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_021', name: 'The Bloodhold Necropolis', themeId: 'frozen_necropolis', style: 'catacomb',
     description: 'streets of ice between tombs, the dead very well kept; a grid of cells and ossuaries, every one occupied, 2 floors down',
+    setPiece: { floor: 1, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 5, y0: 5,
@@ -656,6 +677,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_022', name: 'Serpentdeep Spire', themeId: 'sky_citadel', style: 'temple',
     description: 'ramparts over nothing and a wind with teeth; symmetrical halls built to a plan, and a plan built to a god, 2 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 17, y0: 4,
@@ -676,6 +698,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_023', name: 'Harrowreach Grotto', themeId: 'fungal_grotto', style: 'cavern',
     description: 'caps the size of roofs and a floor that gives a little; water-carved caves that open and close without warning, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -696,6 +719,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_024', name: 'Nightjargate Hold', themeId: 'pirate_cove', style: 'flooded',
     description: 'tide-pool cells and a bell that rings when the water reaches it; halls half-drowned, the way through a matter of wading, 6 floors down',
+    setPiece: { floor: 3, room: 7, kind: 'fountain', hazard: null, line: 'a drowned hall where the water stands waist-deep' },
     floors: [
       {
         x0: 5, y0: 10,
@@ -744,6 +768,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_025', name: 'Glasswatch Wreck', themeId: 'astral_wreck', style: 'gauntlet',
     description: 'a silver ship fallen into the earth, its hull open to another sky; a single long way down, with no way round anything, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 12,
@@ -771,6 +796,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_026', name: 'The Shadowreach Tomb', themeId: 'desert_tomb', style: 'temple',
     description: 'false doors, true traps, and the sand still coming in; symmetrical halls built to a plan, and a plan built to a god, 2 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 14, y0: 4,
@@ -791,6 +817,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_027', name: 'The Playhouse of Greyvault', themeId: 'haunted_theatre', style: 'warren',
     description: 'footlights that follow you and applause from nowhere; a knot of chambers and crooked passages, 4 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 7, y0: 2,
@@ -825,6 +852,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_028', name: 'The Cindercross Dreaming', themeId: 'dream_labyrinth', style: 'ring',
     description: 'a place someone is dreaming, that changes when they turn over; chambers set in a ring about a great central hall, 2 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 11,
@@ -845,6 +873,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_029', name: 'Blackfen Delve', themeId: 'ancient_dwarven_hall', style: 'catacomb',
     description: 'old stone and older grief, and forges gone cold; a grid of cells and ossuaries, every one occupied, 3 floors down',
+    setPiece: { floor: 1, room: 11, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -872,6 +901,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_030', name: 'The Oldfold Court', themeId: 'feywild_glade', style: 'cavern',
     description: 'silver bark, wrong colours, and time that does not keep; water-carved caves that open and close without warning, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -892,6 +922,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_031', name: 'Harrowcrown Crossing', themeId: 'shadowfell_crossing', style: 'warren',
     description: 'still black water and a weight on the soul; a knot of chambers and crooked passages, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -912,6 +943,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_032', name: 'Wyrmfang Undermarket', themeId: 'thieves_guild_den', style: 'catacomb',
     description: 'safehouses under the city and traps on every vault; a grid of cells and ossuaries, every one occupied, 5 floors down',
+    setPiece: { floor: 2, room: 12, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -953,6 +985,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_033', name: 'Stormcrown Bonefield', themeId: 'dragon_graveyard', style: 'lair',
     description: 'bones the size of ships and the things that nest in them; one great chamber with everything else leading to it, 3 floors down',
+    setPiece: { floor: 1, room: 4, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 4, y0: 4,
@@ -980,6 +1013,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_034', name: 'The Greystair Pool', themeId: 'illithid_colony', style: 'cavern',
     description: 'a hive of minds that would like to add yours; water-carved caves that open and close without warning, 4 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -1014,6 +1048,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_035', name: 'Cinderwell Fane', themeId: 'sunken_temple', style: 'temple',
     description: 'green water on mosaic floors and a scratched-out god; symmetrical halls built to a plan, and a plan built to a god, 3 floors down',
+    setPiece: { floor: 1, room: 8, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 16, y0: 4,
@@ -1041,6 +1076,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_036', name: 'The Spire of Miregate', themeId: 'wizards_tower_lore_loc', style: 'temple',
     description: 'a tower that goes down as far as it went up; symmetrical halls built to a plan, and a plan built to a god, 3 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 14, y0: 4,
@@ -1068,6 +1104,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_037', name: 'Cinderhollow Burrows', themeId: 'goblin_warren', style: 'warren',
     description: 'traps, spikes, warning bones and a great many goblins; a knot of chambers and crooked passages, 5 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 11, y0: 3,
@@ -1109,6 +1146,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_038', name: 'Copperwell Crypt', themeId: 'royal_crypt', style: 'catacomb',
     description: 'a dynasty\'s dead, and their servants, still in service; a grid of cells and ossuaries, every one occupied, 5 floors down',
+    setPiece: { floor: 2, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 6,
@@ -1150,6 +1188,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_039', name: 'The Bonewell Rift', themeId: 'abyssal_rift', style: 'lair',
     description: 'heat, screaming, and a great deal of red; one great chamber with everything else leading to it, 5 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 4, y0: 4,
@@ -1191,6 +1230,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_040', name: 'Frostwell Vent', themeId: 'elemental_node_fire', style: 'cavern',
     description: 'a place where the stone itself burns; water-carved caves that open and close without warning, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -1218,6 +1258,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_041', name: 'The Silverreach Keep', themeId: 'vampire_castle', style: 'ring',
     description: 'a castle where the lamps are lit and the windows are not; chambers set in a ring about a great central hall, 5 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 9, y0: 10,
@@ -1259,6 +1300,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_042', name: 'The Glassmoor Orrery', themeId: 'celestial_observatory', style: 'ring',
     description: 'an orrery under a painted sky and guardians who take it seriously; chambers set in a ring about a great central hall, 3 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 11,
@@ -1286,6 +1328,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_043', name: 'The Gloomwatch Deeps', themeId: 'salt_mine_deeps', style: 'gauntlet',
     description: 'white galleries that glitter and dry the mouth; a single long way down, with no way round anything, 4 floors down',
+    setPiece: { floor: 2, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 12,
@@ -1320,6 +1363,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_044', name: 'The Nightjardeep Reach', themeId: 'drowned_lighthouse', style: 'flooded',
     description: 'a stair that spirals down where it should spiral up; halls half-drowned, the way through a matter of wading, 5 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'fountain', hazard: null, line: 'a drowned hall where the water stands waist-deep' },
     floors: [
       {
         x0: 4, y0: 4,
@@ -1361,6 +1405,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_045', name: 'The Mirewick Hospice', themeId: 'plague_hospice', style: 'catacomb',
     description: 'wards still made up and sisters still making rounds; a grid of cells and ossuaries, every one occupied, 4 floors down',
+    setPiece: { floor: 2, room: 12, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 5, y0: 6,
@@ -1395,6 +1440,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_046', name: 'The Steps of Wyrmhall', themeId: 'giants_causeway', style: 'lair',
     description: 'steps a fathom tall climbing into cloud; one great chamber with everything else leading to it, 5 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 13, y0: 6,
@@ -1436,6 +1482,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_047', name: 'Copperhollow Works', themeId: 'clockwork_foundry', style: 'gauntlet',
     description: 'pistons in the dark and something on the line that was not ordered; a single long way down, with no way round anything, 4 floors down',
+    setPiece: { floor: 2, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 10,
@@ -1470,6 +1517,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_048', name: 'The Blackstair Ziggurat', themeId: 'jungle_ziggurat', style: 'gauntlet',
     description: 'stepped stone under vine, loud with insects and drums; a single long way down, with no way round anything, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 12,
@@ -1497,6 +1545,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_049', name: 'The Shadowfang Sepulchre', themeId: 'frozen_necropolis', style: 'catacomb',
     description: 'streets of ice between tombs, the dead very well kept; a grid of cells and ossuaries, every one occupied, 3 floors down',
+    setPiece: { floor: 1, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 6,
@@ -1524,6 +1573,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_050', name: 'Mirefang Spire', themeId: 'sky_citadel', style: 'ring',
     description: 'a fortress on a cloud, reached by a stair that ends in sky; chambers set in a ring about a great central hall, 3 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 10,
@@ -1551,6 +1601,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_051', name: 'The Cap-halls of Starstair', themeId: 'fungal_grotto', style: 'lair',
     description: 'caps the size of roofs and a floor that gives a little; one great chamber with everything else leading to it, 3 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 7, y0: 14,
@@ -1578,6 +1629,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_052', name: 'Greydelve Cove', themeId: 'pirate_cove', style: 'cavern',
     description: 'tide-pool cells and a bell that rings when the water reaches it; water-carved caves that open and close without warning, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -1605,6 +1657,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_053', name: 'Ravenwatch Wreck', themeId: 'astral_wreck', style: 'gauntlet',
     description: 'stars on the floor and cargo from nowhere; a single long way down, with no way round anything, 6 floors down',
+    setPiece: { floor: 3, room: 7, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 12,
@@ -1653,6 +1706,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_054', name: 'The Lanterndeep Vault', themeId: 'desert_tomb', style: 'catacomb',
     description: 'false doors, true traps, and the sand still coming in; a grid of cells and ossuaries, every one occupied, 4 floors down',
+    setPiece: { floor: 2, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -1687,6 +1741,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_055', name: 'Hollowwick Playhouse', themeId: 'haunted_theatre', style: 'ring',
     description: 'footlights that follow you and applause from nowhere; chambers set in a ring about a great central hall, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 7, y0: 10,
@@ -1721,6 +1776,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_056', name: 'The Serpentfen Dreaming', themeId: 'dream_labyrinth', style: 'ring',
     description: 'a place someone is dreaming, that changes when they turn over; chambers set in a ring about a great central hall, 3 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 10,
@@ -1748,6 +1804,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_057', name: 'The Lanternfen Halls', themeId: 'ancient_dwarven_hall', style: 'catacomb',
     description: 'old stone and older grief, and forges gone cold; a grid of cells and ossuaries, every one occupied, 6 floors down',
+    setPiece: { floor: 3, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -1796,6 +1853,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_058', name: 'Starreach Court', themeId: 'feywild_glade', style: 'cavern',
     description: 'silver bark, wrong colours, and time that does not keep; water-carved caves that open and close without warning, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -1823,6 +1881,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_059', name: 'Frostwell Gallows', themeId: 'shadowfell_crossing', style: 'gauntlet',
     description: 'still black water and a weight on the soul; a single long way down, with no way round anything, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 7,
@@ -1843,6 +1902,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_060', name: 'The Saltdeep Den', themeId: 'thieves_guild_den', style: 'warren',
     description: 'tunnels, false fronts and chalk marks that mean betrayal; a knot of chambers and crooked passages, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 6, y0: 2,
@@ -1863,6 +1923,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_061', name: 'The Wyrmgate Graveyard', themeId: 'dragon_graveyard', style: 'cavern',
     description: 'bones the size of ships and the things that nest in them; water-carved caves that open and close without warning, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -1883,6 +1944,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_062', name: 'The Thornvault Pool', themeId: 'illithid_colony', style: 'warren',
     description: 'a hive of minds that would like to add yours; a knot of chambers and crooked passages, 6 floors down',
+    setPiece: { floor: 3, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 2, y0: 7,
@@ -1931,6 +1993,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_063', name: 'The Rimehollow Fane', themeId: 'sunken_temple', style: 'flooded',
     description: 'green water on mosaic floors and a scratched-out god; halls half-drowned, the way through a matter of wading, 5 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'fountain', hazard: null, line: 'a drowned hall where the water stands waist-deep' },
     floors: [
       {
         x0: 2, y0: 6,
@@ -1972,6 +2035,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_064', name: 'The Mothvault Tower', themeId: 'wizards_tower_lore_loc', style: 'ring',
     description: 'golems, grimoires, and experiments that outlived the experimenter; chambers set in a ring about a great central hall, 2 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 7, y0: 10,
@@ -1992,6 +2056,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_065', name: 'Lanterncross Warrens', themeId: 'goblin_warren', style: 'warren',
     description: 'reeking burrows braced with stolen timber; a knot of chambers and crooked passages, 4 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 4, y0: 10,
@@ -2026,6 +2091,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_066', name: 'The Lanternfen Barrow', themeId: 'royal_crypt', style: 'catacomb',
     description: 'a dynasty\'s dead, and their servants, still in service; a grid of cells and ossuaries, every one occupied, 2 floors down',
+    setPiece: { floor: 1, room: 12, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 5, y0: 6,
@@ -2046,6 +2112,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_067', name: 'Crowhold Maw', themeId: 'abyssal_rift', style: 'lair',
     description: 'heat, screaming, and a great deal of red; one great chamber with everything else leading to it, 2 floors down',
+    setPiece: { floor: 1, room: 4, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 5, y0: 8,
@@ -2066,6 +2133,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_068', name: 'The Glasscrown Furnace', themeId: 'elemental_node_fire', style: 'lair',
     description: 'vents, magma, and things that live in both; one great chamber with everything else leading to it, 2 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 9, y0: 4,
@@ -2086,6 +2154,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_069', name: 'Stormfold Keep', themeId: 'vampire_castle', style: 'ring',
     description: 'a court kept for three centuries by a host who does not age; chambers set in a ring about a great central hall, 3 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 9, y0: 11,
@@ -2113,6 +2182,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_070', name: 'Vesperfold Orrery', themeId: 'celestial_observatory', style: 'temple',
     description: 'an orrery under a painted sky and guardians who take it seriously; symmetrical halls built to a plan, and a plan built to a god, 2 floors down',
+    setPiece: { floor: 1, room: 8, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 13, y0: 4,
@@ -2133,6 +2203,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_071', name: 'Nightjarmoor Salt-galleries', themeId: 'salt_mine_deeps', style: 'gauntlet',
     description: 'white galleries that glitter and dry the mouth; a single long way down, with no way round anything, 4 floors down',
+    setPiece: { floor: 2, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 7,
@@ -2167,6 +2238,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_072', name: 'Mirefold Lighthouse', themeId: 'drowned_lighthouse', style: 'flooded',
     description: 'a lamp burning under the waterline and things swimming toward it; halls half-drowned, the way through a matter of wading, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'fountain', hazard: null, line: 'a drowned hall where the water stands waist-deep' },
     floors: [
       {
         x0: 2, y0: 5,
@@ -2187,6 +2259,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_073', name: 'The Wards of Barrowwick', themeId: 'plague_hospice', style: 'warren',
     description: 'a chapel with the doors nailed and beds still warm; a knot of chambers and crooked passages, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 2, y0: 7,
@@ -2214,6 +2287,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_074', name: 'Lanternhold Stair', themeId: 'giants_causeway', style: 'gauntlet',
     description: 'steps a fathom tall climbing into cloud; a single long way down, with no way round anything, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 13,
@@ -2234,6 +2308,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_075', name: 'The Emberfang Engine', themeId: 'clockwork_foundry', style: 'ring',
     description: 'pistons in the dark and something on the line that was not ordered; chambers set in a ring about a great central hall, 2 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 7, y0: 11,
@@ -2254,6 +2329,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_076', name: 'The Shadowfang Temple', themeId: 'jungle_ziggurat', style: 'gauntlet',
     description: 'stepped stone under vine, loud with insects and drums; a single long way down, with no way round anything, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 13,
@@ -2281,6 +2357,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_077', name: 'The Copperwick Sepulchre', themeId: 'frozen_necropolis', style: 'temple',
     description: 'streets of ice between tombs, the dead very well kept; symmetrical halls built to a plan, and a plan built to a god, 2 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 17, y0: 4,
@@ -2301,6 +2378,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_078', name: 'The Saintreach Spire', themeId: 'sky_citadel', style: 'temple',
     description: 'ramparts over nothing and a wind with teeth; symmetrical halls built to a plan, and a plan built to a god, 2 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 18, y0: 4,
@@ -2321,6 +2399,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_079', name: 'The Glassmere Grotto', themeId: 'fungal_grotto', style: 'cavern',
     description: 'caps the size of roofs and a floor that gives a little; water-carved caves that open and close without warning, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -2348,6 +2427,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_080', name: 'Gloomcrown Landing', themeId: 'pirate_cove', style: 'cavern',
     description: 'a sea-cave of rotting hulls and unspent gold; water-carved caves that open and close without warning, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'hazard', hazard: 'collapsing_bridge', line: 'a rope bridge over a black chasm' },
     floors: [
       {
         x0: 1, y0: 1,
@@ -2375,6 +2455,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_081', name: 'The Hulk of Greyhollow', themeId: 'astral_wreck', style: 'gauntlet',
     description: 'stars on the floor and cargo from nowhere; a single long way down, with no way round anything, 6 floors down',
+    setPiece: { floor: 3, room: 7, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 11,
@@ -2423,6 +2504,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_082', name: 'The Vault of Rimewick', themeId: 'desert_tomb', style: 'temple',
     description: 'false doors, true traps, and the sand still coming in; symmetrical halls built to a plan, and a plan built to a god, 3 floors down',
+    setPiece: { floor: 1, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 18, y0: 4,
@@ -2450,6 +2532,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_083', name: 'The Playhouse of Mothcross', themeId: 'haunted_theatre', style: 'ring',
     description: 'footlights that follow you and applause from nowhere; chambers set in a ring about a great central hall, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 10,
@@ -2484,6 +2567,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_084', name: 'The Bellwatch Dreaming', themeId: 'dream_labyrinth', style: 'warren',
     description: 'a place someone is dreaming, that changes when they turn over; a knot of chambers and crooked passages, 4 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 4, y0: 2,
@@ -2518,6 +2602,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_085', name: 'The Starhall Undercroft', themeId: 'ancient_dwarven_hall', style: 'catacomb',
     description: 'pillars thicker than trees and runes on every surface; a grid of cells and ossuaries, every one occupied, 3 floors down',
+    setPiece: { floor: 1, room: 12, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 5, y0: 6,
@@ -2545,6 +2630,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_086', name: 'Harrowcross Court', themeId: 'feywild_glade', style: 'ring',
     description: 'silver bark, wrong colours, and time that does not keep; chambers set in a ring about a great central hall, 2 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 11,
@@ -2565,6 +2651,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_087', name: 'Kingdelve Shade', themeId: 'shadowfell_crossing', style: 'warren',
     description: 'still black water and a weight on the soul; a knot of chambers and crooked passages, 2 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 2, y0: 8,
@@ -2585,6 +2672,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_088', name: 'The Den of Barrowspire', themeId: 'thieves_guild_den', style: 'catacomb',
     description: 'safehouses under the city and traps on every vault; a grid of cells and ossuaries, every one occupied, 4 floors down',
+    setPiece: { floor: 2, room: 11, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 5,
@@ -2619,6 +2707,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_089', name: 'Copperwatch Roost', themeId: 'dragon_graveyard', style: 'lair',
     description: 'a valley where dragons go to die and kobolds go to worship; one great chamber with everything else leading to it, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 3, y0: 11,
@@ -2653,6 +2742,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_090', name: 'The Hive of Duskwick', themeId: 'illithid_colony', style: 'warren',
     description: 'pools of thought and tentacles in the dark; a knot of chambers and crooked passages, 5 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 5, y0: 5,
@@ -2694,6 +2784,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_091', name: 'The Lanterndeep Sanctum', themeId: 'sunken_temple', style: 'flooded',
     description: 'green water on mosaic floors and a scratched-out god; halls half-drowned, the way through a matter of wading, 3 floors down',
+    setPiece: { floor: 1, room: 6, kind: 'fountain', hazard: null, line: 'a drowned hall where the water stands waist-deep' },
     floors: [
       {
         x0: 7, y0: 4,
@@ -2721,6 +2812,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_092', name: 'The Athenaeum of Wyrmmere', themeId: 'wizards_tower_lore_loc', style: 'ring',
     description: 'golems, grimoires, and experiments that outlived the experimenter; chambers set in a ring about a great central hall, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 9, y0: 11,
@@ -2755,6 +2847,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_093', name: 'The Holes of Nightjarmere', themeId: 'goblin_warren', style: 'warren',
     description: 'reeking burrows braced with stolen timber; a knot of chambers and crooked passages, 4 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'forge', hazard: null, line: 'a forge still hot in the middle of the warren' },
     floors: [
       {
         x0: 4, y0: 4,
@@ -2789,6 +2882,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_094', name: 'Bloodreach Sepulchre', themeId: 'royal_crypt', style: 'catacomb',
     description: 'a dynasty\'s dead, and their servants, still in service; a grid of cells and ossuaries, every one occupied, 5 floors down',
+    setPiece: { floor: 2, room: 13, kind: 'prison', hazard: null, line: 'a cell block of a hundred doors' },
     floors: [
       {
         x0: 4, y0: 6,
@@ -2830,6 +2924,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_095', name: 'The Pit of Mothreach', themeId: 'abyssal_rift', style: 'lair',
     description: 'heat, screaming, and a great deal of red; one great chamber with everything else leading to it, 3 floors down',
+    setPiece: { floor: 1, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 3, y0: 6,
@@ -2857,6 +2952,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_096', name: 'The Furnace of Ravendeep', themeId: 'elemental_node_fire', style: 'lair',
     description: 'a place where the stone itself burns; one great chamber with everything else leading to it, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'sarcophagus', hazard: null, line: 'a single vast sarcophagus in the lair' },
     floors: [
       {
         x0: 11, y0: 9,
@@ -2891,6 +2987,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_097', name: 'Ravenhall Court', themeId: 'vampire_castle', style: 'ring',
     description: 'a castle where the lamps are lit and the windows are not; chambers set in a ring about a great central hall, 4 floors down',
+    setPiece: { floor: 2, room: 5, kind: 'ritual_chamber', hazard: null, line: 'a circle of standing stones in the great hall' },
     floors: [
       {
         x0: 8, y0: 10,
@@ -2925,6 +3022,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_098', name: 'The Stormwick Heights', themeId: 'celestial_observatory', style: 'temple',
     description: 'an orrery under a painted sky and guardians who take it seriously; symmetrical halls built to a plan, and a plan built to a god, 5 floors down',
+    setPiece: { floor: 2, room: 7, kind: 'throne', hazard: null, line: 'a throne room at the heart of the nave' },
     floors: [
       {
         x0: 15, y0: 4,
@@ -2966,6 +3064,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_099', name: 'The Widowhold Deeps', themeId: 'salt_mine_deeps', style: 'gauntlet',
     description: 'preserved bodies in the walls and a wheel still turning; a single long way down, with no way round anything, 4 floors down',
+    setPiece: { floor: 2, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 8,
@@ -3000,6 +3099,7 @@ export const PREBUILT_DUNGEONS: PrebuiltDungeon[] = [
   {
     id: 'prebuilt_100', name: 'The Murkdelve Lantern', themeId: 'drowned_lighthouse', style: 'gauntlet',
     description: 'a stair that spirals down where it should spiral up; a single long way down, with no way round anything, 4 floors down',
+    setPiece: { floor: 2, room: 6, kind: 'hazard', hazard: 'chasm_climb', line: 'a sheer climb where the way simply stops' },
     floors: [
       {
         x0: 3, y0: 6,

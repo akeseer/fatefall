@@ -549,9 +549,23 @@ def main():
             monsters, boss = populate(rng, f, seen, theme, level, last, depth)
             x0, y0, rows = encode(f)
             floors.append({'x0': x0, 'y0': y0, 'rows': rows, 'rooms': f.rooms, 'monsters': monsters, 'boss': boss})
+        # A set piece on a middle floor: the thing the dungeon is remembered for.
+        piece_floor = max(1, depth // 2)
+        pieces = {
+            'cavern': ('hazard', 'collapsing_bridge', 'a rope bridge over a black chasm'),
+            'flooded': ('fountain', None, 'a drowned hall where the water stands waist-deep'),
+            'temple': ('throne', None, 'a throne room at the heart of the nave'),
+            'ring': ('ritual_chamber', None, 'a circle of standing stones in the great hall'),
+            'lair': ('sarcophagus', None, 'a single vast sarcophagus in the lair'),
+            'gauntlet': ('hazard', 'chasm_climb', 'a sheer climb where the way simply stops'),
+            'catacomb': ('prison', None, 'a cell block of a hundred doors'),
+            'warren': ('forge', None, 'a forge still hot in the middle of the warren'),
+        }
+        kind, hazard, line = pieces.get(style, ('throne', None, 'a throne that is not empty'))
+        set_piece = {'floor': piece_floor, 'room': max(1, len(floors[piece_floor - 1]['rooms']) // 2), 'kind': kind, 'hazard': hazard, 'line': line}
         desc = rng.choice(DESCRIPTIONS.get(theme, ['a dark place with a bad reputation']))
         blurb = f"{desc}; {STYLE_LINES[style]}, {depth} floors down"
-        dungeons.append({'id': f'prebuilt_{index + 1:03d}', 'name': name, 'themeId': theme, 'style': style, 'description': blurb, 'floors': floors})
+        dungeons.append({'id': f'prebuilt_{index + 1:03d}', 'name': name, 'themeId': theme, 'style': style, 'description': blurb, 'floors': floors, 'setPiece': set_piece})
 
     lines = []
     lines.append('/**')
@@ -569,6 +583,8 @@ def main():
         lines.append('  {')
         lines.append(f"    id: {js(d['id'])}, name: {js(d['name'])}, themeId: {js(d['themeId'])}, style: {js(d['style'])},")
         lines.append(f"    description: {js(d['description'])},")
+        sp = d['setPiece']
+        lines.append(f"    setPiece: {{ floor: {sp['floor']}, room: {sp['room']}, kind: {js(sp['kind'])}, hazard: {js(sp['hazard']) if sp['hazard'] else 'null'}, line: {js(sp['line'])} }},")
         lines.append('    floors: [')
         for fl in d['floors']:
             lines.append('      {')

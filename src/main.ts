@@ -347,6 +347,16 @@ class Game {
   private merchantOffers = new Set<string>();
   private lastTownTier: Record<string, number> = {};
   get dayIndex(): number { return Math.floor(this.clock.elapsed / DAY_MS); }
+  /** Keys to the great vaults. Rides in the save. */
+  public vaultKeys = 0;
+  /** This floor's warring bands, if it has them, and whose side the party took. */
+  private floorFactions: { a: string; b: string; chosen: string | null } | null = null;
+  /** A floor that is about freeing everyone in it. */
+  private rescue: { total: number; freed: number } | null = null;
+  /** The floor's own weather: spores, cold, or gas. */
+  private floorWeather: 'spores' | 'cold' | 'gas' | null = null;
+  /** Rooms where the party has laid caltrops or a tripwire. */
+  private partyTraps = new Set<number>();
   private retireOffered = new Set<string>();
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
@@ -935,6 +945,8 @@ class Game {
     else this.populateDungeonFloor();
     this.dressFloor();
     this.weatherBelow();
+    this.placeSetPiece(fixedFloor);
+    this.dressFloorMore();
     if (this.traps.length > 0) {
       this.hud.addCombatMessage(`The dungeon is riddled with ${this.traps.length} hidden hazard${this.traps.length === 1 ? '' : 's'} — watch your step.`, '#a86');
     }
@@ -966,6 +978,7 @@ class Game {
     this.hud.addCombatMessage(`Welcome to ${this.dungeonName}!`, '#ffd700');
     this.placeRivals();
     this.placeLieutenant();
+    this.consequences();
     this.useDungeonMap();
     this.tickHirelings();
     // A quest that cares about depth may complete the moment this floor lands.
@@ -1594,6 +1607,8 @@ class Game {
       if (entered?.kind === 'puzzle_room' && !entered.used) this.poseRiddle(entered);
       if (entered?.kind === 'altar' && !entered.used) this.shrineChoice(entered);
       if (entered?.kind === 'chest' && !entered.used) this.detectMagicOn(entered);
+      if (entered?.kind === 'prison' && !entered.used && this.rescue) this.roomFeatures.perform('feature_prison');
+      if (this.floorWeather === 'spores' && Math.random() < 0.35) this.sporeRoom();
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
       // closes a little of the party's hurts.
       if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
@@ -1695,6 +1710,8 @@ class Game {
     this.noteProgress();
     this.beginTransition('blinds');
     this.combatEngine.defenseBonus = 0;
+    this.combatEngine.gasPerRound = this.mode === GameMode.Dungeon && this.floorWeather === 'gas' ? 1 : 0;
+    this.springPartyTrap(monsters);
     this.summonAlly(monsters);
     this.combatEngine.onRangedShot = () => { if (this.arrows <= 0) return false; this.arrows--; if (this.arrows === 5) this.hud.addCombatMessage('\ud83c\udff9 Five arrows left in the quiver.', '#a98'); return true; };
     // Cover: pillars, roots and cogs to fight behind.
@@ -2900,7 +2917,8 @@ class Game {
   /** The torch burns down; the next is lit, or the dark comes. */
   private tickTorch(): void {
     if (this.torchLeft > 0) {
-      this.torchLeft--;
+      this.torchLeft -= this.floorWeather === 'cold' ? 2 : 1;
+      if (this.torchLeft < 0) this.torchLeft = 0;
       if (this.torchLeft === 120) this.hud.addCombatMessage('\ud83d\udd25 The torch gutters. Not long left in it.', '#a98');
       if (this.torchLeft === 0) this.relight();
     }
@@ -3527,6 +3545,184 @@ class Game {
     if (this.overworld) this.overworld.map.reveal(this.roamer.x, this.roamer.y, 2);
   }
 
+  // ── Set pieces, factions, rescues, the floor's weather, traps, companions ──
+
+  /** The pre-built dungeon's set piece: one room on one floor, made as the data says. */
+  private placeSetPiece(fixedFloor: PrebuiltFloor | null): void {
+    const pb = this.currentPrebuilt();
+    if (!fixedFloor || !pb?.setPiece || pb.setPiece.floor !== this.dungeonLevel) return;
+    const room = this.rooms[Math.min(this.rooms.length - 1, pb.setPiece.room)];
+    if (!room) return;
+    const f = assignFeature(room, this.dungeonLevel, { force: true });
+    if (!f) return;
+    f.kind = pb.setPiece.kind as RoomFeature['kind'];
+    if (pb.setPiece.hazard) { f.hazard = pb.setPiece.hazard as RoomFeature['hazard']; const def = hazardByKind(f.hazard!); f.name = def.name; f.entryLine = def.entryLine; f.inspect = def.inspect; }
+    else { f.name = pb.setPiece.line; f.entryLine = `Here is ${pb.setPiece.line}, the thing this place is remembered for.`; }
+    f.used = false;
+    this.hud.addCombatMessage(`\ud83d\udcdc ${pb.name} is remembered for ${pb.setPiece.line}. It is on this floor.`, '#a8a');
+  }
+
+  /** Warring bands, a floor of prisoners, and what the air is doing. */
+  private dressFloorMore(): void {
+    this.floorFactions = null;
+    this.rescue = null;
+    this.partyTraps.clear();
+    this.floorWeather = null;
+    if (this.mode !== GameMode.Dungeon) return;
+    // Two humanoid kinds with two or more each: a war the party can pick a side in.
+    const counts = new Map<string, number>();
+    for (const m of this.monsters) if (m.isAlive && m.template.type === 'humanoid' && !/\(Boss\)/.test(m.template.name)) counts.set(m.template.id, (counts.get(m.template.id) ?? 0) + 1);
+    const bands = [...counts.entries()].filter(([, n]) => n >= 2).map(([id]) => id);
+    if (bands.length >= 2 && Math.random() < 0.6) {
+      this.floorFactions = { a: bands[0], b: bands[1], chosen: null };
+      const na = getMonsterTemplate(bands[0])?.name ?? bands[0], nb = getMonsterTemplate(bands[1])?.name ?? bands[1];
+      const wasPaused = this.paused;
+      this.setPaused(true);
+      this.hud.showStoryChoice(`\u2694 Two bands hold this floor and hate each other more than they hate the party: the ${na}s and the ${nb}s. A word in the right ear could turn one against the other.`, [
+        { id: 'a', label: `Side with the ${na}s`, text: `The ${na}s stand aside for the party; the ${nb}s get their reinforcements and their fury.` },
+        { id: 'b', label: `Side with the ${nb}s`, text: `The ${nb}s stand aside; the ${na}s dig in.` },
+        { id: 'none', label: 'Take no side', text: 'The party fights everything, as usual.' },
+      ], (o) => {
+        if (!wasPaused) this.setPaused(false);
+        if (o.id === 'none' || !this.floorFactions) return;
+        const friend = o.id === 'a' ? this.floorFactions.a : this.floorFactions.b;
+        const foe = o.id === 'a' ? this.floorFactions.b : this.floorFactions.a;
+        this.floorFactions.chosen = friend;
+        this.monsters = this.monsters.filter(m => m.template.id !== friend || /\(Boss\)/.test(m.template.name));
+        const tpl = getMonsterTemplate(foe);
+        if (tpl) for (let i = 0; i < 2; i++) { const room = this.rooms[1 + Math.floor(Math.random() * Math.max(1, this.rooms.length - 2))]; const pos = room && findEmptyTile(this.map, room, this.monsters); if (pos) this.spawnMonster(tpl, pos).alertLevel = 2; }
+        const gold = 20 + this.dungeonLevel * 15;
+        this.addGold(gold);
+        this.tally('factions');
+        this.hud.addCombatMessage(`\ud83e\udd1d The ${getMonsterTemplate(friend)?.name ?? friend}s melt back into their tunnels, and leave ${gold} gold on a rock as earnest. The ${tpl?.name ?? foe}s have heard, and are coming.`, '#e8b45a');
+      }, { seconds: 20, fallback: () => ({ id: 'none', label: 'Take no side', text: '' }) });
+    }
+    // A rescue floor: three cells, all to be opened.
+    if (this.dungeonLevel >= 2 && Math.random() < 0.15) {
+      const cells = this.rooms.slice(1, -1).filter(r => r.feature?.kind !== 'hazard').slice(0, 3);
+      if (cells.length === 3) {
+        for (const r of cells) { const f = assignFeature(r, this.dungeonLevel, { force: true }); if (f) { f.kind = 'prison'; f.name = 'a barred cell with someone in it'; f.entryLine = 'A cell door, barred from this side, and a face at the grate that has stopped expecting anyone.'; f.inspect = 'The bar is heavy but not locked.'; f.used = false; } }
+        this.rescue = { total: 3, freed: 0 };
+        this.hud.addCombatMessage('\ud83d\udd12 A face at a grate, and another, and another: this floor is a gaol, and everyone in it is waiting on the party.', '#e8b45a');
+      }
+    }
+    // The floor's weather.
+    if (Math.random() < 0.25) {
+      const w = (['spores', 'cold', 'gas'] as const)[Math.floor(Math.random() * 3)];
+      this.floorWeather = w;
+      this.hud.addCombatMessage(w === 'spores' ? '\u2601 The air on this floor drifts with spores. Every room is a breath held.'
+        : w === 'cold' ? '\u2744 A cold snap has this floor in its grip. Torches gutter twice as fast.'
+        : '\u2601 The air on this floor is wrong: yellow, and heavier the longer a fight goes on.', '#88a');
+    }
+  }
+
+  /** A room full of spores: everyone saves or is poisoned. */
+  private sporeRoom(): void {
+    const items: { roll: DiceRollEvent | null; line: string; color: string }[] = [];
+    for (const m of this.party.conscious) {
+      const { result, event } = this.rollHeld(() => savingThrow(m.conMod, 11, { label: `${m.name} \u2014 Constitution save (spores)` }));
+      if (!result.success) m.applyCondition('poisoned', 2, 'Poisoned', 'spores');
+      items.push({ roll: event, line: result.success ? `${m.name} holds a breath through the worst of it.` : `${m.name} breathes it in and goes green.`, color: result.success ? '#8c8' : '#c66' });
+    }
+    void this.presentRolls([{ roll: null, line: '\u2601 The spores are thick in here.', color: '#88a' }, ...items]);
+  }
+
+  /** The host's word that a prisoner is free; on a rescue floor it counts. */
+  notePrisonerFreed(): void {
+    if (!this.rescue) return;
+    this.rescue.freed++;
+    if (this.rescue.freed < this.rescue.total) { this.hud.addCombatMessage(`\ud83d\udd13 ${this.rescue.freed} of ${this.rescue.total} freed.`, '#8cf'); return; }
+    const gold = 40 + this.dungeonLevel * 20;
+    this.addGold(gold);
+    this.grantXp(() => 40 + this.dungeonLevel * 10);
+    this.tally('rescues');
+    this.rescue = null;
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryCard({ kicker: 'Everyone', title: 'A floor emptied of its prisoners', body: `The last door swings and the last of them comes out blinking. They go up the stair together, holding each other up, and the one who can still talk presses ${gold} gold into the party's hands and says the town will hear of this. It will.` }, () => { if (!wasPaused) this.setPaused(false); }, { seconds: 12 });
+  }
+
+  vaultKeysHeld(): number { return this.vaultKeys; }
+  spendVaultKeys(n: number): void { this.vaultKeys = Math.max(0, this.vaultKeys - n); this.tally('vaults'); }
+
+  /** Caltrops in the doorway: the next fight in this room opens with the foes stepping on them. */
+  private setPartyTrap(): void {
+    if (this.mode !== GameMode.Dungeon) { this.hud.addCombatMessage('Traps are for corridors and rooms below.', '#886'); return; }
+    const idx = this.currentRoomIndex();
+    if (idx < 0) { this.hud.addCombatMessage('The party is between rooms; there is nothing to trap.', '#886'); return; }
+    if (this.partyTraps.size >= 2) { this.hud.addCombatMessage('The party is out of caltrops and wire for this floor.', '#886'); return; }
+    if (this.partyTraps.has(idx)) { this.hud.addCombatMessage('This room is already trapped.', '#886'); return; }
+    this.partyTraps.add(idx);
+    const who = this.bestDisarmer();
+    this.hud.addCombatMessage(`\ud83e\udea4 ${who.name} scatters caltrops across the doorway and runs a wire at shin height. Whatever comes in next will not come in well.`, '#8cf');
+  }
+
+  private springPartyTrap(foes: Monster[]): void {
+    if (this.mode !== GameMode.Dungeon) return;
+    const idx = this.currentRoomIndex();
+    if (idx < 0 || !this.partyTraps.has(idx)) return;
+    this.partyTraps.delete(idx);
+    let hurt = 0;
+    for (const m of foes) { if (!m.isAlive) continue; const dmg = rollDice(1, 6) + 1; m.takeDamage(dmg); hurt++; }
+    this.tally('traps_sprung');
+    this.hud.addCombatMessage(`\ud83e\udea4 The caltrops take ${hurt} of them in the feet and the wire takes the first one over. The fight starts with the party ahead.`, '#e8b45a');
+  }
+
+  /** What was spared comes back; what was slaughtered has kin. */
+  private consequences(): void {
+    const flags = this.story?.flags ?? [];
+    if (this.mode !== GameMode.Dungeon || this.dungeonLevel < 3) return;
+    if (flags.includes('merciful') && !(this.counters.consequence_merciful ?? 0)) {
+      this.tally('consequence_merciful');
+      const room = this.rooms[Math.max(1, Math.floor(this.rooms.length * 0.5))];
+      const pos = room && findEmptyTile(this.map, room, this.monsters);
+      const base = getRandomMonster(Math.max(1, this.dungeonLevel));
+      if (pos) {
+        const m = this.spawnMonster({ ...base, name: 'the one the party spared', hp: Math.round(base.hp * 1.5), xp: base.xp * 2 }, pos);
+        m.alertLevel = 2;
+        this.hud.addCombatMessage('\ud83d\udc41 Mercy has a memory. The one the party let go has been waiting on this floor, and has brought friends, and a grudge.', '#e0705f');
+      }
+    } else if (flags.includes('ruthless') && !(this.counters.consequence_ruthless ?? 0)) {
+      this.tally('consequence_ruthless');
+      const room = this.rooms[Math.max(1, Math.floor(this.rooms.length * 0.5))];
+      const base = getRandomMonster(Math.max(0.5, this.dungeonLevel * 0.6), this.dungeonTheme?.id);
+      let n = 0;
+      for (let i = 0; i < 3; i++) { const pos = room && findEmptyTile(this.map, room, this.monsters); if (pos) { this.spawnMonster({ ...base, name: `${base.name} (kin of the slain)` }, pos).alertLevel = 2; n++; } }
+      if (n > 0) this.hud.addCombatMessage('\ud83d\udc41 Ruthlessness has a memory too. Kin of the slaughtered have come down looking for the ones who did it.', '#e0705f');
+    }
+  }
+
+  /** A companion for the act: someone with reason to want the villain dead. */
+  hireCompanion(act: { index: number; bossName: string; monsterType: string }): void {
+    if (this.party.members.length >= 6 || this.party.members.some(m => m.id.startsWith('companion_'))) return;
+    const classId = ['undead', 'vampire', 'shade', 'spirit'].includes(act.monsterType) ? 'cleric' : ['fiend', 'demon', 'devil', 'yugoloth'].includes(act.monsterType) ? 'paladin' : ['aberration', 'outsider', 'dreamborn'].includes(act.monsterType) ? 'wizard' : 'ranger';
+    const cls = CLASSES.find(c => c.id === classId) ?? CLASSES[0];
+    const race = RACES[Math.floor(Math.random() * RACES.length)];
+    const names = ['Idris Vell', 'Maren Coldwater', 'Tobiah Ash', 'Serra Quill', 'Oswin Blackrook', 'Neve Harrow'];
+    const name = names[act.index % names.length];
+    const level = Math.max(1, Math.round(this.party.members.reduce((s, m) => s + m.level, 0) / Math.max(1, this.party.members.length)));
+    const c = new GameCharacter(`companion_${act.index}`, name, cls, race, { str: 13, dex: 13, con: 13, int: 12, wis: 12, cha: 12 });
+    for (let i = 1; i < level; i++) c.levelUp();
+    c.isTemporaryCompanion = true;
+    c.background = 'Folk Hero';
+    this.party.addMember(c);
+    this.hud.addCombatMessage(`\ud83e\udd1d ${name}, a ${race.name.toLowerCase()} ${cls.name.toLowerCase()} with a personal quarrel with ${act.bossName}, asks to walk with the party until it is settled. The party makes room.`, '#e8b45a');
+    this.expeditionJournal.push(`${name} joined for the act against ${act.bossName}`);
+    this.hud.setParty(this.party);
+  }
+
+  dismissCompanion(): void {
+    const i = this.party.members.findIndex(m => m.id.startsWith('companion_'));
+    if (i < 0) return;
+    const c = this.party.members[i];
+    this.party.members.splice(i, 1);
+    if (this.party.formation[i]) this.party.formation.splice(i, 1);
+    if (i < this.party.leaderIndex) this.party.leaderIndex--;
+    else if (i === this.party.leaderIndex) this.party.leaderIndex = 0;
+    this.hud.addCombatMessage(`\ud83e\udd1d ${c.name}'s quarrel is settled. They clasp every hand in turn and take the road home.`, '#a8a');
+    this.hud.setParty(this.party);
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3688,6 +3884,10 @@ class Game {
             this.hud.addCombatMessage(`\ud83c\udfc6 ${name}'s head comes off with some effort and goes in a sack. A tavern somewhere will want it over the bar.`, '#e8b45a');
           }
           this.feedCurses(slainMonsters.filter(m => !m.fled).length);
+          if (this.dungeonLevel >= 3 && slainMonsters.some(m => !m.fled && /\(Boss\)/.test(m.template.name)) && Math.random() < 0.35) {
+            this.vaultKeys++;
+            this.hud.addCombatMessage(`\ud83d\udddd A heavy key of black iron, not for any door on this floor. The party holds ${this.vaultKeys} such.`, '#ffd700');
+          }
           this.checkEncumbrance();
           if (slainMonsters.some(m => m.hasKey && !m.fled)) {
             this.floorKeyHeld = true;
@@ -7819,6 +8019,18 @@ class Game {
       this.hud.addCombatMessage(holdOrder
         ? `\u23f8 ${members.map(m => m.name).join(', ')} will hold and wait for the word.`
         : `\u25b6 ${members.map(m => m.name).join(', ')} may act again.`, '#8cf');
+      return;
+    }
+    // "set a trap" / "caltrops": the next fight in this room opens on the party's terms.
+    if (/^(?:set (?:a )?trap|caltrops|tripwire|lay (?:a )?trap)$/i.test(text)) { this.setPartyTrap(); return; }
+    // "new game plus": a finished tale reseeds, harder, with the party as it stands.
+    if (/^new game plus$/i.test(text)) {
+      if (!this.story?.complete) { this.hud.addCombatMessage('The tale is not told yet. New Game Plus waits for the die to be made whole.', '#886'); return; }
+      this.storyController.beginNewRun();
+      if (this.story) this.story.difficultyShift += 2;
+      this.tally('ngplus');
+      this.hud.addCombatMessage(`\u2726 The die shatters again, and the party \u2014 ${this.party.partyName}, with every title it earned \u2014 hears the first rumour of a new tale. Harder this time.`, '#ffd700');
+      this.storyController.afterStart();
       return;
     }
     // "map": the world as seen. "claim the ruins": a base. "track": where the beast is.
