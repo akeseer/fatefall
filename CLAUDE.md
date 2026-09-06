@@ -186,3 +186,12 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   an escortee (`takeEscortee`), or a doppelganger. The living dungeon (`maybeLivingDungeonEvent`)
   sends a patrol from a visited room or drops a corridor tile, reverting any cave-in that would
   cut the party off from the stairs or the boss hall.
+- **Riddle doors** (`src/events/Riddles.ts`): a puzzle room poses a riddle on first entry
+  (`poseRiddle`; `RoomFeature.riddleId` remembers it). `handleDMCommand` checks a typed line
+  against the pending riddle before the parser, so no intent or retrain is needed; a right answer
+  pays double. After `RIDDLE_PATIENCE_TICKS` the sharpest member rolls Investigation
+  (`attemptPuzzle`, also the `feature_puzzle` order). **Tavern**: the dice game rolls two real
+  d20s on the tray (`playDiceGame`); `carouse` is a tavern service (rumour, reputation, a
+  Constitution save or exhaustion). **Level-up ceremony**: `checkLevelUps` runs after every sim
+  step and compares levels, so a level gained anywhere queues a choice card (`levelUpCeremony`:
+  +3 HP, +1 key ability, or a fated 17 via the Luck die), one at a time and never mid-fight.

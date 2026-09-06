@@ -45,7 +45,7 @@ import { HUD, GameSpeed } from './ui/HUD';
 import { createParty, createCharacter } from './game/CharacterFactory';
 import { Direction, GAME_HEIGHT, GAME_WIDTH, TILE_SIZE, Vector2, manhattan, vec2 } from './engine/types';
 import { TileType } from './world/TileMap';
-import { rollDice, abilityModifier, getSpellById, isCaster, ordinal, CLASSES, RACES, SPELLS } from './data/gameData';
+import { rollDice, abilityModifier, getSpellById, isCaster, ordinal, CLASSES, RACES, SPELLS, type Ability } from './data/gameData';
 import { CompendiumEntry } from './ui/DnDCompendium';
 import { rollD20, savingThrow, abilityCheck } from './rules/Rules';
 import { hazardByKind, hazardDc, readHazard, type HazardRoll } from './events/Hazards';
@@ -53,6 +53,8 @@ import { pickCampScene, readWatch, type CampMember } from './events/CampScenes';
 import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
 import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
+import { answersRiddle, pickRiddle, riddleById, riddleDc, RIDDLE_PATIENCE_TICKS, type Riddle } from './events/Riddles';
+import { pickRumor } from './world/TownLife';
 import { dealPersonalQuests, debtPayable, heirloomsPossibleOn, hookLine, pilgrimageArrives, rivalsDueOn, type PersonalQuest } from './events/PersonalQuests';
 import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules/DiceEvents';
 import { grantLuckDie, onLuckDieSpent } from './rules/LuckDie';
@@ -279,6 +281,13 @@ class Game {
   private escortee: { name: string; reward: number } | null = null;
   /** Exploration ticks toward the next thing the dungeon does on its own. */
   private livingTicks = 0;
+  /** The riddle door the party stands before, and how long they have stood there. */
+  private pendingRiddle: { feature: RoomFeature; riddle: Riddle; ticks: number } | null = null;
+  /** Levels last seen per member, so a level-up anywhere gets its ceremony. */
+  private knownLevels = new Map<string, number>();
+  /** Members waiting for their ceremony, in order; one card at a time. */
+  private ceremonyQueue: GameCharacter[] = [];
+  private ceremonyOpen = false;
   private combatTickInterval: number = BattleView.TURN_MS; // ms between combat turns at 1x
   public monsterIdCounter: number = 0;
   private stuckDirCount: number = 0;
@@ -1036,6 +1045,7 @@ class Game {
           this.frameCount++;
           this.lastDt = Game.SIM_STEP_MS;
           this.update(Game.SIM_STEP_MS);
+          this.checkLevelUps();
           this.accumulator -= Game.SIM_STEP_MS;
           steps++;
         }
@@ -1148,6 +1158,7 @@ class Game {
           // corners the party, shadows pool at a shaft, or a boon finds them.
           this.maybeDungeonMoodEvent();
           this.maybeLivingDungeonEvent();
+          this.tickRiddle();
         }
       }
     } else if (this.mode === GameMode.Overworld || this.mode === GameMode.Town) {
@@ -1460,6 +1471,7 @@ class Game {
       this.manualHold('a new room');
       const entered = this.currentRoom()?.feature;
       if (entered?.kind === 'hazard' && !entered.used) void this.runHazard(entered);
+      if (entered?.kind === 'puzzle_room' && !entered.used) this.poseRiddle(entered);
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
       // closes a little of the party's hurts.
       if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
@@ -2283,6 +2295,209 @@ class Game {
   /** The current dungeon's theme id, for monsters that fit the floor. */
   private dungeonThemeId(): string | undefined {
     return this.dungeonTheme?.id ?? undefined;
+  }
+
+  // ── Riddle doors, the tavern, and the ceremony ────────────────────────
+
+  /** The puzzle room asks its question. */
+  private poseRiddle(feature: RoomFeature): void {
+    const riddle = (feature.riddleId && riddleById(feature.riddleId)) || pickRiddle();
+    feature.riddleId = riddle.id;
+    this.pendingRiddle = { feature, riddle, ticks: 0 };
+    this.hud.addCombatMessage(`\ud83d\udeaa A sealed door, and a voice from it that is not quite a voice: "${riddle.text}"`, '#d8c88a');
+    this.hud.addCombatMessage('   Answer it in a word, or the party will puzzle at it themselves.', '#887');
+    this.manualHold('a riddle door');
+  }
+
+  /** The party waits on the DM, then tries its own wits. */
+  private tickRiddle(): void {
+    const p = this.pendingRiddle;
+    if (!p) return;
+    if (this.currentRoom()?.feature !== p.feature) {
+      // Walked away: the door keeps its question for next time.
+      this.pendingRiddle = null;
+      return;
+    }
+    p.ticks++;
+    if (p.ticks >= RIDDLE_PATIENCE_TICKS) this.attemptPuzzle(p.feature, (l, c) => this.hud.addCombatMessage(l, c));
+  }
+
+  /** The sharpest mind in the party rolls against the door. */
+  attemptPuzzle(feature: RoomFeature, say: (l: string, c?: string) => void): void {
+    if (feature.used) return;
+    if (!this.pendingRiddle || this.pendingRiddle.feature !== feature) this.poseRiddle(feature);
+    const thinker = [...this.party.conscious].sort((a, b) => b.intMod - a.intMod)[0];
+    if (!thinker) return;
+    const dc = riddleDc(this.dungeonLevel);
+    const { result, event } = this.rollHeld(() => abilityCheck(thinker.intMod + (thinker.charClass.id === 'wizard' || thinker.charClass.id === 'artificer' ? thinker.profBonus : 0), dc, `${thinker.name} \u2014 Investigation`));
+    const riddle = this.pendingRiddle!.riddle;
+    if (result.success) {
+      void this.presentRolls([{ roll: event, line: `${thinker.name} frowns at the door a long moment, then says it: "${riddle.answers[0]}."`, color: '#8cf' }])
+        .then(() => this.solveRiddle('party'));
+    } else {
+      feature.used = true;
+      this.pendingRiddle = null;
+      const coin = 5 + Math.floor(Math.random() * 10);
+      void this.presentRolls([{ roll: event, line: `${thinker.name} guesses, and guesses wrong. The door goes silent for good; ${coin} gp lie in the dust beneath the lock, dropped by someone who guessed before.`, color: '#a89' }])
+        .then(() => { this.addGold(coin); say(`\ud83d\udcb0 +${coin} gold.`, '#ffd700'); });
+    }
+  }
+
+  /** The door opens: for the DM's word, generously; for the party's, well enough. */
+  private solveRiddle(by: 'dm' | 'party'): void {
+    const p = this.pendingRiddle;
+    if (!p) return;
+    this.pendingRiddle = null;
+    p.feature.used = true;
+    const base = 30 + Math.floor(Math.random() * 50);
+    const gold = by === 'dm' ? base * 2 : base;
+    const xp = by === 'dm' ? 60 : 30;
+    sfx.chest();
+    if (by === 'dm') {
+      this.hud.addCombatMessage(`\ud83d\udeaa "${p.riddle.answers[0]}." The word is yours, and the door knows it: it opens without a sound, as if it had been waiting for someone who would not guess.`, '#ffd700');
+    } else {
+      this.hud.addCombatMessage('\ud83d\udeaa The door grinds open, grudging every inch.', '#ffd700');
+    }
+    this.addGold(gold);
+    this.grantXp(() => xp);
+    this.hud.addCombatMessage(`\ud83d\udcb0 Behind it, a cache: ${gold} gold, and +${xp} XP for the wits.`, '#8cf');
+    this.noteProgress();
+    if (this.paused && this.runMode === 'manual') this.setPaused(false);
+  }
+
+  /** A dice game against the house, on the tray: the party's roller against the house's. */
+  private playDiceGame(): void {
+    const stake = 15;
+    if (this.partyGold() < stake) { this.hud.addCombatMessage('Not enough gold to sit at the table.', '#c66'); return; }
+    this.addGold(-stake);
+    const roller = [...this.party.alive].sort((a, b) => b.personality.greed - a.personality.greed)[0] ?? this.party.leader;
+    const ours = this.rollHeld(() => {
+      const n = rollD20();
+      pushDiceRoll({ kind: 'free', diceType: 'd20', label: `${roller.name} rolls the bones`, expression: 'd20', rolls: [n], total: n, outcome: n === 20 ? 'crit' : n === 1 ? 'fumble' : 'neutral' });
+      return n;
+    });
+    const house = this.rollHeld(() => {
+      const n = rollD20();
+      pushDiceRoll({ kind: 'free', diceType: 'd20', label: 'The house rolls', expression: 'd20', rolls: [n], total: n, outcome: n === 20 ? 'crit' : n === 1 ? 'fumble' : 'neutral' });
+      return n;
+    });
+    const items = [
+      { roll: ours.event, line: `\ud83c\udfb2 ${roller.name} puts ${stake} gold on the table and rolls: ${ours.result}.`, color: '#d8c88a' },
+      { roll: house.event, line: `\ud83c\udfb2 The house rolls: ${house.result}.`, color: '#d8c88a' },
+    ];
+    void this.presentRolls(items).then(() => {
+      if (ours.result === 20) {
+        this.addGold(stake * 6);
+        this.hud.addCombatMessage(`A natural 20. The table goes quiet, then loud. ${roller.name} sweeps up ${stake * 6} gold and buys the room a round.`, '#ffd700');
+      } else if (ours.result === 1) {
+        this.hud.addCombatMessage(`A natural 1. The house takes the stake, and ${roller.name}'s boots, and is not unkind about it.`, '#c44');
+      } else if (ours.result > house.result) {
+        this.addGold(stake * 3);
+        this.hud.addCombatMessage(`${roller.name} beats the house. ${stake * 3} gold comes back across the table.`, '#8cf');
+      } else if (ours.result === house.result) {
+        this.addGold(stake);
+        this.hud.addCombatMessage('A push. The stake comes back, and nobody is happy.', '#8a8');
+      } else {
+        this.hud.addCombatMessage(`The house wins. ${stake} gold gone, and a lesson nobody will learn.`, '#c66');
+      }
+      this.hud.setParty(this.party);
+      this.hud.townPanel.refresh();
+    });
+  }
+
+  /** A night out: a rumour and standing in town, and a Constitution save or a hangover. */
+  private carouse(): void {
+    const cost = 20;
+    if (!this.currentTown) return;
+    if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for a night like that.', '#c66'); return; }
+    this.addGold(-cost);
+    const town = this.currentTown;
+    const reveller = [...this.party.alive].sort((a, b) => b.chaMod - a.chaMod)[0] ?? this.party.leader;
+    const { result, event } = this.rollHeld(() => savingThrow(reveller.conMod, 12, { label: `${reveller.name} \u2014 Constitution save (the morning after)` }));
+    const rumor = pickRumor({ town });
+    this.adjustTownReputation(town.id, 1);
+    const items = [
+      { roll: null as DiceRollEvent | null, line: `\ud83c\udf7b ${reveller.name} buys the first round and the fourth, learns three names and a song, and by midnight ${town.name} has decided the party is all right.`, color: '#d8c88a' },
+      { roll: null as DiceRollEvent | null, line: `\ud83d\udde3 Someone leans in: "${rumor.text}"`, color: '#a8a' },
+      { roll: event, line: result.success
+        ? `${reveller.name} wakes clear-headed, which is frankly unfair.`
+        : `${reveller.name} wakes on the floor of the common room with a head like a struck bell.`, color: result.success ? '#8c8' : '#c84' },
+    ];
+    void this.presentRolls(items).then(() => {
+      if (!result.success) this.hud.addCombatMessage(reveller.gainExhaustion(), '#c66');
+      this.grantXp(() => 25);
+      this.hud.addCombatMessage(`\u2b50 Standing in ${town.name} rises. +25 XP for the stories.`, '#8cf');
+      this.hud.setParty(this.party);
+      this.hud.townPanel.refresh();
+    });
+  }
+
+  /** Levels compared each step: anyone who rose gets a ceremony, one at a time. */
+  private checkLevelUps(): void {
+    for (const m of this.party.members) {
+      const known = this.knownLevels.get(m.id);
+      if (known === undefined) { this.knownLevels.set(m.id, m.level); continue; }
+      if (m.level > known) {
+        this.knownLevels.set(m.id, m.level);
+        if (m.isAlive && !this.ceremonyQueue.includes(m)) this.ceremonyQueue.push(m);
+      }
+    }
+    if (!this.ceremonyOpen && this.ceremonyQueue.length > 0 && this.phase !== GamePhase.Combat) {
+      this.levelUpCeremony(this.ceremonyQueue.shift()!);
+    }
+  }
+
+  /** The class's defining ability, for the tempering choice. */
+  private keyAbility(m: GameCharacter): Ability {
+    const table: Record<string, Ability> = {
+      fighter: 'str', barbarian: 'str', paladin: 'str', blood_hunter: 'str',
+      rogue: 'dex', ranger: 'dex', monk: 'dex',
+      wizard: 'int', artificer: 'int',
+      cleric: 'wis', druid: 'wis',
+      bard: 'cha', sorcerer: 'cha', warlock: 'cha',
+    };
+    return table[m.charClass.id] ?? 'str';
+  }
+
+  /** A short rite at each new level: the party chooses what the growth becomes. */
+  private levelUpCeremony(m: GameCharacter): void {
+    this.ceremonyOpen = true;
+    const abilityName: Record<Ability, string> = { str: 'Strength', dex: 'Dexterity', con: 'Constitution', int: 'Intelligence', wis: 'Wisdom', cha: 'Charisma' };
+    const key = this.keyAbility(m);
+    const options = [
+      { id: 'vigor', label: 'Vigour', text: `Harder to put down: +3 hit points for good.` },
+      { id: 'temper', label: 'Tempering', text: `Sharpen what ${m.name} is: +1 ${abilityName[key]}${m.abilities[key] >= 20 ? ' (already at its peak; +3 hit points instead)' : ''}.` },
+      { id: 'fortune', label: 'Fortune', text: 'A fated die: the party\'s next d20 comes up a 17, whatever it is for.' },
+    ];
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    const fallback = () => {
+      const p = m.personality;
+      if (p.caution >= 6) return options[0];
+      if (p.greed >= 6) return options[2];
+      return options[1];
+    };
+    this.hud.showStoryChoice(
+      `\u2b06 ${m.name} reaches level ${m.level}. Around the fire, or wherever they stand, the others notice: something has set in ${m.name} that was not there before. What does it become?`,
+      options,
+      (o) => {
+        if (!wasPaused) this.setPaused(false);
+        this.ceremonyOpen = false;
+        if (o.id === 'vigor' || (o.id === 'temper' && m.abilities[key] >= 20)) {
+          m.baseMaxHp += 3;
+          m.hp = Math.min(m.maxHp, m.hp + 3);
+          this.hud.addCombatMessage(`\u2b06 ${m.name} \u2014 Vigour: +3 hit points (${m.maxHp} now).`, '#7c7');
+        } else if (o.id === 'temper') {
+          m.abilities[key] += 1;
+          this.hud.addCombatMessage(`\u2b06 ${m.name} \u2014 Tempering: ${abilityName[key]} ${m.abilities[key]}.`, '#7c7');
+        } else {
+          grantLuckDie({ value: 17, source: `${m.name}'s fortune` });
+          this.hud.addCombatMessage(`\u2b06 ${m.name} \u2014 Fortune: the party's next d20 is fated to a 17.`, '#ffd700');
+        }
+        this.hud.setParty(this.party);
+      },
+      { seconds: this.runMode === 'manual' ? 45 : 12, fallback },
+    );
   }
 
   /**
@@ -5724,26 +5939,11 @@ class Game {
         break;
       }
       case 'tavern_gamble': {
-        const cost = 15;
-        if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
-        this.addGold(-cost);
-        const roll = Math.floor(Math.random() * 20) + 1;
-        if (roll === 20) {
-          const winnings = 90;
-          this.addGold(winnings);
-          this.hud.addCombatMessage('NATURAL 20! The dice gods smile! You win ' + winnings + ' gp!', '#ffd700');
-        } else if (roll >= 15) {
-          const winnings = 45;
-          this.addGold(winnings);
-          this.hud.addCombatMessage('A strong roll! You win ' + winnings + ' gp.', '#8cf');
-        } else if (roll >= 10) {
-          this.hud.addCombatMessage('A push. You break even.', '#8a8');
-          this.addGold(cost); // refund
-        } else if (roll === 1) {
-          this.hud.addCombatMessage('NATURAL 1! The house takes everything... and your boots.', '#c44');
-        } else {
-          this.hud.addCombatMessage('A poor showing. The house takes your ' + cost + ' gp.', '#c66');
-        }
+        this.playDiceGame();
+        break;
+      }
+      case 'carouse': {
+        this.carouse();
         break;
       }
       case 'temple_donate': {
@@ -6354,6 +6554,11 @@ class Game {
     if (!text) return;
     this.hud.addCombatMessage(`\u276f ${text}`, '#6fd');
     sfx.order();
+    // A riddle door listens first: the right word opens it before any order is parsed.
+    if (this.pendingRiddle && answersRiddle(this.pendingRiddle.riddle, text)) {
+      this.solveRiddle('dm');
+      return;
+    }
     const result = understand(text, this.dmContext(), this.intentPredictor);
     if (this.dmModelDebug && result.source !== 'none') {
       const p = result.prob !== undefined ? ` ${result.prob.toFixed(2)}` : '';

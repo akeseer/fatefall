@@ -43,6 +43,8 @@ export interface RoomFeature {
   mimic?: boolean;
   /** Hazards only: which danger the room is. Fires once, on first entry. */
   hazard?: HazardKind;
+  /** Puzzle rooms only: the riddle the door asks, once posed. */
+  riddleId?: string;
 }
 
 interface FeatureVariant {

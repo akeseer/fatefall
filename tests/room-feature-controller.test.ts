@@ -85,6 +85,7 @@ class FakeHost implements RoomFeatureHost {
   grantBattleEdge(attackBonus: number, fights: number): void { this.battleEdge = { attackBonus, fights }; }
   revealSecrets(): string | null { return null; }
   takeEscortee(): void {}
+  attemptPuzzle(f: RoomFeature): void { f.used = true; }
 
   said(fragment: string): boolean { return this.log.some(l => l.includes(fragment)); }
 
@@ -300,10 +301,24 @@ describe('the deterministic features', () => {
   });
 
   it('frees a prisoner who pays the party leader for the trouble', () => {
+    // The deepest cell is a roll; a low d20 is the scribe with coin.
+    vi.spyOn(Math, 'random').mockReturnValue(0.1);
     const leader = host.party.leader;
     host.place(mkFeature({ kind: 'prison' }));
     expect(features.perform('feature_prison')).toBe(true);
     expect(leader.gold).toBeGreaterThan(0);
+  });
+
+  it('a mid roll frees a prisoner who maps the floor; a high one is a doppelganger', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.4);
+    host.place(mkFeature({ kind: 'prison' }));
+    expect(features.perform('feature_prison')).toBe(true);
+    expect(host.said('traces the floor')).toBe(true);
+    vi.spyOn(Math, 'random').mockReturnValue(0.95);
+    host.place(mkFeature({ kind: 'prison' }));
+    expect(features.perform('feature_prison')).toBe(true);
+    expect(host.said('slides off like wax')).toBe(true);
+    expect(host.spawned.length).toBeGreaterThan(0);
   });
 
   it('shakes loose coins from the throne into the leader\'s purse', () => {

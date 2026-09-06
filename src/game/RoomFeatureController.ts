@@ -52,6 +52,8 @@ export interface RoomFeatureHost {
   revealSecrets(): string | null;
   /** A freed prisoner walks with the party to the next town, where they pay. */
   takeEscortee(name: string, reward: number): void;
+  /** The puzzle room's riddle: pose it, or have the party try its wits at it. */
+  attemptPuzzle(f: RoomFeature, say: (l: string, c?: string) => void): void;
 }
 
 /** Capitalise a sentence built from a feature name, which starts lowercase. */
@@ -321,19 +323,8 @@ export class RoomFeatureController {
         return true;
       }
       case 'feature_puzzle': {
-        if (f.used) { say('The puzzle has already been solved.', '#888'); return true; }
-        f.used = true;
-        const solved = Math.random() < 0.6; // 60% success chance
-        if (solved) {
-          say('You study the puzzle carefully and align the pieces correctly. A hidden door slides open!', '#ffd700');
-          const bonus = 30 + Math.floor(Math.random() * 50);
-          this.game.addGold(bonus);
-          say('Behind the door: a cache with ' + bonus + ' gp!', '#8cf');
-        } else {
-          const coin = 5 + Math.floor(Math.random() * 10);
-          say('You attempt the puzzle but fail. The mechanism locks — but you spot a ' + coin + ' gp coin that fell out.', '#a89');
-          this.game.addGold(coin);
-        }
+        if (f.used) { say('The door stands open, or locked for good. Either way it has said all it will.', '#888'); return true; }
+        this.game.attemptPuzzle(f, say);
         return true;
       }
       case 'feature_ritual': {
