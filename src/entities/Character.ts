@@ -35,6 +35,8 @@ export interface InventoryItem {
   cursed?: boolean;
   /** Once revealed (by a telltale check or identification), the curse is known. */
   curseKnown?: boolean;
+  /** Kills made while wearing it; a curse fed enough lets go on its own. */
+  curseKills?: number;
   /** Optional mechanical curse flavor: which penalty it carries. */
   curseKind?: 'leeching' | 'clumsy' | 'heavy' | 'doomed';
 }

@@ -92,6 +92,7 @@ class TestHost implements SaveHost {
   retired: SaveHost['retired'] = [];
   arrows: SaveHost['arrows'] = 40;
   pacts: SaveHost['pacts'] = {};
+  trophies: SaveHost['trophies'] = [];
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {

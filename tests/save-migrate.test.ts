@@ -232,3 +232,11 @@ describe('v21 -> v22 pacts', () => {
     expect(migrateSave({ version: SAVE_VERSION, pacts: pact } as any)!.pacts).toEqual(pact);
   });
 });
+
+describe('v22 -> v23 trophies', () => {
+  it('leaves an older run without heads and carries them through', () => {
+    expect(migrateSave({ version: 22, party: { members: [] } } as any)!.trophies).toBeUndefined();
+    const t = [{ name: 'Goblin King', dungeon: 'Kingsgrave', floor: 3, mounted: null }];
+    expect(migrateSave({ version: SAVE_VERSION, trophies: t } as any)!.trophies).toEqual(t);
+  });
+});

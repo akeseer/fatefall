@@ -33,6 +33,8 @@ export interface MarketHost {
   readonly inTown: boolean;
   addGold(n: number): void;
   spendGold(n: number): boolean;
+  /** A big purchase can be argued down: the game rolls the Charisma and returns the price paid. */
+  haggle?(cost: number, itemName: string): number;
 }
 
 export class MarketController {
@@ -88,6 +90,7 @@ export class MarketController {
       const marketMod = this.game.calendar.isMarketday ? 0.9 : 1;
       cost = Math.max(1, Math.floor(baseCost * dynamicMod * marketMod));
     }
+    if (cost >= 80 && this.game.haggle) cost = this.game.haggle(cost, item.name);
     if (!this.game.spendGold(cost)) {
       this.game.hud.addCombatMessage(`Not enough gold for ${item.name} (${cost} gp).`, '#c66');
       this.game.hud.townPanel.refresh();

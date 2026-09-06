@@ -58,6 +58,7 @@ import { banterFor } from './events/Banter';
 import { randomPartyName } from './entities/PartyNames';
 import { THEME_MOTIF } from './ui/BattleScenes';
 import { COMPONENT_ITEMS } from './combat/Components';
+import { rollTieredGear } from './loot/TieredGear';
 import { rarityTag } from './loot/LootTables';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
@@ -71,7 +72,6 @@ import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules
 import { grantLuckDie, onLuckDieSpent } from './rules/LuckDie';
 import { SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
 import { rollCombatLoot, LootSource, LootResult, EMPTY_PURSE } from './loot/LootTables';
-import { rollTieredGear } from './loot/TieredGear';
 import {
   PlacedTrap, getTrapKind, placeTraps, rollDisarm, sweepDetection, triggerTrap,
 } from './traps/Traps';
@@ -329,6 +329,11 @@ class Game {
   public arrows = 40;
   /** Warlock pacts, by member id. Rides in the save. */
   public pacts: Record<string, { demand: string; target: number; progress: number; done: boolean }> = {};
+  /** Boss heads taken, and where each hangs. Rides in the save. */
+  public trophies: { name: string; dungeon: string; floor: number; mounted: string | null }[] = [];
+  private encumberedNoted = false;
+  /** A big purchase argued down by the party's best talker; set for the market at start. */
+  haggle?: (cost: number, itemName: string) => number;
   private retireOffered = new Set<string>();
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
@@ -479,6 +484,13 @@ class Game {
     this.hud.townPanel.questProvider = () => this.quests;
     this.hud.townPanel.questStateProvider = () => this.questState();
     this.hud.townPanel.goldProvider = () => this.partyGold();
+    this.haggle = (cost, itemName) => {
+      const talker = [...this.party.alive].sort((a, b) => this.talkMod(b) - this.talkMod(a))[0] ?? this.party.leader;
+      const r = abilityCheck(this.talkMod(talker), 14, `${talker.name} \u2014 Haggling`);
+      if (r.natural === 1) { this.hud.addCombatMessage(`${talker.name} haggles over the ${itemName} and insults the merchant's mother. The price goes up.`, '#c66'); return Math.round(cost * 1.1); }
+      if (r.success) { this.hud.addCombatMessage(`${talker.name} talks the ${itemName} down from ${cost} to ${Math.round(cost * 0.85)}.`, '#8cf'); return Math.round(cost * 0.85); }
+      return cost;
+    };
     this.hud.townPanel.inventoryProvider = () => this.partyInventory();
     this.hud.townPanel.buyStockProvider = () => this.marketStock();
     this.hud.townPanel.onAcceptQuest = this.guard((q) => this.acceptQuest(q));
@@ -1237,7 +1249,7 @@ class Game {
       this.updateCombat();
     } else if (this.mode === GameMode.Dungeon) {
       if (this.phase === GamePhase.Exploration) {
-        if (this.tickTimer >= this.tickInterval) {
+        if (this.tickTimer >= this.tickInterval * (this.isEncumbered() ? 1.3 : 1)) {
           this.tickTimer = 0;
           this.aiTick();
           // Occasionally the sky you descended under closes in: a howling pack
@@ -3240,6 +3252,54 @@ class Game {
     this.hud.setParty(this.party);
   }
 
+  // ── Parts, curses, trophies, the weight of the pack ───────────────────
+
+  /** A curse fed on enough kills lets go of its own accord. */
+  private feedCurses(kills: number): void {
+    if (kills <= 0) return;
+    for (const m of this.party.alive) {
+      const item = m.findCursedEquipped();
+      if (!item) continue;
+      item.curseKills = (item.curseKills ?? 0) + kills;
+      const needed = 15;
+      if (item.curseKills >= needed) {
+        const line = m.liftCurse();
+        this.hud.addCombatMessage(`\ud83d\udd13 The ${item.name} has drunk enough. ${line ?? 'Its grip on ' + m.name + ' loosens and is gone.'}`, '#8cf');
+        this.tally('curses_broken');
+      } else if (item.curseKnown && item.curseKills - kills < needed / 2 && item.curseKills >= needed / 2) {
+        this.hud.addCombatMessage(`The ${item.name} is quieter on ${m.name}'s arm. Halfway sated, perhaps.`, '#a8a');
+      }
+    }
+  }
+
+  /** The first tavern hangs whatever heads the party carries. */
+  private mountTrophies(town: OverworldTown): void {
+    const loose = this.trophies.filter(t => !t.mounted);
+    if (loose.length === 0) return;
+    for (const t of loose) t.mounted = town.name;
+    this.adjustTownReputation(town.id, 2 * loose.length);
+    this.tally('trophies');
+    this.hud.addCombatMessage(`\ud83c\udfc6 Over the bar in ${town.name} now: ${loose.map(t => `the head of ${t.name} (floor ${t.floor} of ${t.dungeon})`).join(', ')}. Drinks are cheaper for a while, and the stories are free.`, '#ffd700');
+    this.expeditionJournal.push(`Mounted ${loose.map(t => t.name).join(', ')} in ${town.name}`);
+  }
+
+  /** Fourteen things in one pack is the line. */
+  private isEncumbered(): boolean {
+    return this.party.members.some(m => m.inventory.length > 14);
+  }
+
+  private checkEncumbrance(): void {
+    const now = this.isEncumbered();
+    if (now && !this.encumberedNoted) {
+      this.encumberedNoted = true;
+      const who = this.party.members.find(m => m.inventory.length > 14);
+      this.hud.addCombatMessage(`\ud83c\udf92 ${who?.name ?? 'Someone'} is carrying too much, and everyone walks slower for it. Sell, or drop, or stop picking things up.`, '#c84');
+    } else if (!now && this.encumberedNoted) {
+      this.encumberedNoted = false;
+      this.hud.addCombatMessage('\ud83c\udf92 The packs are bearable again. The pace picks up.', '#8a8');
+    }
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3395,6 +3455,13 @@ class Game {
           this.strengthenBonds();
           this.dismissSummons();
           this.advancePacts(slainMonsters.filter(m => !m.fled).length);
+          for (const b of slainMonsters.filter(m => !m.fled && /\(Boss\)/.test(m.template.name))) {
+            const name = b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, '');
+            this.trophies.push({ name, dungeon: this.entranceBaseName || this.dungeonName, floor: this.dungeonLevel, mounted: null });
+            this.hud.addCombatMessage(`\ud83c\udfc6 ${name}'s head comes off with some effort and goes in a sack. A tavern somewhere will want it over the bar.`, '#e8b45a');
+          }
+          this.feedCurses(slainMonsters.filter(m => !m.fled).length);
+          this.checkEncumbrance();
           if (slainMonsters.some(m => m.hasKey && !m.fled)) {
             this.floorKeyHeld = true;
             this.hud.addCombatMessage('\ud83d\udd11 An iron key, warm from the body. The locked hall will open now.', '#ffd700');
@@ -4762,6 +4829,7 @@ class Game {
       isBoss: /boss/i.test(m.template.name) || m.isBoss,
     }));
     const loot = rollCombatLoot(sources, this.dungeonLevel);
+    for (const part of monsterParts(slainMonsters)) { loot.items.push(part); loot.narration.push(`\ud83e\uddb4 Taken from the body: ${part.name}.`); }
 
     // Tavern rumor buff: bonus gold find.
     const tavernGoldBonus = this.combatEngine.getTavernGoldFindBonus();
@@ -5214,6 +5282,7 @@ class Game {
     this.runMode = options.mode;
     this.hardcore = options.hardcore;
     this.difficulty = options.difficulty ?? 'normal';
+    if (readBank() > 0) setTimeout(() => this.hud.addCombatMessage(`\ud83c\udfe6 A counting-house somewhere holds ${readBank()} gold in the name of a party that did not come back. Any bank will pay it out.`, '#ffd700'), 600);
     this.sieges = {};
     this.dungeonLevel = 0;
     this.history = { kills: 0, victories: 0, defeats: 0, roomsVisited: 0, deepestLevel: 1, killLedger: {} };
@@ -5501,7 +5570,7 @@ class Game {
     // when weather mires the route (sandstorm, deep snow, heavy rain).
     const paceSteps = Math.max(
       1,
-      Math.round((this.mounted ? 3 : 2) / (this.weather?.moveCostMultiplier ?? 1))
+      Math.round((this.mounted ? 3 : 2) / (this.weather?.moveCostMultiplier ?? 1)) - (this.isEncumbered() ? 1 : 0)
     );
     let moved = 0;
     for (let step = 0; step < paceSteps; step++) {
@@ -6426,6 +6495,7 @@ class Game {
     this.personalArrival(town);
     if (this.siegeAtGate(town)) return;
     this.maybeOfferRetirement(town);
+    this.mountTrophies(town);
 
     // The town's rumor sets the mood — and reshapes the quest board.
     const tl = this.townLife?.byTown[town.id];
@@ -6602,6 +6672,18 @@ class Game {
         break;
       }
       case 'craft': {
+        // Three monster parts and forty gold make a real piece of gear.
+        const parts = this.partyInventory().filter(i => i.id.startsWith('part_'));
+        if (parts.length >= 3 && this.partyGold() >= 40) {
+          this.addGold(-40);
+          for (const p of parts.slice(0, 3)) for (const m of this.party.members) if (m.hasItem(p.id)) { m.useItem(p.id); break; }
+          const piece = rollTieredGear({ maxBonus: Math.min(3, 1 + Math.floor(this.party.leader.level / 6)), minBonus: 1 });
+          this.party.leader.addToInventory(piece);
+          this.hud.addCombatMessage(`\u2692 The artisan takes ${parts.slice(0, 3).map(p => p.name).join(', ')} and forty gold, and hands back ${piece.name}. ${piece.description}`, '#ffd700');
+          this.tally('crafted');
+          this.hud.townPanel.refresh();
+          break;
+        }
         const cost = 100;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
         this.addGold(-cost);
@@ -6765,6 +6847,25 @@ class Game {
         this.addGold(-cost);
         this.mounted = true;
         this.hud.addCombatMessage('\ud83d\udc0e A sound horse, a saddle that fits, and the road a third shorter for it.', '#e8b45a');
+        this.hud.townPanel.refresh();
+        break;
+      }
+      case 'bank_deposit': {
+        const keep = 50;
+        const put = Math.max(0, this.partyGold() - keep);
+        if (put <= 0) { this.hud.addCombatMessage('There is nothing to bank past walking-around money.', '#886'); return; }
+        this.spendGold(put);
+        setBank(readBank() + put);
+        this.hud.addCombatMessage(`\ud83c\udfe6 ${put} gold goes into the ledger. The counting-house holds ${readBank()} in the party's name, and will hold it for whoever comes after.`, '#ffd700');
+        this.hud.townPanel.refresh();
+        break;
+      }
+      case 'bank_withdraw': {
+        const held = readBank();
+        if (held <= 0) { this.hud.addCombatMessage('The ledger shows nothing in the party\'s name.', '#886'); return; }
+        setBank(0);
+        this.addGold(held);
+        this.hud.addCombatMessage(`\ud83c\udfe6 ${held} gold comes out of the counting-house.`, '#ffd700');
         this.hud.townPanel.refresh();
         break;
       }
@@ -7826,4 +7927,32 @@ function dirsAround(t: Vector2): Vector2[] {
 /** A pair's key, whichever way round. */
 function bondKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** Parts worth keeping from a body, by what it was. Roughly two in five bodies yield one. */
+function monsterParts(slain: Monster[]): InventoryItem[] {
+  const out: InventoryItem[] = [];
+  const by: Record<string, [string, string]> = {
+    beast: ['Hide', 'a hide, scraped and rolled'], dragon: ['Scale', 'a scale the size of a plate'], undead: ['Grave Dust', 'a pinch of what it was'],
+    fiend: ['Horn', 'a horn, still warm'], giant: ['Tooth', 'a tooth like a spearhead'], monstrosity: ['Fang', 'a fang as long as a finger'],
+    ooze: ['Gland', 'a gland, kept in a jar'], construct: ['Cog', 'a cog with no rust on it'], fey: ['Wing', 'a wing that weighs nothing'],
+    plant: ['Root', 'a root that twitches'], elemental: ['Mote', 'a mote that will not go out'], aberration: ['Eye', 'an eye that does not close'],
+    insect: ['Chitin', 'a plate of chitin'], arachnid: ['Silk', 'a skein of silk'], reptile: ['Scale', 'a scale'], dinosaur: ['Claw', 'a claw'],
+    fungus: ['Spore Cap', 'a cap, dried'], crystal: ['Shard', 'a shard that hums'], automaton: ['Cog', 'a cog'], vampire: ['Fang', 'a fang'],
+  };
+  for (const m of slain) {
+    if (m.fled || Math.random() > 0.4) continue;
+    const [part, desc] = by[m.template.type] ?? ['Trophy', 'a piece of it'];
+    const base = m.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, '');
+    out.push({ id: `part_${m.template.id}_${Math.random().toString(36).slice(2, 7)}`, name: `${base} ${part}`, type: 'treasure', description: `From a ${base}: ${desc}. An artisan can make something of three such.`, value: 8 + Math.round(m.template.cr * 6) });
+  }
+  return out;
+}
+
+/** The counting-house ledger lives outside any save, so a lost party's gold outlives it. */
+function readBank(): number {
+  try { return Math.max(0, parseInt(localStorage.getItem('fatefall.bank') ?? '0', 10) || 0); } catch { return 0; }
+}
+function setBank(n: number): void {
+  try { localStorage.setItem('fatefall.bank', String(Math.max(0, Math.round(n)))); } catch { /* no storage, no bank */ }
 }
