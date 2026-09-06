@@ -55,6 +55,7 @@ export type TownServiceId =
   | 'carouse'
   | 'buy_torches'
   | 'buy_horse'
+  | 'buy_arrows'
   | 'temple_donate';
 
 export interface TownService {
@@ -184,6 +185,12 @@ const SERVICES: Record<TownServiceId, Omit<TownService, 'id'>> = {
     description: 'A sound horse for the road. Faster between towns; a storm may take it.',
     cost: 80,
     effect: 'The party travels a third faster on the surface.',
+  },
+  buy_arrows: {
+    name: 'Buy Arrows',
+    description: 'Thirty arrows, or bolts, or stones for the sling.',
+    cost: 8,
+    effect: 'The archers keep shooting.',
   },
   carouse: {
     name: 'Carouse',
@@ -516,7 +523,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Salty Dog', icon: '🍺',
         description: 'A rowdy waterfront tavern where sailors and adventurers trade stories over rum.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('bounty_board'), svc('tavern_gamble'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('bounty_board'), svc('tavern_gamble'), svc('carouse')],
         hasShop: true, shopPool: 'general',
       },
       {
@@ -549,7 +556,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Dusty Pick', icon: '🍺',
         description: 'A dim, warm tavern where miners wash away the grime of the deep.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'general',
       },
       {
@@ -594,7 +601,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Spellbound Flask', icon: '🍺',
         description: 'An enchanted tavern where drinks change color and the barkeep is a mage.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'potions',
       },
       {
@@ -615,7 +622,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Last Hearth', icon: '🍺',
         description: 'The only tavern for fifty miles. Its walls are covered in monster trophies.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('bounty_board'), svc('tavern_gamble'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('bounty_board'), svc('tavern_gamble'), svc('carouse')],
         hasShop: true, shopPool: 'general',
       },
       {
@@ -648,7 +655,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'temple', name: 'The Grand Cathedral', icon: '⛪',
         description: 'The mightiest temple in the region. The high priests offer blessings and healing to all.',
-        services: [svc('heal'), svc('temple_blessing'), svc('rest'), svc('buy_torches'), svc('buy_horse')],
+        services: [svc('heal'), svc('temple_blessing'), svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows')],
         hasShop: false,
       },
       {
@@ -660,7 +667,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Pilgrim\'s Rest', icon: '🍺',
         description: 'A humble inn for travelers and penitents. The soup is free; the bed is simple.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'potions',
       },
       {
@@ -687,7 +694,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Crossed Swords', icon: '🍺',
         description: 'The most famous tavern in the region. Every adventurer passes through eventually.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('bounty_board'), svc('tavern_gamble'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('bounty_board'), svc('tavern_gamble'), svc('carouse')],
         hasShop: true, shopPool: 'general',
       },
       {
@@ -714,7 +721,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Harvest Inn', icon: '🍺',
         description: 'A cozy inn with a roaring hearth. Home-cooked meals and honest prices.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'general',
       },
       {
@@ -732,7 +739,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'well', name: 'The Old Well', icon: '🪣',
         description: 'An ancient well at the village center. Locals say it was blessed by a dragon.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows')],
         hasShop: false,
       },
     ],
@@ -753,7 +760,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Velvet Flask', icon: '🍺',
         description: 'An upscale tavern where nobles and adventurers share uncomfortable space.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'magic',
       },
       {
@@ -780,7 +787,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Mossy Branch', icon: '🍺',
         description: 'A tavern built in the hollow of a massive oak. Drinks are herbal, beds are hammocks.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'potions',
       },
       {
@@ -813,7 +820,7 @@ export const TOWN_ARCHETYPES: Record<TownArchetypeId, TownArchetype> = {
       {
         id: 'tavern', name: 'The Mirage', icon: '🍺',
         description: 'A tavern built around the oasis pool. Cool drinks and warm sand underfoot.',
-        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('tavern_rumors'), svc('carouse')],
+        services: [svc('rest'), svc('buy_torches'), svc('buy_horse'), svc('buy_arrows'), svc('tavern_rumors'), svc('carouse')],
         hasShop: true, shopPool: 'general',
       },
       {

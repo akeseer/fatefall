@@ -217,3 +217,10 @@ describe('v19 -> v20 the party\'s own things', () => {
     expect(out.retired).toEqual(['Ana']);
   });
 });
+
+describe('v20 -> v21 the quiver', () => {
+  it('leaves an older run without a count and carries a count through', () => {
+    expect(migrateSave({ version: 20, party: { members: [] } } as any)!.arrows).toBeUndefined();
+    expect(migrateSave({ version: SAVE_VERSION, arrows: 12 } as any)!.arrows).toBe(12);
+  });
+});

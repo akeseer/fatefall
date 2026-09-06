@@ -130,6 +130,12 @@ export class CombatEngine {
   public dcShift: number = 0;
   /** A bond with an ally standing close: the game says how much, from what it remembers. */
   public bondBonus: ((hero: GameCharacter) => number) | null = null;
+  /** Heroes told to hold: they wait, weapon ready, and are harder to hit for it. */
+  public held = new Set<string>();
+  /** Asked before every bow shot; false means the quiver is empty. */
+  public onRangedShot: (() => boolean) | null = null;
+  /** The room itself as a lair action, when the hall has an altar, a forge, a font. */
+  public roomLair: LegendaryActionDef | null = null;
   /** Heroes who have spent their reaction this round: a parry, a shield block, a counterspell. */
   private reactionsUsed = new Set<string>();
   /** Bosses that have entered their second phase this fight. */
@@ -818,10 +824,11 @@ export class CombatEngine {
   /** The lair acts at the top of each round while its boss is alive. */
   private lairTurn() {
     if (!this.isActive) return;
-    const boss = this.getBosses().find(b => BOSS_KITS[b.template.id]?.lair);
+    const kitBoss = this.getBosses().find(b => BOSS_KITS[b.template.id]?.lair);
+    const roomBoss = !kitBoss && this.roomLair ? this.monsters.find(m => m.isAlive && !m.fled && (m.isBoss || /\(Boss\)/.test(m.template.name))) : undefined;
+    const boss = kitBoss ?? roomBoss;
     if (!boss) return;
-    const kit = BOSS_KITS[boss.template.id];
-    const lair = kit.lair!;
+    const lair: LegendaryActionDef[] = kitBoss ? BOSS_KITS[boss.template.id].lair! : [this.roomLair!];
     // The lair serves its master's plan too: damage waves when the party is
     // wounded, control effects while they stand strong.
     const lairDef = pickLegendaryAction(lair, {
@@ -882,6 +889,10 @@ export class CombatEngine {
   }
 
   private partyTurn(character: GameCharacter, forced?: PartyCommand) {
+    if (this.held.has(character.id) && !forced) {
+      this.log.messages.push(`\u23f8 ${character.name} holds, weapon ready, as ordered.`);
+      return;
+    }
     // Find nearest alive monster. A charmed character cannot strike the
     // source of their charm — they'll fight anyone else, or do nothing.
     const charmSource = character.conditions.find(c => c.id === 'charmed')?.sourceId;
@@ -1041,6 +1052,23 @@ export class CombatEngine {
         target = next;
       }
       this.weaponAttack(character, target);
+    }
+    // Two-weapon fighting: a light blade in the off hand gets one more strike.
+    const light = /dagger|shortsword|short sword|handaxe|scimitar|sickle|light hammer/i;
+    const main = character.equipment.weapon;
+    const off = main && light.test(main.name) && ['rogue', 'ranger', 'fighter', 'monk', 'blood_hunter'].includes(character.charClass.id)
+      ? character.inventory.find(i => i.type === 'weapon' && i !== main && light.test(i.name))
+      : undefined;
+    if (off && target.isAlive) {
+      const natural = rollD20();
+      const total = natural + character.attackBonus;
+      if (natural === 20 || (natural !== 1 && total >= target.ac)) {
+        const dmg = rollDice(natural === 20 ? 2 : 1, 4) + Math.max(0, character.dexMod);
+        this.log.messages.push(`${character.name}'s off-hand ${off.name} connects with ${target.template.name}.`);
+        this.log.messages.push(target.takeDamage(dmg));
+      } else {
+        this.log.messages.push(`${character.name}'s off-hand ${off.name} misses.`);
+      }
     }
   }
 
@@ -1555,6 +1583,18 @@ export class CombatEngine {
   /** Weapon attack applying advantage/disadvantage, bless, and auto-crits. */
   private weaponAttack(attacker: GameCharacter, target: Monster, abilityBonus?: { count: number; size: number }): void {
     const mods = getAttackModifiers(attacker, target);
+    // A bow has a band it likes: past six tiles the shot falls off, and at
+    // arm's length the archer is fumbling for the string. And every shot is an arrow.
+    const weaponName = (attacker.equipment.weapon?.name ?? '').toLowerCase();
+    if (/\b(bow|crossbow|sling|javelin|dart)/.test(weaponName)) {
+      const dist = manhattan(attacker.tile, target.tile);
+      if (this.onRangedShot && !this.onRangedShot()) {
+        this.log.messages.push(`${attacker.name} reaches for the quiver and finds it empty.`);
+        mods.disadvantage = true;
+      } else if (dist > 6 || dist <= 1) {
+        mods.disadvantage = true;
+      }
+    }
 
     // Paralyzed or sleeping defenders are automatically crit.
     if (mods.autoCrit) {

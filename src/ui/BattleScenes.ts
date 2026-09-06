@@ -44,7 +44,7 @@ export interface BattleSceneCss {
 type Motif = 'pillars' | 'cave' | 'roots' | 'embers' | 'mist' | 'stars' | 'water' | 'gears' | 'ice' | 'jungle' | 'sand' | 'sky' | 'velvet';
 
 /** Which scenery a dungeon theme calls for. Unknown themes get the plain hall. */
-const THEME_MOTIF: Record<string, Motif> = {
+export const THEME_MOTIF: Record<string, Motif> = {
   ancient_dwarven_hall: 'pillars',
   royal_crypt: 'pillars',
   thieves_guild_den: 'pillars',

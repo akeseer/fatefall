@@ -56,6 +56,7 @@ import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
 import { banterFor } from './events/Banter';
 import { randomPartyName } from './entities/PartyNames';
+import { THEME_MOTIF } from './ui/BattleScenes';
 import { rarityTag } from './loot/LootTables';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
@@ -323,6 +324,8 @@ class Game {
   public mounted = false;
   /** Members who retired to a town. Rides in the save. */
   public retired: string[] = [];
+  /** Arrows in the quiver. Rides in the save. */
+  public arrows = 40;
   private retireOffered = new Set<string>();
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
@@ -1660,6 +1663,22 @@ class Game {
     this.noteProgress();
     this.beginTransition('blinds');
     this.combatEngine.defenseBonus = 0;
+    this.combatEngine.onRangedShot = () => { if (this.arrows <= 0) return false; this.arrows--; if (this.arrows === 5) this.hud.addCombatMessage('\ud83c\udff9 Five arrows left in the quiver.', '#a98'); return true; };
+    // Cover: pillars, roots and cogs to fight behind.
+    const motif = this.mode === GameMode.Dungeon ? THEME_MOTIF[this.dungeonTheme?.id ?? ''] : undefined;
+    if (motif === 'pillars' || motif === 'roots' || motif === 'gears') {
+      this.combatEngine.defenseBonus += 1;
+      this.hud.addCombatMessage(`\ud83d\udee1 The ${motif === 'pillars' ? 'pillars' : motif === 'roots' ? 'roots' : 'machinery'} give the party something to fight behind (+1 AC).`, '#8a8');
+    }
+    // The room itself takes a hand when a boss holds it.
+    const hallFeature = this.currentRoom()?.feature?.kind;
+    const floorDc = 11 + Math.floor(this.dungeonLevel / 2);
+    this.combatEngine.roomLair = this.mode !== GameMode.Dungeon ? null
+      : hallFeature === 'altar' ? { name: 'Altar Flare', description: 'the altar flares with a light that hates the living', damage: '1d6', saveAbility: 'wis', dc: floorDc }
+      : hallFeature === 'forge' ? { name: 'Forge Blast', description: 'the forge vents a gout of sparks and molten slag', damage: '2d4', saveAbility: 'dex', dc: floorDc }
+      : hallFeature === 'fountain' ? { name: 'Fountain Surge', description: 'the fountain heaves and the floor runs with black water', saveAbility: 'str', dc: floorDc, condition: 'prone', durationTurns: 1 }
+      : hallFeature === 'ritual_chamber' ? { name: 'Ritual Backlash', description: 'the circle on the floor wakes and reaches for whoever stands in it', damage: '1d8', saveAbility: 'con', dc: floorDc }
+      : null;
     const feature = this.currentRoom()?.feature;
     if (feature?.kind === 'chokepoint' && feature.barricaded) {
       this.combatEngine.defenseBonus = 1;
@@ -3155,6 +3174,13 @@ class Game {
           if (!this.running || this.phase !== GamePhase.Combat) break;
           await this.hud.dice.playRoll(rolls[ri++]);
           await sleep(90);
+        }
+        if (msg.includes('opportunity attack')) {
+          // A parting blow is its own beat: the field pauses on it.
+          show(batch, false);
+          batch = [];
+          this.kickCameraFor(['smashes']);
+          await sleep(220);
         }
         batch.push(msg);
       }
@@ -6622,6 +6648,15 @@ class Game {
         this.hud.townPanel.refresh();
         break;
       }
+      case 'buy_arrows': {
+        const cost = 8;
+        if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for arrows.', '#c66'); return; }
+        this.addGold(-cost);
+        this.arrows += 30;
+        this.hud.addCombatMessage(`\ud83c\udff9 Thirty arrows into the quiver (${this.arrows} now).`, '#e8b45a');
+        this.hud.townPanel.refresh();
+        break;
+      }
       case 'buy_torches': {
         const cost = 12;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for torches.', '#c66'); return; }
@@ -7281,6 +7316,20 @@ class Game {
         () => { this.hud.addCombatMessage('The clipboard refused. The chronicle follows in the log instead.', '#886'); for (const line of body.split('\n').slice(0, 80)) this.hud.addCombatMessage(line || ' ', '#9aa'); },
       );
       this.hud.showStoryCard({ kicker: 'The run, as text', title: this.party.partyName, body: body.split('\n').slice(0, 14).join('\n').replace(/\n\n+/g, '\n\n') + '\n\n(the whole of it is on the clipboard)' }, () => {}, { seconds: 20 });
+      return;
+    }
+    // "hold Ana" / "release Ana": a member waits, weapon ready, until told otherwise.
+    const holdOrder = /^(?:hold|wait),?\s+(\w+)$/i.exec(text);
+    const releaseOrder = /^(?:release|loose|unhold),?\s+(\w+)$/i.exec(text);
+    if (holdOrder || releaseOrder) {
+      const who = (holdOrder ?? releaseOrder)![1].toLowerCase();
+      const all = who === 'all' || who === 'everyone' || who === 'party';
+      const members = all ? this.party.members : this.party.members.filter(m => m.name.toLowerCase().split(' ')[0] === who || m.name.toLowerCase() === who);
+      if (members.length === 0) { this.hud.addCombatMessage(`No one in the party answers to "${who}".`, '#886'); return; }
+      for (const m of members) { if (holdOrder) this.combatEngine.held.add(m.id); else this.combatEngine.held.delete(m.id); }
+      this.hud.addCombatMessage(holdOrder
+        ? `\u23f8 ${members.map(m => m.name).join(', ')} will hold and wait for the word.`
+        : `\u25b6 ${members.map(m => m.name).join(', ')} may act again.`, '#8cf');
       return;
     }
     // "new name": the party takes a name from the generator.

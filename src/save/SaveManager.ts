@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 
 export interface SavedCharacter {
   id: string;
@@ -165,6 +165,8 @@ export interface SaveData {
   mounted?: boolean;
   /** Members who retired to a town, by name. v20+. */
   retired?: string[];
+  /** Arrows in the quiver. v21+. */
+  arrows?: number;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -360,7 +362,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 18) current = migrateV18toV19(current);
   if (!current) return null;
   if (current.version === 19) current = migrateV19toV20(current);
+  if (!current) return null;
+  if (current.version === 20) current = migrateV20toV21(current);
   return current;
+}
+
+/** v20 → v21: the quiver. Absent means a full one. */
+function migrateV20toV21(data: SaveData): SaveData | null {
+  return { ...data, version: 21 };
 }
 
 /** v19 → v20: bonds, hirelings, familiars, the horse, the retired. Absent means none. */
