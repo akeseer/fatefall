@@ -9,7 +9,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 2. Party banter on the map: short exchanges between two members triggered by room kinds and mood.
 - [ ] 3. Bonds: pairs who fight together often gain a small bonus when adjacent in the line.
 - [x] 4. Grudges: a member who was downed by a monster kind gets +1 to hit it thereafter. (already in as vendettas)
-- [ ] 5. Member epitaphs: a fallen member's name, level and killer recorded and shown at the title.
+- [x] 5. Member epitaphs: a fallen member's name, level and killer recorded and shown at the title.
 - [ ] 6. Hirelings with contracts: guards hired in town leave after N floors and want pay.
 - [ ] 7. Mounts on the overworld: a horse bought in town speeds travel and can be lost to a storm.
 - [ ] 8. Familiars and pets: a wizard's cat, a ranger's hound, drawn beside them and worth one Perception reroll.
@@ -121,11 +121,11 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 - [x] 91. Standing orders: "never pay tolls", "always parley", "loot everything".
 - [ ] 92. Waypoints: the DM marks a tile and the party goes there.
-- [ ] 93. A DM notebook: free-text notes that ride in the save.
+- [x] 93. A DM notebook: free-text notes that ride in the save.
 - [x] 94. Command history with up-arrow recall in the DM box.
 - [ ] 95. Intent model retrain with the new orders, and a confidence chip.
 - [x] 96. A "narrate" order: the DM adds a line to the log as the world.
 - [x] 97. Speed presets bound to keys, and pause on any card.
 - [x] 98. A statistics screen: rolls, crits, kills by kind, gold over time.
-- [ ] 99. Export the run as a text chronicle the player can share.
-- [ ] 100. Achievements: forty of them, with a card and a title when earned.
+- [x] 99. Export the run as a text chronicle the player can share.
+- [x] 100. Achievements: forty of them, with a card and a title when earned.

@@ -44,7 +44,7 @@ export class HUD {
   private storyChipText: string | null = null;
 
   /** What the Chronicle shows; the game supplies it. */
-  public chronicleProvider: () => { acts: string[]; current: string | null; flags: string[]; shards: number; complete: boolean; roads?: string[]; deeds?: string[]; orders?: string[] } = () => ({ acts: [], current: null, flags: [], shards: 0, complete: false });
+  public chronicleProvider: () => { acts: string[]; current: string | null; flags: string[]; shards: number; complete: boolean; roads?: string[]; deeds?: string[]; orders?: string[]; notes?: string[]; titles?: string[] } = () => ({ acts: [], current: null, flags: [], shards: 0, complete: false });
 
   setStoryChip(text: string | null): void {
     if (text === this.storyChipText) return;
@@ -231,6 +231,8 @@ export class HUD {
         ${c.flags.length ? `<div style="margin-top:12px; font-size:11px; color:${T.muted};">The party is known for: ${c.flags.map(f => `<span style="color:${T.text}; border:1px solid ${T.line}; border-radius:${T.r1}; padding:1px 6px; margin-right:4px;">${f.replace(/_/g, ' ')}</span>`).join('')}</div>` : ''}
         ${c.roads && c.roads.length ? `<div style="border-top:1px solid ${T.rule}; margin:14px 0 8px;"></div><div class="dp-title" style="font-size:12px; color:${T.goldDim}; letter-spacing:0.12em;">THEIR OWN ROADS</div><ul style="margin:6px 0 0; padding-left:18px; font-size:12.5px; line-height:1.5;">${c.roads.map(r => `<li>${r}</li>`).join('')}</ul>` : ''}
         ${c.orders && c.orders.length ? `<div style="margin-top:10px; font-size:11px; color:${T.muted};">Standing orders: ${c.orders.map(o => `<span style="color:${T.text}; border:1px solid ${T.line}; border-radius:${T.r1}; padding:1px 6px; margin-right:4px;">${o}</span>`).join('')}</div>` : ''}
+        ${c.titles && c.titles.length ? `<div style="margin-top:10px; font-size:11px; color:${T.muted};">Titles earned: ${c.titles.map(t => `<span style="color:${T.gold}; border:1px solid ${T.goldDim}; border-radius:${T.r1}; padding:1px 6px; margin-right:4px;">${t}</span>`).join('')}</div>` : ''}
+        ${c.notes && c.notes.length ? `<div style="border-top:1px solid ${T.rule}; margin:14px 0 8px;"></div><div class="dp-title" style="font-size:12px; color:${T.goldDim}; letter-spacing:0.12em;">THE DM'S NOTEBOOK</div><ul style="margin:6px 0 0; padding-left:18px; font-size:12.5px; line-height:1.5;">${c.notes.map(n => `<li>${n}</li>`).join('')}</ul>` : ''}
         ${c.deeds && c.deeds.length ? `<div style="border-top:1px solid ${T.rule}; margin:14px 0 8px;"></div><div class="dp-title" style="font-size:12px; color:${T.goldDim}; letter-spacing:0.12em;">DEEDS</div><ul style="margin:6px 0 0; padding-left:18px; font-size:12px; line-height:1.5; color:${T.muted};">${c.deeds.map(d => `<li>${d}</li>`).join('')}</ul>` : ''}
         <div style="display:flex; justify-content:flex-end; margin-top:16px;">
           <button id="chronicle-close" class="dp-btn dp-title" style="padding:7px 20px; font-size:12px; letter-spacing:1px; border-radius:${T.r2};">Close</button>
@@ -1286,6 +1288,7 @@ export class HUD {
             const state = m.hp <= 0 ? (m.isDead ? ' DEAD' : m.stabilized ? ' STAB' : ' DYING') : '';
             return `<div style="display:flex; gap:6px; font-size:10.5px; padding:1.5px 0;"><span style="color:${classColor(m.classId)}; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</span><span style="color:${hpTint};">${state}</span><span style="color:${T.faint}; flex:1 1 auto;">Lv${m.level} ${cls}</span><span class="dp-num" style="color:${hpTint};">${m.hp}/${maxHp}</span></div>`;
           }).join('')}
+          ${(save.fallen ?? []).length ? `<div style="margin-top:6px; padding-top:4px; border-top:1px dashed ${T.rule}; font-size:10px; color:${T.faint}; font-style:italic;">${(save.fallen ?? []).slice(-3).map(f => `\u2620 ${f.name}, ${f.className} ${f.level}, fell ${f.where}`).join('<br>')}</div>` : ''}
         </div>`;
       })() : `<div style="color:${T.faint}; font-size:12px; margin-top:14px; font-style:italic;">Empty</div>`;
 

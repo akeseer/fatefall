@@ -158,3 +158,21 @@ describe('v15 -> v16 standing orders', () => {
     expect(out.dmPolicies).toEqual({ tolls: 'refuse', parley: 'always', loot: 'all' });
   });
 });
+
+describe('v16 -> v17 tallies, achievements, notes, the fallen', () => {
+  it('leaves an older run empty-handed, which restore reads as nothing yet', () => {
+    const out = migrateSave({ version: 16, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.achievements).toBeUndefined();
+    expect(out.fallen).toBeUndefined();
+  });
+
+  it('carries them through untouched', () => {
+    const fallen = [{ name: 'Ana', className: 'Rogue', level: 4, where: 'floor 3 of Kingsgrave', day: 12 }];
+    const out = migrateSave({ version: SAVE_VERSION, counters: { riddles: 2 }, achievements: ['riddle'], notes: ['a'], fallen } as any)!;
+    expect(out.counters).toEqual({ riddles: 2 });
+    expect(out.achievements).toEqual(['riddle']);
+    expect(out.notes).toEqual(['a']);
+    expect(out.fallen).toEqual(fallen);
+  });
+});

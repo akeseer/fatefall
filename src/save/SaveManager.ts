@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 
 export interface SavedCharacter {
   id: string;
@@ -141,6 +141,14 @@ export interface SaveData {
   personalQuests?: PersonalQuest[];
   /** Standing orders: how the party answers tolls and parleys without being asked. v16+. */
   dmPolicies?: DmPolicies;
+  /** Named tallies of things done (riddles, parleys, bosses...), for achievements. v17+. */
+  counters?: Record<string, number>;
+  /** Achievement ids earned. v17+. */
+  achievements?: string[];
+  /** The DM's notebook. v17+. */
+  notes?: string[];
+  /** Members lost for good, for the epitaphs on the title. v17+. */
+  fallen?: { name: string; className: string; level: number; where: string; day: number }[];
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -328,7 +336,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 14) current = migrateV14toV15(current);
   if (!current) return null;
   if (current.version === 15) current = migrateV15toV16(current);
+  if (!current) return null;
+  if (current.version === 16) current = migrateV16toV17(current);
   return current;
+}
+
+/** v16 → v17: tallies, achievements, the notebook and the fallen. Absent means empty. */
+function migrateV16toV17(data: SaveData): SaveData | null {
+  return { ...data, version: 17 };
 }
 
 /** v15 → v16: standing orders. Absent means the party decides each time, as before. */

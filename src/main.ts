@@ -56,6 +56,8 @@ import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
+import { newlyEarned, achievementById, type AchievementSnapshot } from './game/Achievements';
+import { exportRun } from './game/RunExport';
 import { bossOpening, bossBloodied } from './combat/BossVoice';
 import { answersRiddle, pickRiddle, riddleById, riddleDc, RIDDLE_PATIENCE_TICKS, type Riddle } from './events/Riddles';
 import { pickRumor } from './world/TownLife';
@@ -283,6 +285,17 @@ class Game {
   public personalQuests: PersonalQuest[] = [];
   /** Standing orders: how the party answers tolls and parleys without being asked. Rides in the save. */
   public dmPolicies: DmPolicies = { ...DEFAULT_POLICIES };
+  /** Named tallies of things done, for the achievements. Rides in the save. */
+  public counters: Record<string, number> = {};
+  /** Achievement ids earned, in order. Rides in the save. */
+  public achievements: string[] = [];
+  /** The DM's notebook. Rides in the save. */
+  public notes: string[] = [];
+  /** Members lost for good. Rides in the save; the title shows the last few. */
+  public fallen: { name: string; className: string; level: number; where: string; day: number }[] = [];
+  private achievementTicks = 0;
+  private achievementQueue: string[] = [];
+  private achievementCardOpen = false;
   /** Bosses that have spoken their bloodied line this fight. */
   private bossBloodiedSaid = new Set<string>();
   /** A freed prisoner walking with the party to the next town. Not saved. */
@@ -1060,6 +1073,7 @@ class Game {
           this.lastDt = Game.SIM_STEP_MS;
           this.update(Game.SIM_STEP_MS);
           this.checkLevelUps();
+          if (++this.achievementTicks >= 60) { this.achievementTicks = 0; this.checkAchievements(); }
           this.accumulator -= Game.SIM_STEP_MS;
           steps++;
         }
@@ -1876,6 +1890,7 @@ class Game {
       events.push(event);
     }
     const outcome = readHazard(def, rolls);
+    this.tally('hazards');
     // One line per member follows its die; the group line closes.
     for (let i = 0; i < rolls.length; i++) {
       items.push({ roll: events[i], line: outcome.lines[i], color: rolls[i].success ? '#8c8' : '#c66' });
@@ -1923,6 +1938,7 @@ class Game {
       nextActTitle: this.storyController.nextPosting()?.title,
     });
     if (!scene) return;
+    this.tally('camps');
     const wasPaused = this.paused;
     this.setPaused(true);
     this.hud.showStoryCard({ kicker: 'Camp', title: scene.title, body: scene.body }, () => {
@@ -2033,10 +2049,13 @@ class Game {
       else if (result.gold < 0) { this.spendGold(-result.gold); this.hud.addCombatMessage(`\ud83d\udcb0 \u2212${-result.gold} gold.`, '#c8a860'); }
       if (result.xp > 0) this.grantXp(() => result.xp);
       if (result.foesLeave) {
+        this.tally('parleys');
+        if (offer === 'toll' && response === 'refuse') this.tally('tolls_refused');
         for (const m of monsters) m.fled = true;
         this.monsters = this.monsters.filter(m => !monsters.includes(m));
         this.noteProgress();
       }
+      if (offer === 'toll' && response === 'refuse') this.tally('tolls_refused');
       if (result.fight && this.phase === GamePhase.Exploration) {
         this.startCombat(monsters.filter(m => m.isAlive));
       }
@@ -2157,6 +2176,7 @@ class Game {
   private completePersonalQuest(q: PersonalQuest): void {
     if (q.done) return;
     q.done = true;
+    this.tally('roads_done');
     const m = this.party.members.find(x => x.id === q.memberId);
     if (m) {
       m.abilities[q.perk.ability] = Math.min(20, m.abilities[q.perk.ability] + 1);
@@ -2182,6 +2202,7 @@ class Game {
     if (this.escortee) {
       const e = this.escortee;
       this.escortee = null;
+      this.tally('escortees');
       this.addGold(e.reward);
       this.grantXp(() => 40);
       this.hud.addCombatMessage(`\ud83d\udc9b ${e.name.charAt(0).toUpperCase() + e.name.slice(1)} is home. The money was real: ${e.reward} gold, and a door in ${town.name} that will always open.`, '#ffd700');
@@ -2378,6 +2399,7 @@ class Game {
     if (!p) return;
     this.pendingRiddle = null;
     p.feature.used = true;
+    this.tally('riddles');
     const base = 30 + Math.floor(Math.random() * 50);
     const gold = by === 'dm' ? base * 2 : base;
     const xp = by === 'dm' ? 60 : 30;
@@ -2416,11 +2438,13 @@ class Game {
     ];
     void this.presentRolls(items).then(() => {
       if (ours.result === 20) {
+        this.tally('dice_won');
         this.addGold(stake * 6);
         this.hud.addCombatMessage(`A natural 20. The table goes quiet, then loud. ${roller.name} sweeps up ${stake * 6} gold and buys the room a round.`, '#ffd700');
       } else if (ours.result === 1) {
         this.hud.addCombatMessage(`A natural 1. The house takes the stake, and ${roller.name}'s boots, and is not unkind about it.`, '#c44');
       } else if (ours.result > house.result) {
+        this.tally('dice_won');
         this.addGold(stake * 3);
         this.hud.addCombatMessage(`${roller.name} beats the house. ${stake * 3} gold comes back across the table.`, '#8cf');
       } else if (ours.result === house.result) {
@@ -2565,6 +2589,66 @@ class Game {
       this.spawnFloorBoss(hall, template ? { template, pos: { x: bx, y: by } } : undefined);
     }
     this.traps = placeTraps(this.map, this.rooms, this.monsters, this.dungeonLevel);
+  }
+
+  /** One more of a thing done, for the achievements. */
+  tally(key: string): void {
+    this.counters[key] = (this.counters[key] ?? 0) + 1;
+  }
+
+  /** What the run looks like right now, for the achievements. */
+  private achievementSnapshot(): AchievementSnapshot {
+    const d = getDiceStats();
+    return {
+      kills: this.history.kills,
+      victories: this.history.victories,
+      defeats: this.history.defeats,
+      deepest: this.history.deepestLevel,
+      rooms: this.history.roomsVisited,
+      gold: this.partyGold(),
+      rolls: d.rolls,
+      crits: d.crits,
+      fumbles: d.fumbles,
+      bestCritStreak: d.bestCritStreak,
+      maxLevel: Math.max(0, ...this.party.members.map(m => m.level)),
+      members: this.party.members.length,
+      actsDone: this.story?.actsDone ?? 0,
+      storyComplete: this.story?.complete ?? false,
+      hardcore: this.hardcore,
+      day: Math.floor(this.clock.elapsed / DAY_MS) + 1,
+      counters: this.counters,
+    };
+  }
+
+  /** Anything newly true is earned: a line now, a card when there is a quiet moment. */
+  private checkAchievements(): void {
+    if (!this.runStarted) return;
+    const earned = newlyEarned(this.achievementSnapshot(), new Set(this.achievements));
+    for (const a of earned) {
+      this.achievements.push(a.id);
+      this.achievementQueue.push(a.id);
+      this.hud.addCombatMessage(`\ud83c\udfc5 ${a.title}: ${a.text} The party may be called ${a.epithet}.`, '#ffd700');
+      this.expeditionJournal.push(`Earned: ${a.title}`);
+      sfx.levelUp();
+    }
+    this.showNextAchievement();
+  }
+
+  private showNextAchievement(): void {
+    if (this.achievementCardOpen || this.phase === GamePhase.Combat || this.hud.battleView.isVisible()) return;
+    if (document.querySelector('#story-card')) return;
+    const id = this.achievementQueue.shift();
+    if (!id) return;
+    const a = achievementById(id);
+    if (!a) return;
+    this.achievementCardOpen = true;
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryCard({ kicker: 'Achievement', title: a.title, body: `${a.text}\n\nFrom here the party may be called ${a.epithet}.` }, () => {
+      if (!wasPaused) this.setPaused(false);
+      this.achievementCardOpen = false;
+      this.showNextAchievement();
+    }, { seconds: 8 });
   }
 
   /**
@@ -2712,7 +2796,10 @@ class Game {
           this.noteProgress();
           this.history.victories++;
           this.checkRivalsSlain(slainMonsters);
-          this.hud.addCombatMessage(summarizeFight(this.combatEngine.log.messages, this.party.members.map(m => m.name), this.combatEngine.log.round).line, '#9aa');
+          const numbers = summarizeFight(this.combatEngine.log.messages, this.party.members.map(m => m.name), this.combatEngine.log.round);
+          this.hud.addCombatMessage(numbers.line, '#9aa');
+          if (numbers.taken === 0) this.tally('flawless');
+          this.checkAchievements();
           // Adaptive difficulty: a flawless rout raises future pressure.
           const standing = this.party.alive;
           const avgHpPct = standing.length > 0
@@ -2732,7 +2819,7 @@ class Game {
           const prev = this.history.killLedger[m.template.id] ?? 0;
             this.history.killLedger[m.template.id] = prev + 1;
             if (prev === 0) firstKills.push(m.template.id);
-            if (m.template.name.includes('(Boss)')) this.bossSlainThisFloor = true;
+            if (m.template.name.includes('(Boss)')) { this.bossSlainThisFloor = true; this.tally('bosses'); }
           }
           // Quests that hinge on kills or the floor boss may now be complete.
           this.checkActiveQuestProgress();
@@ -3948,6 +4035,8 @@ class Game {
     for (const m of fallen) {
       this.hud.addCombatMessage(`\u2620 ${m.name} will not rise again. ${m.charClass.name}, level ${m.level}; ${this.history.kills} foes fell before them.`, '#e0705f');
       this.expeditionJournal.push(`${m.name} died and was not brought back`);
+      const where = this.mode === GameMode.Dungeon ? `on floor ${this.dungeonLevel} of ${this.entranceBaseName || this.dungeonName}` : this.mode === GameMode.Town ? `in ${this.currentTown?.name ?? 'a town'}` : 'on the open road';
+      this.fallen.push({ name: m.name, className: m.charClass.name, level: m.level, where, day: Math.floor(this.clock.elapsed / DAY_MS) + 1 });
     }
     this.removeFallen();
     if (this.party.members.length === 0) {
@@ -6643,6 +6732,37 @@ class Game {
       this.expeditionJournal.push(`The DM: ${narrated[1].trim()}`);
       return;
     }
+    // "note: ..." goes in the DM's notebook, shown in the Chronicle.
+    const noted = /^(?:note|notebook|remember)\s*[:\-]\s*(.+)$/i.exec(text);
+    if (noted) {
+      this.notes.push(noted[1].trim());
+      if (this.notes.length > 50) this.notes.shift();
+      this.hud.addCombatMessage(`\ud83d\udcd3 Noted: ${noted[1].trim()}`, '#8cf');
+      return;
+    }
+    if (/^(?:notes|notebook)$/i.test(text)) { this.hud.showChronicle(); return; }
+    // "export": the run as text, on the clipboard.
+    if (/^(?:export|share)(?: the)?(?: run| chronicle| story)?$/i.test(text)) {
+      const body = exportRun({
+        partyName: this.party.partyName,
+        members: this.party.members.map(m => `${m.name}, level ${m.level} ${m.race.name} ${m.charClass.name}`),
+        day: Math.floor(this.clock.elapsed / DAY_MS) + 1,
+        acts: this.storyController.chronicle().acts,
+        roads: this.personalQuests.map(q => `${q.memberName}: ${q.title}${q.done ? ' (done)' : ''}`),
+        deeds: this.expeditionJournal,
+        notes: this.notes,
+        fallen: this.fallen.map(f => `${f.name}, ${f.className} ${f.level}, fell ${f.where} on day ${f.day}`),
+        titles: this.achievements.map(id => achievementById(id)?.title ?? id),
+        numbers: summarizeRun(this),
+      });
+      void navigator.clipboard?.writeText(body).then(
+        () => this.hud.addCombatMessage('\ud83d\udccb The run is on the clipboard, as text: paste it anywhere.', '#8cf'),
+        () => { this.hud.addCombatMessage('The clipboard refused. The chronicle follows in the log instead.', '#886'); for (const line of body.split('
+').slice(0, 80)) this.hud.addCombatMessage(line || ' ', '#9aa'); },
+      );
+      this.hud.showStoryCard({ kicker: 'The run, as text', title: this.party.partyName, body: body.split('\n').slice(0, 14).join('\n').replace(/\n\n+/g, '\n\n') + '\n\n(the whole of it is on the clipboard)' }, () => {}, { seconds: 20 });
+      return;
+    }
     // "stats": the run in numbers.
     if (/^(?:stats|statistics|numbers|the numbers)$/i.test(text)) {
       this.hud.showStatistics();
@@ -6845,6 +6965,8 @@ function startGame() {
     levels: game.party.members.map(m => `${m.name} Lv${m.level}`),
   });
   game.hud.chronicleProvider = () => ({
+    notes: game.notes.slice(-12).reverse(),
+    titles: game.achievements.map(id => achievementById(id)?.epithet ?? id),
     ...game.storyController.chronicle(),
     roads: game.personalQuests.map(q => `${q.memberName} \u2014 ${q.title.toLowerCase()}${q.done ? `, done: now ${q.memberName} ${q.perk.title}` : q.kind === 'pilgrimage' ? ` (${q.progress}/${q.target} towns)` : ''}`),
     orders: describePolicies(game.dmPolicies),
@@ -6965,4 +7087,15 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', startGame);
 } else {
   startGame();
+}
+
+/** The run's headline numbers, for the text export. */
+function summarizeRun(g: Game): string[] {
+  const d = getDiceStats();
+  return [
+    `${g.history.kills} foes slain, ${g.history.victories} fights won, ${g.history.defeats} lost`,
+    `${g.history.roomsVisited} rooms seen, deepest floor ${g.history.deepestLevel}`,
+    `${d.rolls} dice rolled: ${d.crits} natural 20s, ${d.fumbles} natural 1s`,
+    `${g.partyGold()} gold in hand`,
+  ];
 }

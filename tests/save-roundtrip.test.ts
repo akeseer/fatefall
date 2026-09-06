@@ -78,6 +78,10 @@ class TestHost implements SaveHost {
   story: SaveHost['story'] = null;
   personalQuests: SaveHost['personalQuests'] = [];
   dmPolicies: SaveHost['dmPolicies'] = { tolls: 'auto', parley: 'auto', loot: 'all' };
+  counters: SaveHost['counters'] = {};
+  achievements: SaveHost['achievements'] = [];
+  notes: SaveHost['notes'] = [];
+  fallen: SaveHost['fallen'] = [];
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {
