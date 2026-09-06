@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 19;
+export const SAVE_VERSION = 20;
 
 export interface SavedCharacter {
   id: string;
@@ -155,6 +155,16 @@ export interface SaveData {
   difficulty?: 'story' | 'normal' | 'hard';
   /** Towns under siege, by id, with the band's strength. v19+. */
   sieges?: Record<string, { strength: number; since: number }>;
+  /** Fights won side by side, by pair of member ids ("a|b", sorted). v20+. */
+  bonds?: Record<string, number>;
+  /** Floors left on each hireling's contract, by member id. v20+. */
+  hirelings?: Record<string, number>;
+  /** Each member's familiar, by member id. v20+. */
+  familiars?: Record<string, { kind: string; name: string }>;
+  /** The party rides. v20+. */
+  mounted?: boolean;
+  /** Members who retired to a town, by name. v20+. */
+  retired?: string[];
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -348,7 +358,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 17) current = migrateV17toV18(current);
   if (!current) return null;
   if (current.version === 18) current = migrateV18toV19(current);
+  if (!current) return null;
+  if (current.version === 19) current = migrateV19toV20(current);
   return current;
+}
+
+/** v19 → v20: bonds, hirelings, familiars, the horse, the retired. Absent means none. */
+function migrateV19toV20(data: SaveData): SaveData | null {
+  return { ...data, version: 20 };
 }
 
 /** v18 → v19: difficulty and sieges. Absent means normal, and nobody at the gates. */

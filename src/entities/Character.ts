@@ -160,6 +160,8 @@ export class GameCharacter {
   public stabilized: boolean = false;
   /** True for temporary companions (hired guards) that leave after the dungeon. */
   public isTemporaryCompanion: boolean = false;
+  /** A small companion drawn at the feet: a wizard's cat, a ranger's hound. Set by the game from its saved map. */
+  public familiar: { kind: string; name: string } | null = null;
   public deathSaveSuccesses: number = 0;
   public deathSaveFailures: number = 0;
   public exhaustion: number = 0;

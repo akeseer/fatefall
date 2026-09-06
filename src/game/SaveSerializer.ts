@@ -144,6 +144,11 @@ export interface SaveHost {
   torches: number;
   difficulty: 'story' | 'normal' | 'hard';
   sieges: Record<string, { strength: number; since: number }>;
+  bonds: Record<string, number>;
+  hirelings: Record<string, number>;
+  familiars: Record<string, { kind: string; name: string }>;
+  mounted: boolean;
+  retired: string[];
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -228,6 +233,11 @@ export class SaveSerializer {
       torches: this.game.torches,
       difficulty: this.game.difficulty,
       sieges: this.game.sieges,
+      bonds: this.game.bonds,
+      hirelings: this.game.hirelings,
+      familiars: this.game.familiars,
+      mounted: this.game.mounted,
+      retired: this.game.retired,
       hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
@@ -428,6 +438,11 @@ export class SaveSerializer {
     this.game.torches = save.torches ?? 4;
     this.game.difficulty = save.difficulty ?? 'normal';
     this.game.sieges = { ...(save.sieges ?? {}) };
+    this.game.bonds = { ...(save.bonds ?? {}) };
+    this.game.hirelings = { ...(save.hirelings ?? {}) };
+    this.game.familiars = { ...(save.familiars ?? {}) };
+    this.game.mounted = save.mounted ?? false;
+    this.game.retired = [...(save.retired ?? [])];
     this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();

@@ -128,6 +128,8 @@ export class CombatEngine {
   public darkness: boolean = false;
   /** Added to every monster special's DC: the difficulty setting. */
   public dcShift: number = 0;
+  /** A bond with an ally standing close: the game says how much, from what it remembers. */
+  public bondBonus: ((hero: GameCharacter) => number) | null = null;
   /** Heroes who have spent their reaction this round: a parry, a shield block, a counterspell. */
   private reactionsUsed = new Set<string>();
   /** Bosses that have entered their second phase this fight. */
@@ -1589,6 +1591,9 @@ export class CombatEngine {
     if (vendetta > 0) {
       opts.attackRollBonus = (opts.attackRollBonus || 0) + (vendetta >= 2 ? 2 : 1);
     }
+    // A bond: two who have fought side by side long enough know each other's blind side.
+    const bond = this.bondBonus?.(attacker) ?? 0;
+    if (bond > 0) opts.attackRollBonus = (opts.attackRollBonus || 0) + bond;
     // Giant Strength: the potion's fury adds weight to every blow.
     const strBuff = this.potionBuffs[attacker.id]?.damageBonus ?? 0;
     if (strBuff > 0) {

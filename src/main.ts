@@ -55,6 +55,7 @@ import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, canParley, 
 import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
 import { banterFor } from './events/Banter';
+import { randomPartyName } from './entities/PartyNames';
 import { rarityTag } from './loot/LootTables';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
@@ -312,6 +313,17 @@ class Game {
   public difficulty: 'story' | 'normal' | 'hard' = 'normal';
   /** Towns with a band at the gates, by id. Rides in the save. */
   public sieges: Record<string, { strength: number; since: number }> = {};
+  /** Fights won side by side, by pair ("a|b"). At five the pair has a bond. Rides in the save. */
+  public bonds: Record<string, number> = {};
+  /** Floors left on each hireling's contract. Rides in the save. */
+  public hirelings: Record<string, number> = {};
+  /** Each member's familiar, by id. Rides in the save; set onto the characters on load. */
+  public familiars: Record<string, { kind: string; name: string }> = {};
+  /** The party rides. Rides in the save. */
+  public mounted = false;
+  /** Members who retired to a town. Rides in the save. */
+  public retired: string[] = [];
+  private retireOffered = new Set<string>();
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
   /** The party's light has gone out. */
@@ -921,6 +933,7 @@ class Game {
     this.placeRivals();
     this.placeLieutenant();
     this.useDungeonMap();
+    this.tickHirelings();
     // A quest that cares about depth may complete the moment this floor lands.
     this.checkActiveQuestProgress();
     this.hud.addCombatMessage(generateDungeonLore(this.dungeonLevel), '#a8a');
@@ -1048,6 +1061,7 @@ class Game {
     this.applyRunMode();
     this.storyController.ensureStory();
     this.ensurePersonalQuests();
+    this.ensureFamiliars();
     this.storyController.afterStart();
     // Both are armed here, not just the frame request. A window that is
     // visible but never painted (occluded, or a host that withholds frames)
@@ -1695,6 +1709,7 @@ class Game {
     this.combatEngine.startCombat(monsters);
     // Monsters dash around walls, not through them.
     this.combatEngine.isTileWalkable = (x, y) => this.map.isWalkable(x, y);
+    this.combatEngine.bondBonus = (hero) => this.party.alive.some(a => a !== hero && manhattan(a.tile, hero.tile) <= 1 && (this.bonds[bondKey(a.id, hero.id)] ?? 0) >= 5) ? 1 : 0;
     // A monster's mid-fight cry for help can pull unalerted kin from the rest
     // of the floor into the battle — same kind, capped squad, not every time.
     this.combatEngine.onReinforcementsRequested = () => {
@@ -2156,6 +2171,10 @@ class Game {
         break;
       }
       case 'exposure': {
+        if (this.mounted && Math.random() < 0.25) {
+          this.mounted = false;
+          this.hud.addCombatMessage('\ud83d\udc0e The horse bolts in the storm and is not seen again. The party walks.', '#c84');
+        }
         const items: { roll: DiceRollEvent | null; line: string; color: string }[] = [];
         let failed = 0;
         for (const m of this.party.alive) {
@@ -2989,6 +3008,110 @@ class Game {
     return true;
   }
 
+  // ── The party's own things: bonds, contracts, familiars, retirement ────
+
+  /** Every pair standing close at a victory grows a little closer. */
+  private strengthenBonds(): void {
+    const alive = this.party.alive;
+    for (let i = 0; i < alive.length; i++) {
+      for (let j = i + 1; j < alive.length; j++) {
+        const a = alive[i], b = alive[j];
+        if (manhattan(a.tile, b.tile) > 2) continue;
+        const key = bondKey(a.id, b.id);
+        this.bonds[key] = (this.bonds[key] ?? 0) + 1;
+        if (this.bonds[key] === 5) {
+          this.hud.addCombatMessage(`\ud83e\udd1d ${a.name} and ${b.name} have fought side by side long enough to know each other's blind side. Adjacent, each hits truer.`, '#e8b45a');
+          this.expeditionJournal.push(`${a.name} and ${b.name} bonded`);
+          this.tally('bonds');
+        }
+      }
+    }
+  }
+
+  /** A new floor: each hireling's contract runs a floor shorter, and runs out. */
+  private tickHirelings(): void {
+    for (const id of Object.keys(this.hirelings)) {
+      const m = this.party.members.find(x => x.id === id);
+      if (!m) { delete this.hirelings[id]; continue; }
+      this.hirelings[id]--;
+      if (this.hirelings[id] > 0) continue;
+      delete this.hirelings[id];
+      const pay = 15 + m.level * 5;
+      const paid = this.spendGold(pay);
+      const i = this.party.members.indexOf(m);
+      if (i >= 0 && this.party.members.length > 1) {
+        this.party.members.splice(i, 1);
+        if (this.party.formation[i]) this.party.formation.splice(i, 1);
+        if (i < this.party.leaderIndex) this.party.leaderIndex--;
+        else if (i === this.party.leaderIndex) this.party.leaderIndex = 0;
+      }
+      this.hud.addCombatMessage(paid
+        ? `\ud83d\udcdc ${m.name}'s contract is up at the stairwell. ${pay} gold changes hands, and ${m.name} climbs out whistling.`
+        : `\ud83d\udcdc ${m.name}'s contract is up, and the purse cannot cover the ${pay} owed. ${m.name} takes it from the next hoard's share in the telling, and climbs out sour.`, '#a98');
+      this.hud.setParty(this.party);
+    }
+  }
+
+  /** Casters and rangers keep something small at heel; anyone without one is given theirs. */
+  private ensureFamiliars(): void {
+    const kinds: Record<string, string[]> = { wizard: ['cat', 'owl', 'raven'], sorcerer: ['cat', 'weasel'], warlock: ['imp', 'raven', 'toad'], ranger: ['hound', 'hawk'], druid: ['fox', 'owl', 'toad'], artificer: ['weasel'] };
+    const names = ['Soot', 'Pip', 'Wren', 'Ash', 'Bramble', 'Quill', 'Moth', 'Tansy', 'Rook', 'Ember', 'Nettle', 'Gimble'];
+    for (const m of this.party.members) {
+      const pool = kinds[m.charClass.id];
+      if (!pool) continue;
+      if (!this.familiars[m.id]) {
+        const kind = pool[Math.floor(Math.random() * pool.length)];
+        const name = names[Math.floor(Math.random() * names.length)];
+        this.familiars[m.id] = { kind, name };
+        this.hud.addCombatMessage(`\ud83d\udc3e ${m.name} has ${name}, a ${kind}, who goes where ${m.name} goes and notices what ${m.name} misses.`, '#a8a');
+      }
+      m.familiar = this.familiars[m.id];
+    }
+  }
+
+  /** A member of twenty levels in a town may retire there, and hand out work from a chair by the fire. */
+  private maybeOfferRetirement(town: OverworldTown): void {
+    if (this.party.members.length < 2) return;
+    const m = this.party.members.find(x => x.level >= 20 && !this.retireOffered.has(x.id) && !x.isTemporaryCompanion);
+    if (!m) return;
+    this.retireOffered.add(m.id);
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryChoice(`${m.name} is level ${m.level}, and ${town.name} has a chair by the fire and a board that needs a hand who knows the deep. ${m.name} could stop here.`, [
+      { id: 'retire', label: `${m.name} retires`, text: `${m.name} leaves the party and becomes a quest giver in ${town.name}, with work for the ones who go on.` },
+      { id: 'stay', label: 'Not yet', text: 'There is more road in them.' },
+    ], (o) => {
+      if (!wasPaused) this.setPaused(false);
+      if (o.id !== 'retire') return;
+      const i = this.party.members.indexOf(m);
+      this.party.members.splice(i, 1);
+      if (this.party.formation[i]) this.party.formation.splice(i, 1);
+      if (i < this.party.leaderIndex) this.party.leaderIndex--;
+      else if (i === this.party.leaderIndex) this.party.leaderIndex = 0;
+      this.retired.push(m.name);
+      const tl = this.townLife?.byTown[town.id];
+      const specialty = ['fighter', 'barbarian', 'paladin', 'monk', 'blood_hunter'].includes(m.charClass.id) ? 'combat' : ['wizard', 'artificer', 'sorcerer'].includes(m.charClass.id) ? 'lore' : ['cleric', 'warlock'].includes(m.charClass.id) ? 'faith' : ['rogue', 'bard'].includes(m.charClass.id) ? 'stealth' : 'nature';
+      if (tl) {
+        const line = (s: string) => [`"${s}"`];
+        tl.questGivers.push({
+          id: `retired_${m.id}`, name: m.name, title: `Retired ${m.charClass.name}`, portrait: '\ud83c\udfc5', portraitColor: '#e8c56a',
+          backstory: `${m.name} went further down than anyone in ${town.name} and came back to sit by the fire. The board by the door is theirs now.`,
+          dialogue: {
+            stranger: line('You have the look. I had it too. Take the posting and come back with the look gone.'),
+            acquaintance: line('You again. Good. The deep is no place for strangers, and you are not one any more.'),
+            trusted: line('I would go with you if these knees would let me. Take this instead, and my name for the door.'),
+            legend: line('They will tell it about you the way they tell it about me. Make it a good one.'),
+          },
+          specialty, repPerQuest: 25, reputation: 0,
+        });
+      }
+      this.hud.addCombatMessage(`\ud83c\udfc5 ${m.name} sits down in ${town.name} and does not get up. There is a board by the door now with ${m.name}'s name on it.`, '#ffd700');
+      this.expeditionJournal.push(`${m.name} retired to ${town.name}`);
+      this.tally('retired');
+      this.hud.setParty(this.party);
+    }, { seconds: 30, fallback: () => ({ id: 'stay', label: 'Not yet', text: '' }) });
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3134,6 +3257,7 @@ class Game {
           this.noteProgress();
           this.history.victories++;
           this.checkRivalsSlain(slainMonsters);
+          this.strengthenBonds();
           if (slainMonsters.some(m => m.hasKey && !m.fled)) {
             this.floorKeyHeld = true;
             this.hud.addCombatMessage('\ud83d\udd11 An iron key, warm from the body. The locked hall will open now.', '#ffd700');
@@ -4100,6 +4224,7 @@ class Game {
         // An older save has no roads for its members; deal them now, since
         // start() is a no-op when the title screen already had the loop going.
         this.ensurePersonalQuests();
+    this.ensureFamiliars();
         this.hud.addCombatMessage(
           `\u23f3 Run restored \u2014 ${saved.dungeonName} (slot ${slot + 1}), saved ${new Date(saved.savedAt).toLocaleString()}.`,
           '#ffd700'
@@ -4964,6 +5089,7 @@ class Game {
     this.storyController.beginNewRun();
     this.personalQuests = [];
     this.ensurePersonalQuests();
+    this.ensureFamiliars();
     this.hud.addCombatMessage('A fresh run begins — the old tale is erased.', '#ffd700');
   }
 
@@ -5229,7 +5355,7 @@ class Game {
     // when weather mires the route (sandstorm, deep snow, heavy rain).
     const paceSteps = Math.max(
       1,
-      Math.round(2 / (this.weather?.moveCostMultiplier ?? 1))
+      Math.round((this.mounted ? 3 : 2) / (this.weather?.moveCostMultiplier ?? 1))
     );
     let moved = 0;
     for (let step = 0; step < paceSteps; step++) {
@@ -6153,6 +6279,7 @@ class Game {
     this.hud.addCombatMessage(`The party reaches ${town.name} — ${town.description}.`, '#ffd700');
     this.personalArrival(town);
     if (this.siegeAtGate(town)) return;
+    this.maybeOfferRetirement(town);
 
     // The town's rumor sets the mood — and reshapes the quest board.
     const tl = this.townLife?.byTown[town.id];
@@ -6485,6 +6612,16 @@ class Game {
         this.carouse();
         break;
       }
+      case 'buy_horse': {
+        const cost = 80;
+        if (this.mounted) { this.hud.addCombatMessage('The party already has a horse, and it is enough trouble.', '#886'); return; }
+        if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for a horse.', '#c66'); return; }
+        this.addGold(-cost);
+        this.mounted = true;
+        this.hud.addCombatMessage('\ud83d\udc0e A sound horse, a saddle that fits, and the road a third shorter for it.', '#e8b45a');
+        this.hud.townPanel.refresh();
+        break;
+      }
       case 'buy_torches': {
         const cost = 12;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for torches.', '#c66'); return; }
@@ -6731,6 +6868,8 @@ class Game {
       );
       guardChar.isTemporaryCompanion = true;
       this.party.addMember(guardChar);
+      this.hirelings[guardChar.id] = 3 + Math.floor(this.party.leader.level / 3);
+      this.hud.addCombatMessage(`\ud83d\udcdc ${gh.name}'s contract runs ${this.hirelings[guardChar.id]} floors, and then there is pay owed.`, '#a98');
       this.hud.addCombatMessage(gh.name + ' takes formation with the party.', '#8cf');
       this.pendingGuardHire = null;
     } else if (this.pendingGuardHire) {
@@ -7144,6 +7283,14 @@ class Game {
       this.hud.showStoryCard({ kicker: 'The run, as text', title: this.party.partyName, body: body.split('\n').slice(0, 14).join('\n').replace(/\n\n+/g, '\n\n') + '\n\n(the whole of it is on the clipboard)' }, () => {}, { seconds: 20 });
       return;
     }
+    // "new name": the party takes a name from the generator.
+    if (/^(?:new|another|fresh) (?:party )?name$/i.test(text)) {
+      this.party.partyName = randomPartyName();
+      this.hud.addCombatMessage(`\u2726 From here they are ${this.party.partyName}.`, '#ffd700');
+      this.hud.setDungeonTitle(`${this.party.partyName} \u2014 ${this.mode === GameMode.Town ? (this.currentTown?.name ?? 'town') : this.mode === GameMode.Dungeon ? this.dungeonName : 'the road'}`);
+      this.hud.setParty(this.party);
+      return;
+    }
     // "stats": the run in numbers.
     if (/^(?:stats|statistics|numbers|the numbers)$/i.test(text)) {
       this.hud.showStatistics();
@@ -7505,4 +7652,9 @@ function summarizeRun(g: Game): string[] {
 /** The four tiles around one. */
 function dirsAround(t: Vector2): Vector2[] {
   return [{ x: t.x + 1, y: t.y }, { x: t.x - 1, y: t.y }, { x: t.x, y: t.y + 1 }, { x: t.x, y: t.y - 1 }];
+}
+
+/** A pair's key, whichever way round. */
+function bondKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }

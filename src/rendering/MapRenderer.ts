@@ -1509,6 +1509,17 @@ export class MapRenderer {
 
       const sprite = this.sprites.getCharSprite(member, visual.faceLeft);
       ctx.putImageData(sprite, Math.floor(sx), Math.floor(sy));
+      // The familiar keeps to its master's heel: a few pixels of the right colour, with an eye.
+      if (member.familiar) {
+        const colors: Record<string, string> = { cat: '#3a3a44', owl: '#a89468', raven: '#1e1e28', hound: '#8a6a4a', hawk: '#b08a52', fox: '#c8602a', imp: '#7a2a3a', toad: '#5c7d3c', weasel: '#c9a56a' };
+        const fx = Math.floor(sx) + (visual.faceLeft ? TILE_SIZE - 7 : 1);
+        const fy = Math.floor(sy) + TILE_SIZE - 7;
+        ctx.fillStyle = colors[member.familiar.kind] ?? '#6a6a6a';
+        ctx.fillRect(fx, fy + 1, 5, 4);
+        ctx.fillRect(fx + (visual.faceLeft ? 3 : 0), fy, 2, 2);
+        ctx.fillStyle = '#ffd23f';
+        ctx.fillRect(fx + (visual.faceLeft ? 3 : 1), fy, 1, 1);
+      }
 
       // Little dust puff at the start of each step.
       if (step > 0.75) {

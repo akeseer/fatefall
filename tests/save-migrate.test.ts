@@ -201,3 +201,19 @@ describe('v18 -> v19 difficulty and sieges', () => {
     expect(out.sieges).toEqual({ town_1: { strength: 3, since: 5 } });
   });
 });
+
+describe('v19 -> v20 the party\'s own things', () => {
+  it('leaves an older run without them', () => {
+    const out = migrateSave({ version: 19, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.bonds).toBeUndefined();
+    expect(out.familiars).toBeUndefined();
+  });
+  it('carries them through', () => {
+    const out = migrateSave({ version: SAVE_VERSION, bonds: { 'a|b': 5 }, familiars: { a: { kind: 'cat', name: 'Soot' } }, mounted: true, retired: ['Ana'] } as any)!;
+    expect(out.bonds).toEqual({ 'a|b': 5 });
+    expect(out.familiars?.a?.name).toBe('Soot');
+    expect(out.mounted).toBe(true);
+    expect(out.retired).toEqual(['Ana']);
+  });
+});
