@@ -80,6 +80,7 @@ import { getAudio } from './audio/Audio';
 import { getMusic, type MusicMood } from './audio/Music';
 import { getAmbience, NIGHT_BELOW } from './audio/Ambience';
 import { StoryController } from './game/StoryController';
+import { resolveDeadEnd, stuckStage } from './ai/DeadEnd';
 import type { BattleScene } from './ui/BattleScenes';
 import { STORY_BOSS_HP_SCALE, type StoryState } from './story/Story';
 
@@ -270,6 +271,10 @@ class Game {
   private overworldRecentTiles: { x: number; y: number }[] = [];
   /** Rolling recent leader tiles (dungeon) for square-loop detection. */
   private dungeonRecentTiles: { x: number; y: number }[] = [];
+  /** AI ticks since the delve last made progress; the fail-safe against circles reads it. */
+  private idleTicks = 0;
+  /** Which stage of the fail-safe has already been announced this floor. */
+  private stuckAnnounced: 0 | 1 | 2 | 3 = 0;
 
   // Live DM orders from the command panel
   public dmDirection?: Direction;
@@ -615,29 +620,8 @@ class Game {
     // Place a boss in the last room
     if (this.rooms.length > 1) {
       const bossRoom = this.rooms[this.rooms.length - 1];
-      // Boss is 1 level above current dungeon — and answers to the theme.
       const bossCr = Math.min(5, this.dungeonLevel);
-      const themeId = this.dungeonTheme?.id;
-      const bossTemplates = MONSTER_TEMPLATES.filter(m => m.cr >= bossCr - 0.5 && m.cr <= bossCr + 0.5 && !isUnseeableMonster(m.id));
-      const themedBosses = themeId && THEME_MONSTERS[themeId]
-        ? bossTemplates.filter(m => THEME_MONSTERS[themeId].includes(m.id))
-        : [];
-      let bossTemplate = themedBosses.length > 0
-        ? themedBosses[Math.floor(Math.random() * themedBosses.length)]
-        : bossTemplates.length > 0
-          ? bossTemplates[Math.floor(Math.random() * bossTemplates.length)]
-          : getRandomMonster(bossCr, themeId);
-      // The story's antagonist takes the last room on the act's floor.
-      const storyBoss = this.storyController.bossOverride(this.dungeonLevel);
-      if (storyBoss) {
-        bossTemplate = storyBoss.template;
-        this.hud.addCombatMessage(`\u2620 ${storyBoss.name} is here. The air knows it.`, '#e0705f');
-      }
-
-      const boss = this.spawnMonster(bossTemplate, { x: bossRoom.cx, y: bossRoom.cy });
-      boss.maxHp = Math.floor(boss.maxHp * (storyBoss ? 1.5 * STORY_BOSS_HP_SCALE : 1.5));
-      boss.hp = boss.maxHp;
-      boss.template = { ...boss.template, name: `💀 ${boss.template.name} (Boss)`, xp: boss.template.xp * 3 };
+      const boss = this.spawnFloorBoss(bossRoom);
 
       // The stated delve mood bends the floor's boss — the sky's hunger has a
       // throne-room of its own down here.
@@ -772,6 +756,7 @@ class Game {
   }
 
   generateNewDungeon(opts?: { name?: string; theme?: LocationTemplate | null }): void {
+    this.noteProgress();
     // A new floor, and a new run, both fade up from black.
     this.beginTransition('fade');
     // Fresh floor — the breadcrumb trail and any cached exploration route reset.
@@ -1196,6 +1181,11 @@ class Game {
     const doorsNearby = this.getNearbyTilesByType(TileType.Door, leader.tile, 2);
     const stairsNearby = this.getNearbyTilesByType(TileType.StairsDown, leader.tile, 1);
 
+    // The fail-safe: a party that has made no progress for a long while
+    // stops wandering, reads the map, and if the floor is a dead end resolves
+    // it rather than circling until the player notices.
+    if (this.mode === GameMode.Dungeon && this.stuckFailsafe()) return;
+
     const action = this.aiDirector.decideAction(
       this.map,
       visibleMonsters,
@@ -1439,6 +1429,7 @@ class Game {
     const roomIdx = this.currentRoomIndex();
     if (roomIdx !== -1 && !this.visitedRooms.has(roomIdx)) {
       this.visitedRooms.add(roomIdx);
+      this.noteProgress();
       this.history.roomsVisited = this.visitedRooms.size;
       this.bulletinScoutProgress(1);
       this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
@@ -1541,6 +1532,7 @@ class Game {
   }
 
   private startCombat(monsters: Monster[]) {
+    this.noteProgress();
     this.beginTransition('blinds');
     this.combatEngine.defenseBonus = 0;
     const feature = this.currentRoom()?.feature;
@@ -1844,6 +1836,7 @@ class Game {
           const slainMonsters = this.monsters.filter(m => !m.isAlive || m.fled);
           const escaped = slainMonsters.filter(m => m.fled);
           this.history.kills += slainMonsters.length - escaped.length;
+          this.noteProgress();
           this.history.victories++;
           // Adaptive difficulty: a flawless rout raises future pressure.
           const standing = this.party.alive;
@@ -2821,6 +2814,172 @@ class Game {
     }
 
     this.start();
+  }
+
+  /**
+   * The floor's boss, placed in a room: a level above the floor, answering to
+   * the theme, or the story's antagonist on the act's floor. Used when the
+   * floor is laid out, and by the fail-safe when a posting still wants a boss
+   * that is nowhere to be found.
+   */
+  private spawnFloorBoss(room: { cx: number; cy: number }): Monster {
+    const bossCr = Math.min(5, this.dungeonLevel);
+    const themeId = this.dungeonTheme?.id;
+    const bossTemplates = MONSTER_TEMPLATES.filter(m => m.cr >= bossCr - 0.5 && m.cr <= bossCr + 0.5 && !isUnseeableMonster(m.id));
+    const themedBosses = themeId && THEME_MONSTERS[themeId]
+      ? bossTemplates.filter(m => THEME_MONSTERS[themeId].includes(m.id))
+      : [];
+    let bossTemplate = themedBosses.length > 0
+      ? themedBosses[Math.floor(Math.random() * themedBosses.length)]
+      : bossTemplates.length > 0
+        ? bossTemplates[Math.floor(Math.random() * bossTemplates.length)]
+        : getRandomMonster(bossCr, themeId);
+    // The story's antagonist takes the last room on the act's floor.
+    const storyBoss = this.storyController.bossOverride(this.dungeonLevel);
+    if (storyBoss) {
+      bossTemplate = storyBoss.template;
+      this.hud.addCombatMessage(`\u2620 ${storyBoss.name} is here. The air knows it.`, '#e0705f');
+    }
+    // Somewhere it can stand: a free tile in the room, else any walkable tile
+    // in it, else the room's centre as a last resort.
+    const pos = findEmptyTile(this.map, room as Room, this.monsters) ?? this.walkableIn(room as Room) ?? { x: room.cx, y: room.cy };
+    const boss = this.spawnMonster(bossTemplate, pos);
+    boss.maxHp = Math.floor(boss.maxHp * (storyBoss ? 1.5 * STORY_BOSS_HP_SCALE : 1.5));
+    boss.hp = boss.maxHp;
+    boss.template = { ...boss.template, name: `💀 ${boss.template.name} (Boss)`, xp: boss.template.xp * 3 };
+    return boss;
+  }
+
+  /** Any walkable tile inside a room, nearest its centre first. */
+  private walkableIn(room: Room): Vector2 | null {
+    let best: Vector2 | null = null;
+    let bestD = Infinity;
+    for (let y = room.y; y < room.y + room.height; y++) {
+      for (let x = room.x; x < room.x + room.width; x++) {
+        if (!this.map.isWalkable(x, y)) continue;
+        const d = Math.abs(x - room.cx) + Math.abs(y - room.cy);
+        if (d < bestD) { bestD = d; best = { x, y }; }
+      }
+    }
+    return best;
+  }
+
+  /** A walkable, unoccupied tile within a few steps of the party, for a foe that must be reachable. */
+  private walkableNearParty(): Vector2 | null {
+    const lead = this.party.leader.tile;
+    const taken = new Set([...this.monsters.filter(m => m.isAlive), ...this.party.members].map(m => `${m.tile.x},${m.tile.y}`));
+    for (let r = 2; r <= 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) + Math.abs(dy) !== r) continue;
+          const x = lead.x + dx, y = lead.y + dy;
+          if (this.map.isWalkable(x, y) && !taken.has(`${x},${y}`)) return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** The delve did something: the fail-safe's count starts over. */
+  private noteProgress(): void {
+    this.idleTicks = 0;
+    this.stuckAnnounced = 0;
+  }
+
+  /**
+   * True when the fail-safe took the party's turn. Stage one: after a long
+   * while without progress, walk an A* route to the nearest unvisited room
+   * or the stairs instead of wandering. Stage two, or stage one with nowhere
+   * to route to: the floor is a dead end; raise the boss the posting still
+   * wants, or take the stairs, or climb out.
+   */
+  private stuckFailsafe(): boolean {
+    if (this.phase !== GamePhase.Exploration || this.descending || this.dmDirection) return false;
+    this.idleTicks++;
+    const stage = stuckStage(this.idleTicks);
+    if (stage === 0) return false;
+    const leader = this.party.leader;
+    if (stage === 1) {
+      if (this.stuckAnnounced < 1) {
+        this.stuckAnnounced = 1;
+        this.hud.addCombatMessage(`\ud83e\udded ${leader.name} calls a halt. The party stops wandering and takes stock of the map.`, '#e8b45a');
+      }
+      if (this.exploreStep()) return true;
+      // Nothing to route to: fall through to the dead-end resolution now.
+    }
+    if (this.stuckAnnounced < 2) this.stuckAnnounced = 2;
+    const q = this.activeQuest();
+    const resolution = resolveDeadEnd({
+      quest: q ? { kind: q.kind, targetFloor: q.targetFloor, completed: q.completed } : null,
+      floor: this.dungeonLevel,
+      bossAlive: this.monsters.some(m => m.isAlive && (m.isBoss || /\(Boss\)/.test(m.template.name))),
+      bossSlain: this.bossSlainThisFloor,
+      hasStairs: this.findStairsTile() !== null,
+      roomsUnvisited: this.rooms.filter((_, i) => !this.visitedRooms.has(i)).length,
+    });
+    switch (resolution) {
+      case 'raise_boss': {
+        // The farthest room, unvisited if any is, so the fight is a march and not an ambush.
+        const byDistance = this.rooms
+          .map((r, i) => ({ r, i, d: Math.abs(r.cx - leader.tile.x) + Math.abs(r.cy - leader.tile.y) }))
+          .sort((a, b) => b.d - a.d);
+        const room = (byDistance.find(x => !this.visitedRooms.has(x.i)) ?? byDistance[0])?.r ?? this.rooms[this.rooms.length - 1];
+        const boss = this.spawnFloorBoss(room);
+        this.combatEngine.monsters = this.monsters;
+        this.hud.addCombatMessage(`\ud83d\udd6f Something that had kept out of sight comes looking for the party: ${boss.template.name.replace(/^\ud83d\udc80 /, '')} is on this floor after all.`, '#e0705f');
+        this.dungeonRoute = [];
+        this.dungeonRouteGoal = -1;
+        this.noteProgress();
+        return true;
+      }
+      case 'hunt_boss': {
+        // March on the boss along an A* route, one step a tick, until the fight starts.
+        const boss = this.monsters.find(m => m.isAlive && (m.isBoss || /\(Boss\)/.test(m.template.name)));
+        if (!boss) return false;
+        if (this.stuckAnnounced < 3) {
+          this.stuckAnnounced = 3;
+          this.hud.addCombatMessage(`\ud83c\udfaf ${leader.name} has had enough of corridors. The party goes straight for ${boss.template.name.replace(/^\ud83d\udc80 /, '')}.`, '#e8b45a');
+        }
+        // Route to the boss, or to a walkable tile beside it when it stands on something the party cannot.
+        const goals = this.map.isWalkable(boss.tile.x, boss.tile.y)
+          ? [boss.tile]
+          : [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: boss.tile.x + dx, y: boss.tile.y + dy })).filter(t => this.map.isWalkable(t.x, t.y));
+        let route: Vector2[] = [];
+        for (const goal of goals) {
+          route = astarPath(this.map, leader.tile, goal, { maxNodes: 8000 });
+          if (route.length > 0) break;
+        }
+        const next = route[0];
+        if (!next) {
+          // No way to it at all: then it comes to them. A quest boss walled off
+          // by the generator must never be a quest the party cannot finish.
+          const here = this.walkableNearParty();
+          if (!here) return false;
+          boss.tile = { ...here };
+          this.hud.addCombatMessage(`\ud83d\udca8 The walls between them do not hold ${boss.template.name.replace(/^\ud83d\udc80 /, '')} back. It finds the party instead.`, '#e0705f');
+          this.noteProgress();
+          return true;
+        }
+        const dx = Math.sign(next.x - leader.tile.x);
+        const dy = Math.sign(next.y - leader.tile.y);
+        const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
+        return this.moveParty(dir);
+      }
+      case 'descend': {
+        this.hud.addCombatMessage(`${leader.name} gives up on this floor. The party takes the stairs down.`, '#cc8');
+        this.descending = true;
+        this.noteProgress();
+        setTimeout(() => this.generateNewDungeon(), 500);
+        return true;
+      }
+      case 'leave': {
+        this.hud.addCombatMessage(`There is nothing more for the party here. They climb back toward the surface.`, '#cc8');
+        this.noteProgress();
+        this.exitDungeonToOverworld();
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Rebuild the party from scratch (a brand-new run), from the chosen classes where given. */
@@ -5240,6 +5399,7 @@ class Game {
 
   /** Leave the dungeon for the surface — quest complete or by order. */
   exitDungeonToOverworld(): void {
+    this.noteProgress();
     this.beginTransition('fade');
     sfx.ascend();
     this.descending = true;

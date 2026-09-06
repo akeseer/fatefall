@@ -54,6 +54,13 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   level per act, side work below it), swaps the act's boss onto the target floor in
   `populateDungeonFloor`, and runs the cards and choices through the HUD. Story state
   rides in the save (`story`, v13). Never call `Math.random` in `Story.ts`.
+- **`src/ai/DeadEnd.ts`** — the fail-safe against a party going in circles. `Game` counts AI
+  ticks since the delve made progress (`noteProgress()` on a new room, a kill, a fight, a floor);
+  past the soft threshold `stuckFailsafe()` walks an A* route instead of wandering, past the hard
+  one (or when nothing is routable) it resolves the floor: raise the boss a slay posting still
+  wants, hunt a boss that exists (relocating it beside the party if the generator walled it
+  off), take the stairs, or climb out. `resolveDeadEnd` is pure and tested; new ways to be
+  stuck belong there, not in the AI's wander logic.
 - **`src/ai/AIDirector.ts`** — the party's tactical planner. Returns an `AIAction`
   union that `Game.aiTick` dispatches on. Combat decisions live in `CombatEngine`.
 - **`src/combat/Abilities.ts`** — class skills as data: a ladder of three or four per class
