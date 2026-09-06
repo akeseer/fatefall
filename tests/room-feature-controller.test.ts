@@ -83,6 +83,8 @@ class FakeHost implements RoomFeatureHost {
   }
   battleEdge: { attackBonus: number; fights: number } | null = null;
   grantBattleEdge(attackBonus: number, fights: number): void { this.battleEdge = { attackBonus, fights }; }
+  revealSecrets(): string | null { return null; }
+  takeEscortee(): void {}
 
   said(fragment: string): boolean { return this.log.some(l => l.includes(fragment)); }
 

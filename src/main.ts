@@ -53,6 +53,7 @@ import { pickCampScene, readWatch, type CampMember } from './events/CampScenes';
 import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
 import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
+import { dealPersonalQuests, debtPayable, heirloomsPossibleOn, hookLine, pilgrimageArrives, rivalsDueOn, type PersonalQuest } from './events/PersonalQuests';
 import { pushDiceRoll, getDiceStats, parseDiceExpr, setDiceFloor } from './rules/DiceEvents';
 import { grantLuckDie, onLuckDieSpent } from './rules/LuckDie';
 import { SaveData, clearSlot, listSaves, loadFromSlot, saveToSlot } from './save/SaveManager';
@@ -272,6 +273,12 @@ class Game {
   private parleyed = new Set<string>();
   /** No road event until this timestamp, so the road is not a carnival. */
   private roadEventCooldownUntil = 0;
+  /** Each member's own road. Rides in the save. */
+  public personalQuests: PersonalQuest[] = [];
+  /** A freed prisoner walking with the party to the next town. Not saved. */
+  private escortee: { name: string; reward: number } | null = null;
+  /** Exploration ticks toward the next thing the dungeon does on its own. */
+  private livingTicks = 0;
   private combatTickInterval: number = BattleView.TURN_MS; // ms between combat turns at 1x
   public monsterIdCounter: number = 0;
   private stuckDirCount: number = 0;
@@ -850,6 +857,7 @@ class Game {
     this.phase = GamePhase.Exploration;
     this.descending = false; // The new floor is ready — descents may queue again.
     this.hud.addCombatMessage(`Welcome to ${this.dungeonName}!`, '#ffd700');
+    this.placeRivals();
     // A quest that cares about depth may complete the moment this floor lands.
     this.checkActiveQuestProgress();
     this.hud.addCombatMessage(generateDungeonLore(this.dungeonLevel), '#a8a');
@@ -973,6 +981,7 @@ class Game {
     this.runStarted = true;
     this.applyRunMode();
     this.storyController.ensureStory();
+    this.ensurePersonalQuests();
     this.storyController.afterStart();
     // Both are armed here, not just the frame request. A window that is
     // visible but never painted (occluded, or a host that withholds frames)
@@ -1138,6 +1147,7 @@ class Game {
           // Occasionally the sky you descended under closes in: a howling pack
           // corners the party, shadows pool at a shaft, or a boon finds them.
           this.maybeDungeonMoodEvent();
+          this.maybeLivingDungeonEvent();
         }
       }
     } else if (this.mode === GameMode.Overworld || this.mode === GameMode.Town) {
@@ -2087,6 +2097,194 @@ class Game {
     }
   }
 
+  // ── Personal quests, prisoners and the living dungeon ─────────────────
+
+  /** Every member has a road; anyone without one (a new run, an old save) is dealt theirs. */
+  private ensurePersonalQuests(): void {
+    const before = this.personalQuests.length;
+    this.personalQuests = dealPersonalQuests(
+      this.party.members.map(m => ({ id: m.id, name: m.name, background: m.background, classId: m.charClass.id, deity: m.deity })),
+      this.personalQuests,
+    );
+    for (const q of this.personalQuests.slice(before)) {
+      this.hud.addCombatMessage(hookLine(q), '#d8c88a');
+      this.expeditionJournal.push(`${q.memberName}'s road: ${q.title}`);
+    }
+  }
+
+  /** A road ends: the card, the title, the point in the ability it tested. */
+  private completePersonalQuest(q: PersonalQuest): void {
+    if (q.done) return;
+    q.done = true;
+    const m = this.party.members.find(x => x.id === q.memberId);
+    if (m) {
+      m.abilities[q.perk.ability] = Math.min(20, m.abilities[q.perk.ability] + 1);
+      m.addXp(100);
+    }
+    const abilityName: Record<string, string> = { str: 'Strength', dex: 'Dexterity', con: 'Constitution', int: 'Intelligence', wis: 'Wisdom', cha: 'Charisma' };
+    this.expeditionJournal.push(`${q.memberName} finished their road: ${q.title}. Now ${q.memberName} ${q.perk.title}.`);
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryCard({
+      kicker: 'A road ends',
+      title: `${q.memberName} ${q.perk.title}`,
+      body: `${q.ending}\n\nThe road tested ${abilityName[q.perk.ability]}, and left its mark: +1 ${abilityName[q.perk.ability]}, and a name the party will use when it matters.`,
+    }, () => {
+      if (!wasPaused) this.setPaused(false);
+      this.hud.addCombatMessage(`\u2726 ${q.memberName} ${q.perk.title}: +1 ${abilityName[q.perk.ability]}, +100 XP.`, '#ffd700');
+      this.hud.setParty(this.party);
+    }, { seconds: 14 });
+  }
+
+  /** Town gates: debts are paid, pilgrimages counted, and an escorted prisoner pays. */
+  private personalArrival(town: OverworldTown): void {
+    if (this.escortee) {
+      const e = this.escortee;
+      this.escortee = null;
+      this.addGold(e.reward);
+      this.grantXp(() => 40);
+      this.hud.addCombatMessage(`\ud83d\udc9b ${e.name.charAt(0).toUpperCase() + e.name.slice(1)} is home. The money was real: ${e.reward} gold, and a door in ${town.name} that will always open.`, '#ffd700');
+    }
+    for (const q of this.personalQuests) {
+      if (q.done) continue;
+      if (q.kind === 'pilgrimage') {
+        if (pilgrimageArrives(q, town.id)) this.completePersonalQuest(q);
+        else if (q.progress > 0 && q.visited[q.visited.length - 1] === town.id) {
+          this.hud.addCombatMessage(`\ud83d\udd6f ${q.memberName} stops at the gate of ${town.name} and speaks a prayer (${q.progress}/${q.target}).`, '#a8a');
+        }
+      } else if (debtPayable(q, this.partyGold())) {
+        if (this.spendGold(q.target)) this.completePersonalQuest(q);
+      }
+    }
+  }
+
+  /** A deep enough floor: a member's rival waits in a far room. */
+  private placeRivals(): void {
+    if (this.mode !== GameMode.Dungeon) return;
+    for (const q of rivalsDueOn(this.personalQuests, this.dungeonLevel)) {
+      if (this.monsters.some(m => m.rivalOf === q.memberId)) continue;
+      const room = this.rooms[Math.max(1, Math.floor(this.rooms.length / 2))] ?? this.rooms[this.rooms.length - 1];
+      if (!room) continue;
+      const pos = findEmptyTile(this.map, room, this.monsters) ?? this.walkableIn(room);
+      if (!pos) continue;
+      const base = getRandomMonster(Math.max(1, this.dungeonLevel), undefined);
+      const talker = base.type === 'humanoid' ? base : (getMonsterTemplate('bandit_captain') ?? base);
+      const template: MonsterTemplate = { ...talker, name: `${q.rivalName}`, hp: Math.round(talker.hp * 1.5), xp: talker.xp * 2 };
+      const rival = this.spawnMonster(template, pos);
+      rival.rivalOf = q.memberId;
+      this.hud.addCombatMessage(`\ud83d\udc41 ${q.memberName} goes still at the top of the stairs. Somewhere on this floor: ${q.rivalName}. ${q.memberName} would know that laugh anywhere.`, '#e8b45a');
+    }
+  }
+
+  /** A fallen rival ends its member's road. */
+  private checkRivalsSlain(slain: Monster[]): void {
+    for (const m of slain) {
+      if (!m.rivalOf || m.fled) continue;
+      const q = this.personalQuests.find(x => x.memberId === m.rivalOf && !x.done);
+      if (q) this.completePersonalQuest(q);
+    }
+  }
+
+  /** A hoard deep enough may hold what a member lost. */
+  private maybeHeirloom(loot: LootResult): void {
+    if (this.mode !== GameMode.Dungeon) return;
+    if (loot.items.length === 0 && loot.goldValue === 0) return;
+    const due = heirloomsPossibleOn(this.personalQuests, this.dungeonLevel);
+    if (due.length === 0) return;
+    if (Math.random() > (loot.hoard ? 0.7 : 0.3)) return;
+    this.completePersonalQuest(due[0]);
+  }
+
+  /** Mark the boss hall and the stairs on the map, for a prisoner's dust-map. */
+  revealSecrets(): string | null {
+    if (this.mode !== GameMode.Dungeon) return null;
+    const told: string[] = [];
+    const stairs = this.findStairsTile();
+    if (stairs) { this.map.reveal(stairs.x, stairs.y, 3); told.push('the way down'); }
+    const hall = this.rooms[this.rooms.length - 1];
+    if (hall) { this.map.reveal(hall.cx, hall.cy, Math.max(hall.width, hall.height)); told.push('the hall where it sleeps'); }
+    if (told.length === 0) return null;
+    return `\ud83d\uddfa The map shows ${told.join(' and ')} now.`;
+  }
+
+  /** A freed prisoner walks with the party; the next town pays. */
+  takeEscortee(name: string, reward: number): void {
+    this.escortee = { name, reward };
+  }
+
+  /**
+   * The dungeon does things on its own: a patrol comes looking, a corridor
+   * falls in. Roughly every hundred-odd exploration ticks, and never in a
+   * way that cuts the party off from the stairs or the boss.
+   */
+  private maybeLivingDungeonEvent(): void {
+    if (this.mode !== GameMode.Dungeon || this.phase !== GamePhase.Exploration) return;
+    this.livingTicks++;
+    if (this.livingTicks < 110) return;
+    this.livingTicks = 0;
+    if (Math.random() < 0.55) this.sendPatrol();
+    else this.caveIn();
+  }
+
+  /** Two or three of the floor's kind, from a room already seen, coming this way. */
+  private sendPatrol(): void {
+    const here = this.currentRoomIndex();
+    const seen = [...this.visitedRooms].filter(i => i !== here && this.rooms[i]);
+    if (seen.length === 0) return;
+    const room = this.rooms[seen[Math.floor(Math.random() * seen.length)]];
+    const count = 2 + (Math.random() < 0.4 ? 1 : 0);
+    const spawned: Monster[] = [];
+    const cr = Math.max(0.5, this.dungeonLevel * 0.6);
+    for (let i = 0; i < count; i++) {
+      const pos = findEmptyTile(this.map, room, this.monsters);
+      if (!pos) break;
+      const m = this.spawnMonster(getRandomMonster(cr, this.dungeonThemeId()), pos);
+      m.alertLevel = 2;
+      spawned.push(m);
+    }
+    if (spawned.length === 0) return;
+    const names = [...new Set(spawned.map(m => m.template.name))].join(' and ');
+    this.hud.addCombatMessage(`\ud83d\udc63 Footsteps, from a room the party has already been through. A patrol of ${names} is coming this way.`, '#c84');
+    sfx.battle();
+  }
+
+  /** A corridor tile falls in, if the stairs and the boss hall stay reachable. */
+  private caveIn(): void {
+    const leader = this.party.leader;
+    const inRoom = (x: number, y: number) => this.rooms.some(r => x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height);
+    const candidates: Vector2[] = [];
+    for (let dy = -12; dy <= 12; dy++) {
+      for (let dx = -12; dx <= 12; dx++) {
+        const x = leader.tile.x + dx, y = leader.tile.y + dy;
+        const d = Math.abs(dx) + Math.abs(dy);
+        if (d < 4 || d > 12) continue;
+        if (this.map.getTile(x, y) !== TileType.Floor || inRoom(x, y)) continue;
+        if (this.monsters.some(m => m.isAlive && m.tile.x === x && m.tile.y === y)) continue;
+        if (this.party.members.some(m => m.tile.x === x && m.tile.y === y)) continue;
+        candidates.push({ x, y });
+      }
+    }
+    if (candidates.length === 0) return;
+    const spot = candidates[Math.floor(Math.random() * candidates.length)];
+    this.map.setTile(spot.x, spot.y, TileType.Wall);
+    const stairs = this.findStairsTile();
+    const hall = this.rooms[this.rooms.length - 1];
+    const goals = [stairs, hall ? this.walkableIn(hall) : null].filter((g): g is Vector2 => g !== null);
+    const cut = goals.some(g => astarPath(this.map, leader.tile, g, { maxNodes: 12000 }).length === 0 && !(g.x === leader.tile.x && g.y === leader.tile.y));
+    if (cut) {
+      this.map.setTile(spot.x, spot.y, TileType.Floor);
+      return;
+    }
+    this.hud.addCombatMessage('\ud83e\udea8 A groan of stone somewhere close, then a roar of it: a corridor comes down in a boil of dust. When it settles, one way through this place is gone.', '#c8a860');
+    this.kickCameraFor(['smashes']);
+    sfx.thunder();
+  }
+
+  /** The current dungeon's theme id, for monsters that fit the floor. */
+  private dungeonThemeId(): string | undefined {
+    return this.dungeonTheme?.id ?? undefined;
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -2225,6 +2423,7 @@ class Game {
           this.history.kills += slainMonsters.length - escaped.length;
           this.noteProgress();
           this.history.victories++;
+          this.checkRivalsSlain(slainMonsters);
           // Adaptive difficulty: a flawless rout raises future pressure.
           const standing = this.party.alive;
           const avgHpPct = standing.length > 0
@@ -3179,6 +3378,9 @@ class Game {
       if (saved) {
         this.restore(saved);
         this.hud.resetLog();
+        // An older save has no roads for its members; deal them now, since
+        // start() is a no-op when the title screen already had the loop going.
+        this.ensurePersonalQuests();
         this.hud.addCombatMessage(
           `\u23f3 Run restored \u2014 ${saved.dungeonName} (slot ${slot + 1}), saved ${new Date(saved.savedAt).toLocaleString()}.`,
           '#ffd700'
@@ -3594,6 +3796,7 @@ class Game {
       this.hud.addCombatMessage(line, '#dd0');
     }
 
+    this.maybeHeirloom(loot);
     // Split the coin value among the living members.
     const living = this.party.alive;
     if (loot.goldValue > 0 && living.length > 0) {
@@ -4016,6 +4219,8 @@ class Game {
     this.generateOverworld();
     this.combatEngine.monsters = this.monsters;
     this.storyController.beginNewRun();
+    this.personalQuests = [];
+    this.ensurePersonalQuests();
     this.hud.addCombatMessage('A fresh run begins — the old tale is erased.', '#ffd700');
   }
 
@@ -5193,6 +5398,7 @@ class Game {
     this.overworldPath = [];
     this.hud.setDungeonTitle(`${this.party.partyName} — ${town.name}`);
     this.hud.addCombatMessage(`The party reaches ${town.name} — ${town.description}.`, '#ffd700');
+    this.personalArrival(town);
 
     // The town's rumor sets the mood — and reshapes the quest board.
     const tl = this.townLife?.byTown[town.id];

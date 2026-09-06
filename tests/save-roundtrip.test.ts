@@ -76,6 +76,7 @@ class TestHost implements SaveHost {
   runMode: SaveHost['runMode'] = 'auto';
   hardcore = false;
   story: SaveHost['story'] = null;
+  personalQuests: SaveHost['personalQuests'] = [];
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {

@@ -131,3 +131,17 @@ describe('v11 -> v12 run settings', () => {
     expect(out.hardcore).toBe(true);
   });
 });
+
+describe('v14 -> v15 personal quests', () => {
+  it('leaves an older run without roads, which restore deals on load', () => {
+    const out = migrateSave({ version: 14, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.personalQuests).toBeUndefined();
+  });
+
+  it('carries the roads through untouched', () => {
+    const quests = [{ id: 'pq_m1', memberId: 'm1', memberName: 'Ana', kind: 'debt', title: 'A debt', hook: 'h', ending: 'e', target: 80, progress: 0, visited: [], done: false, perk: { ability: 'cha', title: 'the Square' } }];
+    const out = migrateSave({ version: SAVE_VERSION, personalQuests: quests } as any)!;
+    expect(out.personalQuests).toEqual(quests);
+  });
+});

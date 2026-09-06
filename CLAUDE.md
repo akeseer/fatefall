@@ -175,3 +175,14 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   parley with a bandit gang), storms, rivals and travellers on overworld steps, on a cooldown.
   Dice outside combat go through `Game.rollHeld` + `presentRolls`, which hold the tray back and
   play each die before its line; `Rules.abilityCheck` is the check-kind roll.
+- **Personal quests** (`src/events/PersonalQuests.ts`, pure): every member is dealt one road from
+  their background (debt, rival, heirloom, pilgrimage); state rides in the save as
+  `personalQuests` (v15). `Game.ensurePersonalQuests` deals missing ones on a new run and after a
+  restore (called directly after `restore`, because `start()` is a no-op when the title screen
+  already runs the loop). Hooks: `placeRivals` on a new floor (a named humanoid with `rivalOf`),
+  `checkRivalsSlain` on victory, `maybeHeirloom` in `distributeLoot`, `personalArrival` at town
+  gates (debts paid, pilgrimages counted, an escorted prisoner pays). Finishing one shows a card
+  and gives +1 to the tested ability. Prison cells now roll: coin, a dust-map (`revealSecrets`),
+  an escortee (`takeEscortee`), or a doppelganger. The living dungeon (`maybeLivingDungeonEvent`)
+  sends a patrol from a visited room or drops a corridor tile, reverting any cave-in that would
+  cut the party off from the stairs or the boss hall.

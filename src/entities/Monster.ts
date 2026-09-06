@@ -41,6 +41,8 @@ export class Monster {
   public fled: boolean = false;
   /** Combat memory: who hurt this creature most (party member id). */
   public tormentorId: string | null = null;
+  /** The member whose personal rival this is, when it is one. Not saved: a rival waits again on the next floor. */
+  public rivalOf: string | null = null;
   /** How hard the grudge burns — grows with every wound from the same hand. */
   public grudge: number = 0;
   public alertLevel: number = 0; // 0 = unaware, 1 = suspicious, 2 = hostile

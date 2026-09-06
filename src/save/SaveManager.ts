@@ -1,4 +1,5 @@
 import type { StoryState } from '../story/Story';
+import type { PersonalQuest } from '../events/PersonalQuests';
 /**
  * Save / load — persists runs between sessions in up to three named slots.
  *
@@ -28,7 +29,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 
 export interface SavedCharacter {
   id: string;
@@ -135,6 +136,8 @@ export interface SaveData {
   hardcore?: boolean;
   /** The main quest: seed, act, flags and journal. Absent on older runs, which begin the tale on load. v13+. */
   story?: StoryState | null;
+  /** Each member's own road (debt, rival, heirloom, pilgrimage). Absent on older runs, which are dealt theirs on load. v15+. */
+  personalQuests?: PersonalQuest[];
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -318,7 +321,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 12) current = migrateV12toV13(current);
   if (!current) return null;
   if (current.version === 13) current = migrateV13toV14(current);
+  if (!current) return null;
+  if (current.version === 14) current = migrateV14toV15(current);
   return current;
+}
+
+/** v14 → v15: personal quests. An older run has none yet; restore deals them. */
+function migrateV14toV15(data: SaveData): SaveData | null {
+  return { ...data, version: 15 };
 }
 
 /** v13 → v14: skill resource pools. Absent means full, which is what a rest would give. */

@@ -63,6 +63,7 @@ import { getLocation, getRandomElement, LOCATIONS } from '../ai/DnDKnowledge';
 import { setDiceFloor } from '../rules/DiceEvents';
 import { getLuckDie, grantLuckDie } from '../rules/LuckDie';
 import type { StoryState } from '../story/Story';
+import type { PersonalQuest } from '../events/PersonalQuests';
 
 /**
  * Everything a save reads or writes. The state half is the run itself; the
@@ -133,6 +134,7 @@ export interface SaveHost {
   runMode: 'auto' | 'manual';
   hardcore: boolean;
   story: StoryState | null;
+  personalQuests: PersonalQuest[];
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -208,6 +210,7 @@ export class SaveSerializer {
       dmStance: this.game.dmStance,
       runMode: this.game.runMode,
       story: this.game.story,
+      personalQuests: this.game.personalQuests,
       hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
@@ -399,6 +402,7 @@ export class SaveSerializer {
     this.game.dmStance = save.dmStance;
     this.game.runMode = save.runMode ?? 'auto';
     this.game.story = save.story ?? null;
+    this.game.personalQuests = save.personalQuests ?? [];
     this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();

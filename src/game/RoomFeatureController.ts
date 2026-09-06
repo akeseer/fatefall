@@ -48,6 +48,10 @@ export interface RoomFeatureHost {
   grantXp(amountFor: (m: GameCharacter) => number): void;
   /** A flat bonus to the party's attack rolls for the next `fights` battles. */
   grantBattleEdge(attackBonus: number, fights: number): void;
+  /** Mark the floor's boss hall and stairs on the map; the line that says so, or null if there was nothing to tell. */
+  revealSecrets(): string | null;
+  /** A freed prisoner walks with the party to the next town, where they pay. */
+  takeEscortee(name: string, reward: number): void;
 }
 
 /** Capitalise a sentence built from a feature name, which starts lowercase. */
@@ -435,9 +439,28 @@ export class RoomFeatureController {
   private featurePrison(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The cells are empty \u2014 whoever was here is long gone.', '#888'); return true; }
     f.used = true;
-    const gp = rollDice(2, 6) * this.game.dungeonLevel;
-    this.game.party.leader.gold += gp;
-    say(`\u26d1 ${this.game.bestScout().name} works the lock on the deepest cell and finds a prisoner \u2014 a gaunt scribe who presses ${gp} gp into their hands and whispers of what waits on the next floor.`, '#8cf');
+    const scout = this.game.bestScout();
+    // Who is in the deepest cell is the whole question.
+    const roll = rollD20();
+    if (roll <= 5) {
+      const gp = rollDice(2, 6) * this.game.dungeonLevel;
+      this.game.party.leader.gold += gp;
+      say(`\u26d1 ${scout.name} works the lock on the deepest cell and finds a prisoner \u2014 a gaunt scribe who presses ${gp} gp into their hands and whispers of what waits on the next floor.`, '#8cf');
+    } else if (roll <= 11) {
+      const line = this.game.revealSecrets();
+      say(`\u26d1 ${scout.name} works the lock. The prisoner inside has been here long enough to know the place by its sounds, and traces the floor in the dust: where the stairs are, and where the thing that runs this place sleeps.`, '#8cf');
+      if (line) say(line, '#8cf');
+    } else if (roll <= 17) {
+      const names = ['an old soldier named Pell', 'a merchant\'s daughter, Ilse', 'a tinker called Wren', 'a half-starved cartographer'];
+      const who = names[Math.floor(Math.random() * names.length)];
+      const reward = 20 + rollDice(3, 6) * this.game.dungeonLevel;
+      say(`\u26d1 ${scout.name} works the lock and finds ${who}, who can still walk and asks nothing but to walk with the party as far as the next town. There is money waiting there, they say, for whoever brings them home.`, '#8cf');
+      this.game.takeEscortee(who.replace(/^(an? |the )/, ''), reward);
+    } else {
+      say(`\u26d1 ${scout.name} works the lock. The prisoner rises, thanks them in a voice that is exactly ${scout.name}'s own, and keeps rising \u2014 the face slides off like wax.`, '#c44');
+      const shape = getMonsterTemplate('doppelganger') ?? getRandomMonster(Math.max(1, this.game.dungeonLevel));
+      this.game.spawnEncounter([shape]);
+    }
     return true;
   }
 
