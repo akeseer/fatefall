@@ -126,6 +126,7 @@ export class HUD {
     options: O[],
     onPick: (option: O) => void,
     auto?: { seconds: number; fallback: () => O },
+    portrait?: string,
   ): void {
     this.overlay.querySelector('#story-card')?.remove();
     const screen = document.createElement('div');
@@ -134,7 +135,10 @@ export class HUD {
     screen.innerHTML = `
       <div style="width:min(640px, 92%); background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; box-shadow:0 0 0 1px ${T.rule} inset, 0 24px 60px rgba(0,0,0,0.75); padding:26px 30px 22px; text-align:left;">
         <div style="font-size:10.5px; letter-spacing:0.22em; color:${T.goldDim}; text-transform:uppercase;">A choice</div>
-        <p style="margin:8px 0 16px; line-height:1.6; font-size:14px;">${prompt}</p>
+        <div style="display:flex; gap:16px; align-items:flex-start;">
+          ${portrait ? `<img src="${portrait}" alt="" style="width:72px; height:72px; image-rendering:pixelated; flex:0 0 auto; margin-top:6px; border:1px solid ${T.goldDim}; border-radius:${T.r2}; background:${T.row}; padding:6px;">` : ''}
+          <p style="margin:8px 0 16px; line-height:1.6; font-size:14px;">${prompt}</p>
+        </div>
         <div style="display:flex; flex-direction:column; gap:8px;">
           ${options.map(o => `<button data-choice="${o.id}" class="dp-btn dp-slot-btn" style="text-align:left; padding:10px 14px; border-radius:${T.r2};"><div class="dp-title" style="color:${T.gold}; font-size:13px;">${o.label}</div><div style="color:${T.muted}; font-size:11.5px; margin-top:3px; line-height:1.4;">${o.text}</div></button>`).join('')}
         </div>

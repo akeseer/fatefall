@@ -176,3 +176,14 @@ describe('v16 -> v17 tallies, achievements, notes, the fallen', () => {
     expect(out.fallen).toEqual(fallen);
   });
 });
+
+describe('v17 -> v18 torches', () => {
+  it('leaves an older run without a count, which restore reads as a few', () => {
+    const out = migrateSave({ version: 17, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.torches).toBeUndefined();
+  });
+  it('carries the count through', () => {
+    expect(migrateSave({ version: SAVE_VERSION, torches: 7 } as any)!.torches).toBe(7);
+  });
+});

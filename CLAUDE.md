@@ -227,3 +227,13 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   generator reads rosters and challenge ratings out of the TypeScript with regexes; rerun it
   after changing the bestiary or themes, and `tests/prebuilt.test.ts` proves every floor
   connects, every creature stands on a walkable tile in a room, and every id is real.
+- **Doors, keys, torches, waypoints** (roadmap #61 #62 #65 #92): `TileType.LockedDoor` and
+  `TileType.SecretDoor` are not walkable; adding a `TileType` means updating `TILE_COLORS` in
+  both `TileMap.ts` and `MapRenderer.ts` plus `TILE_LIGHT`. `Game.dressFloor` runs after every
+  floor is peopled: `lockBossHall` locks the hall's entrances and marks one monster `hasKey`
+  (the fail-safe hunts the keeper while the hall is locked; a restored floor with no keeper
+  unlocks itself), `hideRoom` carves a hidden room behind a `SecretDoor` that Investigation
+  finds. Torches (`torches`, saved v18) burn `TORCH_TICKS` each; with none left `darkness` gives
+  monsters advantage (`CombatEngine.darkness`) and `SceneMood.lightScale` shrinks the light.
+  A click on the map canvas sets `waypoint`; `followWaypoint` walks it before any AI decision.
+  Boss phases live in `CombatEngine.monsterTurn` (`phaseTwo`), keyed on the `(Boss)` name too.

@@ -82,6 +82,7 @@ class TestHost implements SaveHost {
   achievements: SaveHost['achievements'] = [];
   notes: SaveHost['notes'] = [];
   fallen: SaveHost['fallen'] = [];
+  torches: SaveHost['torches'] = 4;
 
   /** Only the handful of HUD calls a restore makes; nothing renders. */
   hud = {

@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 export interface SavedCharacter {
   id: string;
@@ -149,6 +149,8 @@ export interface SaveData {
   notes?: string[];
   /** Members lost for good, for the epitaphs on the title. v17+. */
   fallen?: { name: string; className: string; level: number; where: string; day: number }[];
+  /** Torches in the pack. Absent on older runs, which are handed a few. v18+. */
+  torches?: number;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -338,7 +340,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 15) current = migrateV15toV16(current);
   if (!current) return null;
   if (current.version === 16) current = migrateV16toV17(current);
+  if (!current) return null;
+  if (current.version === 17) current = migrateV17toV18(current);
   return current;
+}
+
+/** v17 → v18: torches. Absent means a few in the pack, as every party sets out with. */
+function migrateV17toV18(data: SaveData): SaveData | null {
+  return { ...data, version: 18 };
 }
 
 /** v16 → v17: tallies, achievements, the notebook and the fallen. Absent means empty. */

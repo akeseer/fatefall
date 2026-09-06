@@ -153,7 +153,7 @@ export class CanvasBackend implements RenderBackend {
     // Multiply, so the layer can only ever scale the world down — the party's
     // light then reveals the map's own pixels instead of laying a pool of
     // colour over them.
-    const radius = mood.underground ? TORCH_RADIUS : GLOW_RADIUS;
+    const radius = mood.underground ? TORCH_RADIUS * (mood.lightScale ?? 1) : GLOW_RADIUS;
     const fx = mood.focus ? mood.focus.x : this.width / 2;
     const fy = mood.focus ? mood.focus.y : this.height / 2;
     const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, radius);

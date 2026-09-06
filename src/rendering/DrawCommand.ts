@@ -62,6 +62,8 @@ export interface SceneMood {
   themeId?: string | null;
   /** A white hit across the whole frame, 0..1, for the beat of a critical landing. */
   flash?: number;
+  /** How much of the carried light is left: 1 with a fresh torch, less as it gutters, small in the dark. */
+  lightScale?: number;
 }
 
 /** A cut to black that fades up, or blinds that close over the map for a fight. */

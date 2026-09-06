@@ -54,6 +54,8 @@ export class Monster {
 
   // Visual state for animations
   public flashTimer: number = 0;
+  /** Carries the floor's key: the locked hall opens when this one falls. Not saved; a restored floor's key lies in the dust. */
+  public hasKey: boolean = false;
 
   // Active rules-layer conditions (paralyzed, unconscious, poisoned...)
   public conditions: ActiveCondition[] = [];

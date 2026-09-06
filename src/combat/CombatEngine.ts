@@ -123,6 +123,10 @@ export class CombatEngine {
 
   /** Hearth-blessed delve: the party's blows land harder on undead. */
   public hearthBlessedUndeadBonus: number = 0;
+  /** The party's light has gone out: monsters strike with advantage. */
+  public darkness: boolean = false;
+  /** Bosses that have entered their second phase this fight. */
+  private phaseTwo = new Set<string>();
   /** Gloom delve: fear bites harder — added to every frightful-presence DC. */
   public gloomFearDcBonus: number = 0;
 
@@ -146,6 +150,7 @@ export class CombatEngine {
     this.monsters = monsters;
     this.isActive = true;
     this.log = { round: 0, messages: [], isOver: false, winner: null };
+    this.phaseTwo.clear();
     this.rollInitiative();
     this.checkFrightfulPresence();
     this.setupBosses();
@@ -1673,6 +1678,14 @@ export class CombatEngine {
   private monsterTurn(monster: Monster) {
     const alive = this.party.alive;
     if (alive.length === 0) return;
+    // A boss hurt to half changes: quicker, angrier, and its legendary
+    // actions come back at once.
+    if ((monster.isBoss || /\(Boss\)/.test(monster.template.name)) && monster.hp <= monster.maxHp / 2 && !this.phaseTwo.has(monster.id)) {
+      this.phaseTwo.add(monster.id);
+      monster.template = { ...monster.template, attackBonus: monster.template.attackBonus + 1, damageBonus: monster.template.damageBonus + 2 };
+      monster.legendaryActions = LEGENDARY_ACTIONS_PER_ROUND;
+      this.log.messages.push(`\ud83d\udd25 ${monster.template.name} enters its second phase \u2014 faster, angrier, and not done.`);
+    }
 
     // Morale check: a broken creature bolts instead of fighting to the death.
     if (
@@ -1753,6 +1766,8 @@ export class CombatEngine {
         mods.advantage = true;
       }
     }
+    // In the dark, everything that hunts by scent or sound has the party cold.
+    if (this.darkness && !mods.disadvantage) mods.advantage = true;
     // Gloom-day undead strike with supernatural fury (full-moon lycanthropes
     // are handled by their own awakening transformation in startCombat).
     const gloom = isUndeadKind(monster.template.type) ? this.gloomDayUndeadBonus : 0;

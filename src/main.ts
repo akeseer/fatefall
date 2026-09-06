@@ -3,7 +3,7 @@ import { Camera } from './engine/Camera';
 import { TileMap } from './world/TileMap';
 import { generateDungeon, hashSeed, Room } from './world/DungeonGenerator';
 import { getPrebuilt, loadPrebuiltFloor, type PrebuiltFloor } from './world/Prebuilt';
-import { assignFeaturesToRooms, RoomFeature } from './world/RoomFeatures';
+import { assignFeaturesToRooms, assignFeature, RoomFeature } from './world/RoomFeatures';
 import { RoomFeatureController } from './game/RoomFeatureController';
 import { RecordingContext } from './rendering/RecordingContext';
 import { CanvasBackend } from './rendering/backends/CanvasBackend';
@@ -294,6 +294,21 @@ class Game {
   /** Members lost for good. Rides in the save; the title shows the last few. */
   public fallen: { name: string; className: string; level: number; where: string; day: number }[] = [];
   private achievementTicks = 0;
+  /** A tile the DM pointed at; the party walks there before anything else. */
+  private waypoint: Vector2 | null = null;
+  /** The boss hall's doors are locked and a keeper carries the key. */
+  private floorLocked = false;
+  private floorKeyHeld = false;
+  private lockedNoticeGiven = false;
+  /** Hidden rooms on this floor: the secret door's tile and the room behind it. */
+  private secretDoors: { x: number; y: number; room: Room; found: boolean; tries: number }[] = [];
+  /** Torches in the pack. Rides in the save. */
+  public torches = 4;
+  /** Ticks left on the torch that is burning; nothing burning when zero. */
+  private torchLeft = 0;
+  /** The party's light has gone out. */
+  private darkness = false;
+  private static readonly TORCH_TICKS = 700;
   private achievementQueue: string[] = [];
   private achievementCardOpen = false;
   /** Bosses that have spoken their bloodied line this fight. */
@@ -410,6 +425,7 @@ class Game {
     this.hud.questProvider = () => this.activeQuest() ?? null;
     this.hud.questStateProvider = () => this.questState();
     this.hud.onDMCommand = this.guard((text) => this.handleDMCommand(text));
+    window.addEventListener('pointerdown', (e) => this.onMapPointer(e));
     this.hud.onModelToggle = this.guard(() => {
       if (this.loadedIntentModel) this.handleModelToggle(this.intentPredictor ? 'off' : 'on');
     });
@@ -866,6 +882,7 @@ class Game {
     // Populate the floor: monsters, boss, traps.
     if (fixedFloor) this.populatePrebuiltFloor(fixedFloor);
     else this.populateDungeonFloor();
+    this.dressFloor();
     if (this.traps.length > 0) {
       this.hud.addCombatMessage(`The dungeon is riddled with ${this.traps.length} hidden hazard${this.traps.length === 1 ? '' : 's'} — watch your step.`, '#a86');
     }
@@ -1252,6 +1269,12 @@ class Game {
     // The fail-safe: a party that has made no progress for a long while
     // stops wandering, reads the map, and if the floor is a dead end resolves
     // it rather than circling until the player notices.
+    if (this.mode === GameMode.Dungeon) {
+      this.tickTorch();
+      this.checkLockedDoors();
+      this.checkSecretDoors();
+      if (this.followWaypoint()) return;
+    }
     if (this.mode === GameMode.Dungeon && this.stuckFailsafe()) return;
 
     const action = this.aiDirector.decideAction(
@@ -2550,6 +2573,7 @@ class Game {
         this.hud.setParty(this.party);
       },
       { seconds: this.runMode === 'manual' ? 45 : 12, fallback },
+      this.sprites.getSpriteCanvas(m),
     );
   }
 
@@ -2649,6 +2673,206 @@ class Game {
       this.achievementCardOpen = false;
       this.showNextAchievement();
     }, { seconds: 8 });
+  }
+
+  // ── Doors, keys, torches, and the DM's pointing finger ────────────────
+
+  /** After the floor is peopled: lock the boss hall behind a keeper, hide a room, light a torch. */
+  private dressFloor(): void {
+    this.floorLocked = false;
+    this.floorKeyHeld = false;
+    this.lockedNoticeGiven = false;
+    this.secretDoors = [];
+    this.waypoint = null;
+    this.darkness = false;
+    this.combatEngine.darkness = false;
+    if (this.torchLeft <= 0) this.relight();
+    if (this.rooms.length >= 4) {
+      if (Math.random() < 0.55) this.lockBossHall();
+      if (Math.random() < 0.6) this.hideRoom();
+    }
+  }
+
+  /** The boss hall's doors are locked; a monster elsewhere on the floor carries the key. */
+  private lockBossHall(): void {
+    const hall = this.rooms[this.rooms.length - 1];
+    const inHall = (x: number, y: number) => x >= hall.x && x < hall.x + hall.width && y >= hall.y && y < hall.y + hall.height;
+    const entrances: Vector2[] = [];
+    for (let x = hall.x - 1; x <= hall.x + hall.width; x++) {
+      for (const y of [hall.y - 1, hall.y + hall.height]) {
+        if (this.map.getTile(x, y) === TileType.Floor && (this.map.isWalkable(x, y + 1) && inHall(x, y + 1) || this.map.isWalkable(x, y - 1) && inHall(x, y - 1))) entrances.push({ x, y });
+      }
+    }
+    for (let y = hall.y; y < hall.y + hall.height; y++) {
+      for (const x of [hall.x - 1, hall.x + hall.width]) {
+        if (this.map.getTile(x, y) === TileType.Floor && (this.map.isWalkable(x + 1, y) && inHall(x + 1, y) || this.map.isWalkable(x - 1, y) && inHall(x - 1, y))) entrances.push({ x, y });
+      }
+    }
+    if (entrances.length === 0 || entrances.length > 3) return;
+    const start = this.rooms[0];
+    const candidates = this.monsters.filter(m => m.isAlive && !m.isBoss && !/\(Boss\)/.test(m.template.name) && !m.rivalOf
+      && !inHall(m.tile.x, m.tile.y)
+      && !(m.tile.x >= start.x && m.tile.x < start.x + start.width && m.tile.y >= start.y && m.tile.y < start.y + start.height));
+    if (candidates.length === 0) return;
+    const keeper = candidates[Math.floor(Math.random() * candidates.length)];
+    keeper.hasKey = true;
+    keeper.template = { ...keeper.template, name: `${keeper.template.name} the Keykeeper`, hp: Math.round(keeper.template.hp * 1.3) };
+    keeper.maxHp = Math.round(keeper.maxHp * 1.3);
+    keeper.hp = keeper.maxHp;
+    for (const e of entrances) this.map.setTile(e.x, e.y, TileType.LockedDoor);
+    this.floorLocked = true;
+  }
+
+  /** A small room carved into the rock behind a stretch of wall, with a door that looks like wall. */
+  private hideRoom(): void {
+    const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const x = 3 + Math.floor(Math.random() * (this.map.width - 6));
+      const y = 3 + Math.floor(Math.random() * (this.map.height - 6));
+      if (this.map.getTile(x, y) !== TileType.Wall) continue;
+      const open = dirs.find(([dx, dy]) => this.map.getTile(x + dx, y + dy) === TileType.Floor);
+      if (!open) continue;
+      const [dx, dy] = [-open[0], -open[1]];
+      const w = dx === 0 ? 4 : 3, h = dx === 0 ? 3 : 4;
+      const rx = dx === 1 ? x + 1 : dx === -1 ? x - w : x - 1;
+      const ry = dy === 1 ? y + 1 : dy === -1 ? y - h : y - 1;
+      let clear = rx >= 2 && ry >= 2 && rx + w < this.map.width - 2 && ry + h < this.map.height - 2;
+      for (let yy = ry - 1; clear && yy <= ry + h; yy++) for (let xx = rx - 1; clear && xx <= rx + w; xx++) {
+        if (xx === x && yy === y) continue;
+        if (this.map.getTile(xx, yy) !== TileType.Void && this.map.getTile(xx, yy) !== TileType.Wall) clear = false;
+      }
+      if (!clear) continue;
+      for (let yy = ry; yy < ry + h; yy++) for (let xx = rx; xx < rx + w; xx++) this.map.setTile(xx, yy, TileType.Floor);
+      for (let yy = ry - 1; yy <= ry + h; yy++) for (let xx = rx - 1; xx <= rx + w; xx++) {
+        if (this.map.getTile(xx, yy) === TileType.Void) this.map.setTile(xx, yy, TileType.Wall);
+      }
+      this.map.setTile(x, y, TileType.SecretDoor);
+      const room: Room = { x: rx, y: ry, width: w, height: h, cx: rx + Math.floor(w / 2), cy: ry + Math.floor(h / 2) };
+      this.secretDoors.push({ x, y, room, found: false, tries: 0 });
+      return;
+    }
+  }
+
+  /** A member beside a locked door: it opens for the key, or says what it wants. */
+  private checkLockedDoors(): void {
+    if (!this.floorLocked) return;
+    const near = this.party.members.some(m => dirsAround(m.tile).some(t => this.map.getTile(t.x, t.y) === TileType.LockedDoor));
+    if (!near) return;
+    const keeperAlive = this.monsters.some(m => m.isAlive && m.hasKey);
+    if (this.floorKeyHeld || !keeperAlive) {
+      for (let y = 0; y < this.map.height; y++) for (let x = 0; x < this.map.width; x++) {
+        if (this.map.getTile(x, y) === TileType.LockedDoor) this.map.setTile(x, y, TileType.Door);
+      }
+      this.floorLocked = false;
+      this.hud.addCombatMessage(this.floorKeyHeld ? '\ud83d\udd13 The iron key turns. The hall is open.' : '\ud83d\udd13 The lock is old and the key lies in the dust before it. The hall is open.', '#ffd700');
+      sfx.chest();
+      this.noteProgress();
+      this.dungeonRoute = [];
+      return;
+    }
+    if (!this.lockedNoticeGiven) {
+      this.lockedNoticeGiven = true;
+      const keeper = this.monsters.find(m => m.isAlive && m.hasKey);
+      this.hud.addCombatMessage(`\ud83d\udd12 The hall is locked, and the lock is not for picking. Somewhere on this floor, ${keeper?.template.name ?? 'something'} carries the key.`, '#e8b45a');
+      this.dungeonRoute = [];
+    }
+  }
+
+  /** A member beside a hidden door: the sharpest eyes look for the seam. */
+  private checkSecretDoors(): void {
+    for (const sd of this.secretDoors) {
+      if (sd.found || sd.tries >= 2) continue;
+      const near = this.party.members.some(m => Math.abs(m.tile.x - sd.x) + Math.abs(m.tile.y - sd.y) <= 1);
+      if (!near) continue;
+      sd.tries++;
+      const scout = this.bestScout();
+      const dc = 12 + Math.floor(this.dungeonLevel / 2);
+      const { result, event } = this.rollHeld(() => abilityCheck(scout.intMod + (scout.charClass.id === 'rogue' ? scout.profBonus : 0), dc, `${scout.name} \u2014 Investigation (a draught from the wall)`));
+      if (result.success) {
+        sd.found = true;
+        this.map.setTile(sd.x, sd.y, TileType.Door);
+        this.rooms.push(sd.room);
+        assignFeature(sd.room, this.dungeonLevel, { force: true });
+        this.map.reveal(sd.room.cx, sd.room.cy, 4);
+        const gold = 30 + this.dungeonLevel * 25 + Math.floor(Math.random() * 30);
+        void this.presentRolls([{ roll: event, line: `\ud83d\udeaa ${scout.name} feels the draught, finds the seam, and a section of wall swings in on a room no one has seen in a very long time.`, color: '#ffd700' }]).then(() => {
+          this.addGold(gold);
+          this.grantXp(() => 40 + this.dungeonLevel * 10);
+          this.tally('secrets');
+          this.hud.addCombatMessage(`\ud83d\udcb0 Dust, and under the dust ${gold} gold${sd.room.feature ? `, and ${sd.room.feature.name}` : ''}.`, '#8cf');
+          this.dungeonRoute = [];
+          this.noteProgress();
+        });
+      } else {
+        void this.presentRolls([{ roll: event, line: `${scout.name} runs a hand along the wall where the air moves, and finds only wall. For now.`, color: '#a98' }]);
+      }
+      return;
+    }
+  }
+
+  /** The torch burns down; the next is lit, or the dark comes. */
+  private tickTorch(): void {
+    if (this.torchLeft > 0) {
+      this.torchLeft--;
+      if (this.torchLeft === 120) this.hud.addCombatMessage('\ud83d\udd25 The torch gutters. Not long left in it.', '#a98');
+      if (this.torchLeft === 0) this.relight();
+    }
+  }
+
+  private relight(): void {
+    if (this.torches > 0) {
+      this.torches--;
+      this.torchLeft = Game.TORCH_TICKS;
+      this.darkness = false;
+      this.combatEngine.darkness = false;
+      this.hud.addCombatMessage(`\ud83d\udd25 ${this.party.leader.name} lights a fresh torch. ${this.torches} left in the pack.`, '#e8b45a');
+    } else if (!this.darkness) {
+      this.darkness = true;
+      this.combatEngine.darkness = true;
+      this.hud.addCombatMessage('\ud83c\udf11 The last torch dies. The dark comes in close, and everything in it can see the party better than the party can see it. Torches are sold in any town.', '#c84');
+    }
+  }
+
+  /** A click on the map marks a tile; the party goes there before anything else. */
+  private onMapPointer(e: PointerEvent): void {
+    const el = e.target as HTMLElement | null;
+    if (!(el instanceof HTMLCanvasElement) || !this.runStarted || this.phase === GamePhase.Combat || this.mode === GameMode.Town) return;
+    if (e.button !== 0) return;
+    const rect = el.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (GAME_WIDTH / rect.width) + this.camera.x;
+    const py = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height) + this.camera.y;
+    const tile = { x: Math.floor(px / TILE_SIZE), y: Math.floor(py / TILE_SIZE) };
+    if (!this.map.isWalkable(tile.x, tile.y)) return;
+    if (this.mode === GameMode.Dungeon && !this.map.explored[tile.y]?.[tile.x]) return;
+    this.waypoint = tile;
+    this.dungeonRoute = [];
+    this.overworldPath = [];
+    this.hud.addCombatMessage(`\ud83d\udccd You point. The party heads for the spot (${tile.x}, ${tile.y}).`, '#8cf');
+    sfx.order();
+  }
+
+  /** In the dungeon, a marked tile is the party's whole plan until it stands on it. */
+  private followWaypoint(): boolean {
+    const w = this.waypoint;
+    if (!w) return false;
+    const leader = this.party.leader;
+    if (leader.tile.x === w.x && leader.tile.y === w.y) {
+      this.waypoint = null;
+      this.hud.addCombatMessage('\ud83d\udccd The party reaches the spot you marked and looks to you.', '#8cf');
+      this.manualHold('the marked spot');
+      return false;
+    }
+    const route = astarPath(this.map, leader.tile, w, { maxNodes: 8000 });
+    const next = route[0];
+    if (!next) {
+      this.waypoint = null;
+      this.hud.addCombatMessage('\ud83d\udccd There is no way through to the spot you marked. The party carries on.', '#886');
+      return false;
+    }
+    const dx = Math.sign(next.x - leader.tile.x);
+    const dy = Math.sign(next.y - leader.tile.y);
+    const dir = dx === 1 ? Direction.Right : dx === -1 ? Direction.Left : dy === 1 ? Direction.Down : Direction.Up;
+    return this.moveParty(dir);
   }
 
   /**
@@ -2796,6 +3020,10 @@ class Game {
           this.noteProgress();
           this.history.victories++;
           this.checkRivalsSlain(slainMonsters);
+          if (slainMonsters.some(m => m.hasKey && !m.fled)) {
+            this.floorKeyHeld = true;
+            this.hud.addCombatMessage('\ud83d\udd11 An iron key, warm from the body. The locked hall will open now.', '#ffd700');
+          }
           const numbers = summarizeFight(this.combatEngine.log.messages, this.party.members.map(m => m.name), this.combatEngine.log.round);
           this.hud.addCombatMessage(numbers.line, '#9aa');
           if (numbers.taken === 0) this.tally('flawless');
@@ -3184,6 +3412,7 @@ class Game {
       flash: this.flash,
       weather: this.weather?.type ?? null,
       focus,
+      lightScale: this.mode === GameMode.Dungeon ? (this.darkness ? 0.42 : this.torchLeft > 0 && this.torchLeft < 120 ? 0.7 : 1) : 1,
       inCombat: this.phase === GamePhase.Combat,
       transition: this.transition
         ? { kind: this.transition.kind, progress: Math.min(1, this.transition.ms / this.transition.total) }
@@ -3906,14 +4135,17 @@ class Game {
         // March on the boss along an A* route, one step a tick, until the fight starts.
         const boss = this.monsters.find(m => m.isAlive && (m.isBoss || /\(Boss\)/.test(m.template.name)));
         if (!boss) return false;
+        // A locked hall: the quarry is whoever holds the key, until it is held.
+        const keeper = this.monsters.find(m => m.isAlive && m.hasKey);
+        const quarry = this.floorLocked && !this.floorKeyHeld && keeper ? keeper : boss;
         if (this.stuckAnnounced < 3) {
           this.stuckAnnounced = 3;
-          this.hud.addCombatMessage(`\ud83c\udfaf ${leader.name} has had enough of corridors. The party goes straight for ${boss.template.name.replace(/^\ud83d\udc80 /, '')}.`, '#e8b45a');
+          this.hud.addCombatMessage(`\ud83c\udfaf ${leader.name} has had enough of corridors. The party goes straight for ${quarry.template.name.replace(/^\ud83d\udc80 /, '')}.`, '#e8b45a');
         }
-        // Route to the boss, or to a walkable tile beside it when it stands on something the party cannot.
-        const goals = this.map.isWalkable(boss.tile.x, boss.tile.y)
-          ? [boss.tile]
-          : [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: boss.tile.x + dx, y: boss.tile.y + dy })).filter(t => this.map.isWalkable(t.x, t.y));
+        // Route to the quarry, or to a walkable tile beside it when it stands on something the party cannot.
+        const goals = this.map.isWalkable(quarry.tile.x, quarry.tile.y)
+          ? [quarry.tile]
+          : [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: quarry.tile.x + dx, y: quarry.tile.y + dy })).filter(t => this.map.isWalkable(t.x, t.y));
         let route: Vector2[] = [];
         for (const goal of goals) {
           route = astarPath(this.map, leader.tile, goal, { maxNodes: 8000 });
@@ -3925,8 +4157,8 @@ class Game {
           // by the generator must never be a quest the party cannot finish.
           const here = this.walkableNearParty();
           if (!here) return false;
-          boss.tile = { ...here };
-          this.hud.addCombatMessage(`\ud83d\udca8 The walls between them do not hold ${boss.template.name.replace(/^\ud83d\udc80 /, '')} back. It finds the party instead.`, '#e0705f');
+          quarry.tile = { ...here };
+          this.hud.addCombatMessage(`\ud83d\udca8 The walls between them do not hold ${quarry.template.name.replace(/^\ud83d\udc80 /, '')} back. It finds the party instead.`, '#e0705f');
           this.noteProgress();
           return true;
         }
@@ -4845,6 +5077,15 @@ class Game {
     if (dest) {
       const t = dest.kind === 'town' ? getTownById(this.overworld, dest.id) : getEntranceById(this.overworld, dest.id);
       if (t) target = t.tile;
+    }
+    if (this.waypoint) {
+      if (leader.tile.x === this.waypoint.x && leader.tile.y === this.waypoint.y) {
+        this.waypoint = null;
+        this.overworldPath = [];
+        this.hud.addCombatMessage('\ud83d\udccd The party reaches the spot you marked and looks to you.', '#8cf');
+      } else {
+        target = this.waypoint;
+      }
     }
     if (!target) {
       this.chooseOverworldDestination();
@@ -6112,6 +6353,15 @@ class Game {
         this.carouse();
         break;
       }
+      case 'buy_torches': {
+        const cost = 12;
+        if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for torches.', '#c66'); return; }
+        this.addGold(-cost);
+        this.torches += 3;
+        this.hud.addCombatMessage(`\ud83d\udd25 Three pitch torches go in the pack (${this.torches} carried).`, '#e8b45a');
+        this.hud.townPanel.refresh();
+        break;
+      }
       case 'temple_donate': {
         const cost = 50;
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold.', '#c66'); return; }
@@ -7097,4 +7347,9 @@ function summarizeRun(g: Game): string[] {
     `${d.rolls} dice rolled: ${d.crits} natural 20s, ${d.fumbles} natural 1s`,
     `${g.partyGold()} gold in hand`,
   ];
+}
+
+/** The four tiles around one. */
+function dirsAround(t: Vector2): Vector2[] {
+  return [{ x: t.x + 1, y: t.y }, { x: t.x - 1, y: t.y }, { x: t.x, y: t.y + 1 }, { x: t.x, y: t.y - 1 }];
 }

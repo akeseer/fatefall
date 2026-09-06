@@ -141,6 +141,7 @@ export interface SaveHost {
   achievements: string[];
   notes: string[];
   fallen: { name: string; className: string; level: number; where: string; day: number }[];
+  torches: number;
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -222,6 +223,7 @@ export class SaveSerializer {
       achievements: this.game.achievements,
       notes: this.game.notes,
       fallen: this.game.fallen,
+      torches: this.game.torches,
       hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
@@ -419,6 +421,7 @@ export class SaveSerializer {
     this.game.achievements = [...(save.achievements ?? [])];
     this.game.notes = [...(save.notes ?? [])];
     this.game.fallen = [...(save.fallen ?? [])];
+    this.game.torches = save.torches ?? 4;
     this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();

@@ -774,6 +774,8 @@ export class BattleView {
       this.applyEffects();
     }
     for (const msg of opts.messages ?? []) this.pushFeed(msg);
+    // A boss's second phase: the hall goes red at the edges for the rest of the fight.
+    if ((opts.messages ?? []).some(m => m.includes('second phase'))) this.root.style.boxShadow = 'inset 0 0 140px rgba(200, 30, 20, 0.4)';
     this.roundEl.textContent = `ROUND ${Math.max(1, opts.round)}`;
     if (opts.actors) this.lastTurnActors = opts.actors;
     this.renderTurnOrder(opts.currentActorId);
@@ -2334,6 +2336,7 @@ export class BattleView {
     this.closing = false;
     window.removeEventListener('keydown', this.handleMenuKey);
     this.root.style.display = 'none';
+    this.root.style.boxShadow = '';
     this.isOpen = false;
     this.bannerEl.textContent = '';
     this.feedLinesEl.innerHTML = '';

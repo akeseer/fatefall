@@ -33,6 +33,8 @@ const TILE_COLORS: Record<TileType, string> = {
   [TileType.Snow]: '#d8dce0',
   [TileType.Desert]: '#a08040',
   [TileType.Swamp]: '#2a4a2e',
+  [TileType.LockedDoor]: '#a08020',
+  [TileType.SecretDoor]: '#4a4a5a',
 };
 
 /**
@@ -258,7 +260,7 @@ function isOpenTile(t: TileType): boolean {
 
 /** Rock: a wall, or the unquarried dark behind it. */
 function isSolidTile(t: TileType): boolean {
-  return t === TileType.Wall || t === TileType.Void;
+  return t === TileType.SecretDoor || t === TileType.Wall || t === TileType.Void;
 }
 
 function tileAt(map: TileMap, x: number, y: number): TileType {
@@ -520,6 +522,23 @@ export class MapRenderer {
             break;
           case TileType.Door:
             this.dungeonDoor(ctx, map, x, y, sx, sy, tn);
+            break;
+          case TileType.LockedDoor: {
+            // A door with a padlock the size of a fist on it.
+            this.dungeonDoor(ctx, map, x, y, sx, sy, tn);
+            ctx.fillStyle = '#d8b040';
+            ctx.fillRect(sx + 12, sy + 13, 8, 7);
+            ctx.fillStyle = '#7a5a10';
+            ctx.fillRect(sx + 13, sy + 9, 6, 5);
+            ctx.fillStyle = '#d8b040';
+            ctx.fillRect(sx + 14, sy + 10, 4, 3);
+            ctx.fillStyle = '#3a2a08';
+            ctx.fillRect(sx + 15, sy + 15, 2, 3);
+            break;
+          }
+          case TileType.SecretDoor:
+            // Indistinguishable from the wall until it is found.
+            this.dungeonWall(ctx, map, x, y, sx, sy, tn, pal);
             break;
           case TileType.StairsDown:
           case TileType.StairsUp:

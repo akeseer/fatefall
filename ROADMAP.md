@@ -23,7 +23,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 13. Cover: pillars and water in the battle scene grant +2 AC to the side behind them.
 - [x] 14. Flanking: two allies adjacent to a foe give advantage. (already in)
 - [x] 15. Monster morale with bands: when the leader falls, the rest check or flee. (already in)
-- [ ] 16. Boss phases: at half health a boss changes tactics and the backdrop shifts.
+- [x] 16. Boss phases: at half health a boss changes tactics and the backdrop shifts.
 - [ ] 17. Environmental attacks: lair actions that use the room's feature (the altar, the forge).
 - [ ] 18. Conditions on the sprite: poisoned green tint, frightened shiver, paralysed freeze.
 - [ ] 19. Damage types on the numbers: fire orange, cold blue, radiant gold, with a matching hit sound.
@@ -80,11 +80,11 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 ## F. Dungeons (61–72)
 
-- [ ] 61. Locked doors and keys carried by a named monster on the floor.
-- [ ] 62. Secret doors found by Investigation, leading to a hidden room with a hoard.
+- [x] 61. Locked doors and keys carried by a named monster on the floor.
+- [x] 62. Secret doors found by Investigation, leading to a hidden room with a hoard.
 - [ ] 63. Multi-floor pre-built dungeons with a set-piece: a bridge, a drowned hall, a throne.
 - [ ] 64. Dungeon maps as loot: a map reveals the floor.
-- [ ] 65. Light: torches burn down; darkness gives monsters advantage until relit.
+- [x] 65. Light: torches burn down; darkness gives monsters advantage until relit.
 - [ ] 66. Shrines with a choice: a boon for a cost, remembered by the deity.
 - [ ] 67. Traps that the party can set: caltrops, a tripwire in a corridor.
 - [ ] 68. Dungeon factions: two monster bands at war, the party can side with one.
@@ -111,7 +111,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [x] 83. Death animations for monsters instead of vanishing. (already in)
 - [ ] 84. Weather particles in the battle scene matching the overworld.
 - [ ] 85. Town backdrops by archetype in the battle scene.
-- [ ] 86. Portrait frames by class and a portrait on the level-up card.
+- [x] 86. Portrait frames by class and a portrait on the level-up card.
 - [ ] 87. A dice tray theme picker: bone, brass, obsidian.
 - [ ] 88. Music per zone genre: a piece for the foundry, one for the theatre.
 - [x] 89. Log filters: combat only, story only, everything.
@@ -120,7 +120,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 ## I. DM tools (91–100)
 
 - [x] 91. Standing orders: "never pay tolls", "always parley", "loot everything".
-- [ ] 92. Waypoints: the DM marks a tile and the party goes there.
+- [x] 92. Waypoints: the DM marks a tile and the party goes there.
 - [x] 93. A DM notebook: free-text notes that ride in the save.
 - [x] 94. Command history with up-arrow recall in the DM box.
 - [ ] 95. Intent model retrain with the new orders, and a confidence chip.

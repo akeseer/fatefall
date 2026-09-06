@@ -21,6 +21,9 @@ export enum TileType {
   Snow = 16,
   Desert = 17,
   Swamp = 18,
+  // ── Dungeon doors that are not simply open ──
+  LockedDoor = 19,
+  SecretDoor = 20,
 }
 
 const TILE_COLORS: Record<TileType, string> = {
@@ -43,11 +46,15 @@ const TILE_COLORS: Record<TileType, string> = {
   [TileType.Snow]: '#d8dce0',
   [TileType.Desert]: '#a08040',
   [TileType.Swamp]: '#2a4a2e',
+  [TileType.LockedDoor]: '#a08020',
+  [TileType.SecretDoor]: '#4a4a5a',
 };
 
 const TILE_LIGHT: Record<TileType, number> = {
   [TileType.Void]: 0,
   [TileType.Floor]: 0.3,
+  [TileType.LockedDoor]: 0.2,
+  [TileType.SecretDoor]: 0,
   [TileType.Wall]: 0.1,
   [TileType.Door]: 0.35,
   [TileType.StairsDown]: 0.3,

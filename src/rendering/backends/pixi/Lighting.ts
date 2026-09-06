@@ -257,7 +257,7 @@ export class Lighting {
 
     if (underground) {
       darknessTarget = UNDERGROUND_DARKNESS;
-      radiusTarget = TORCH_RADIUS;
+      radiusTarget = TORCH_RADIUS * (mood.lightScale ?? 1);
       // A carried torch reads as a real light source only if its centre returns
       // the world to full brightness, so nothing is held back underground.
       liftTarget = 1;
