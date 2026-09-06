@@ -19,7 +19,7 @@ import { IntentModel, loadIntentModel, intentModelEnabled, setIntentModelEnabled
 import { Overworld, OverworldEntrance, OverworldTown, entranceAt, generateOverworld, getEntranceById, getTownById, townAt } from './world/Overworld';
 import { OverworldPOI, createMoonForgePOI, discoverNearbyPOIs, poiIcon } from './world/OverworldPOI';
 import { WeatherState, rollWeather, tickWeather } from './world/WeatherSystem';
-import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, createClock, dayChangeNarration, tickClock } from './world/DayNightSystem';
+import { ClockState, TimeOfDay, NIGHT_VISIBILITY_LIGHT, DAY_MS, createClock, dayChangeNarration, tickClock } from './world/DayNightSystem';
 import { CalendarDay, calendarFromElapsed } from './world/CalendarSystem';
 import { BIOME_EVENTS, Wanderer, isWildlife, randomTravelEvent, scatterWildlife, spawnOverworldLife, stepWanderers } from './world/OverworldLife';
 import { astarPath } from './world/Pathfinding';
@@ -6353,7 +6353,7 @@ class Game {
 
   // ── Commerce ─────────────────────────────────────
 
-  private partyGold(): number {
+  partyGold(): number {
     return this.party.members.reduce((s, m) => s + m.gold, 0);
   }
 
@@ -6643,6 +6643,11 @@ class Game {
       this.expeditionJournal.push(`The DM: ${narrated[1].trim()}`);
       return;
     }
+    // "stats": the run in numbers.
+    if (/^(?:stats|statistics|numbers|the numbers)$/i.test(text)) {
+      this.hud.showStatistics();
+      return;
+    }
     // Standing orders: "never pay tolls", "always parley", "loot everything".
     const policy = parsePolicyOrder(text);
     if (policy) {
@@ -6828,6 +6833,17 @@ function startGame() {
   const saves = listSaves();
   game.hud.onStartChoice = (choice, slot) => game.handleStartChoice(choice, slot);
   game.hud.onMainMenu = () => game.returnToMainMenu();
+  game.hud.statisticsProvider = () => ({
+    kills: game.history.kills,
+    victories: game.history.victories,
+    defeats: game.history.defeats,
+    rooms: game.history.roomsVisited,
+    deepest: game.history.deepestLevel,
+    gold: game.partyGold(),
+    days: Math.floor(game.clock.elapsed / DAY_MS) + 1,
+    ledger: game.history.killLedger,
+    levels: game.party.members.map(m => `${m.name} Lv${m.level}`),
+  });
   game.hud.chronicleProvider = () => ({
     ...game.storyController.chronicle(),
     roads: game.personalQuests.map(q => `${q.memberName} \u2014 ${q.title.toLowerCase()}${q.done ? `, done: now ${q.memberName} ${q.perk.title}` : q.kind === 'pilgrimage' ? ` (${q.progress}/${q.target} towns)` : ''}`),

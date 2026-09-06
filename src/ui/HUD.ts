@@ -5,6 +5,8 @@ import { Quest, QuestState, questProgressText } from '../quests/Quests';
 import { DnDCompendium, CompendiumEntry } from './DnDCompendium';
 import { CONDITION_META } from '../rules/Rules';
 import { getCasterType, ordinal } from '../data/gameData';
+import { getMonsterTemplate } from '../entities/Monster';
+import { getDiceStats } from '../rules/DiceEvents';
 import type { SaveData } from '../save/SaveManager';
 import { clearSlot, listSaves } from '../save/SaveManager';
 import { DiceTray } from './DiceTray';
@@ -166,6 +168,46 @@ export class HUD {
   }
 
   /** The Chronicle: the tale so far, the act in hand, and what the party is known for. */
+  /** Numbers for the statistics screen, supplied by the game. */
+  public statisticsProvider: () => { kills: number; victories: number; defeats: number; rooms: number; deepest: number; gold: number; days: number; ledger: Record<string, number>; levels: string[] } = () => ({ kills: 0, victories: 0, defeats: 0, rooms: 0, deepest: 1, gold: 0, days: 1, ledger: {}, levels: [] });
+
+  /** The run in numbers: dice, fights, kills by kind, the party's growth. */
+  showStatistics(): void {
+    this.overlay.querySelector('#statistics')?.remove();
+    const st = this.statisticsProvider();
+    const d = getDiceStats();
+    const screen = document.createElement('div');
+    screen.id = 'statistics';
+    screen.style.cssText = `position:absolute; inset:0; z-index:104; background:rgba(5,4,5,0.7); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;
+    const cell = (label: string, value: string | number) => `<div style="padding:8px 10px; border:1px solid ${T.line}; border-radius:${T.r2}; background:${T.row};"><div style="font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:${T.muted};">${label}</div><div class="dp-title" style="font-size:18px; color:${T.gold}; margin-top:2px;">${value}</div></div>`;
+    const top = Object.entries(st.ledger).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([id, n]) => `<li style="display:flex; justify-content:space-between;"><span>${getMonsterTemplate(id)?.name ?? id}</span><span style="color:${T.gold};">${n}</span></li>`).join('');
+    const types = Object.entries(d.byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} \u00d7${n}`).join(', ');
+    const critRate = d.rolls > 0 ? `${((d.crits / d.rolls) * 100).toFixed(1)}%` : '\u2014';
+    screen.innerHTML = `
+      <div style="width:min(680px, 92%); max-height:86%; overflow:auto; background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; box-shadow:0 0 0 1px ${T.rule} inset, 0 24px 60px rgba(0,0,0,0.75); padding:24px 30px 20px;">
+        <div class="dp-title" style="font-size:22px; color:${T.gold}; letter-spacing:0.12em;">THE RUN IN NUMBERS</div>
+        <div style="font-size:11px; color:${T.muted}; font-style:italic; margin-top:4px;">Day ${st.days}. ${st.levels.join(', ')}.</div>
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:14px;">
+          ${cell('Dice rolled', d.rolls)}${cell('Natural 20s', d.crits)}${cell('Natural 1s', d.fumbles)}${cell('Crit rate', critRate)}
+          ${cell('Best crit streak', d.bestCritStreak)}${cell('Worst fumble streak', d.bestFumbleStreak)}${cell('Fights won', st.victories)}${cell('Fights lost', st.defeats)}
+          ${cell('Kills', st.kills)}${cell('Rooms seen', st.rooms)}${cell('Deepest floor', st.deepest)}${cell('Gold in hand', st.gold)}
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; font-size:12.5px;">
+          <div><div class="dp-title" style="font-size:12px; color:${T.goldDim}; letter-spacing:0.12em;">MOST SLAIN</div><ul style="list-style:none; margin:6px 0 0; padding:0; line-height:1.7;">${top || `<li style="color:${T.faint}; font-style:italic;">Nothing yet.</li>`}</ul></div>
+          <div><div class="dp-title" style="font-size:12px; color:${T.goldDim}; letter-spacing:0.12em;">DICE BY KIND</div><div style="margin-top:6px; line-height:1.6; color:${T.muted};">${types || '\u2014'}</div>
+            <div style="margin-top:10px; color:${T.muted};">By floor: ${Object.entries(d.byFloor).map(([f, v]) => `floor ${f}: ${v.rolls} rolls, ${v.crits} crits`).join('; ') || '\u2014'}</div></div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+          <button id="statistics-close" class="dp-btn dp-title" style="padding:7px 20px; font-size:12px; letter-spacing:1px; border-radius:${T.r2};">Close</button>
+        </div>
+      </div>`;
+    this.overlay.appendChild(screen);
+    const close = () => { sfx.click(); screen.remove(); };
+    screen.querySelector('#statistics-close')!.addEventListener('click', close);
+    screen.addEventListener('click', e => { if (e.target === screen) close(); });
+  }
+
   showChronicle(): void {
     this.overlay.querySelector('#chronicle')?.remove();
     const c = this.chronicleProvider();
@@ -396,6 +438,11 @@ export class HUD {
         #audio-pop .ap-seg button.on { background: ${T.rowHot}; color: ${T.gold}; }
         #audio-pop .ap-note { color: ${T.faint}; font-size: 10px; margin-top: 5px; font-style: italic; }
         /* Speed: one segmented control, not five loose buttons. */
+        #combat-log.log-only-fight .dp-log-line:not([data-cat="fight"]):not([data-cat="order"]) { display: none; }
+        #combat-log.log-only-story .dp-log-line:not([data-cat="story"]):not([data-cat="world"]):not(.dp-log-break) { display: none; }
+        #combat-log.log-only-order .dp-log-line:not([data-cat="order"]) { display: none; }
+        .log-filter { color: ${T.muted}; border-color: transparent !important; }
+        .log-filter.log-filter-on { color: ${T.gold}; border-color: ${T.goldDim} !important; }
         #speed-controls {
           display: flex;
           border: 1px solid ${T.line};
@@ -440,6 +487,12 @@ export class HUD {
         <!-- The narrative log — the surface the player actually reads. -->
         <div class="dp-hud-col" style="flex:1; min-width:0;">
           <div id="boss-bar" style="display:none; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid ${T.rule};"></div>
+          <div id="log-filters" style="display:flex; gap:4px; margin-bottom:4px; font-size:9.5px; letter-spacing:0.08em; text-transform:uppercase;">
+            <button data-log-filter="all" class="dp-btn log-filter log-filter-on" style="padding:1px 8px;">All</button>
+            <button data-log-filter="fight" class="dp-btn log-filter" style="padding:1px 8px;">Fights</button>
+            <button data-log-filter="story" class="dp-btn log-filter" style="padding:1px 8px;">Story</button>
+            <button data-log-filter="order" class="dp-btn log-filter" style="padding:1px 8px;">Orders</button>
+          </div>
           <div id="combat-log"></div>
         </div>
 
@@ -519,6 +572,24 @@ export class HUD {
   }
 
   private bindEvents() {
+    // Log filters: what the reader wants to see, the rest hidden by a class.
+    for (const b of Array.from(this.overlay.querySelectorAll<HTMLElement>('[data-log-filter]'))) {
+      b.addEventListener('click', () => {
+        const mode = b.dataset.logFilter ?? 'all';
+        this.logEl.className = mode === 'all' ? '' : `log-only-${mode}`;
+        for (const o of Array.from(this.overlay.querySelectorAll('[data-log-filter]'))) o.classList.toggle('log-filter-on', o === b);
+        this.logEl.scrollTop = this.logEl.scrollHeight;
+      });
+    }
+    // Speed on the number keys, pause on space, when the hands are not typing.
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const speeds: Record<string, GameSpeed> = { Digit1: 0.25, Digit2: 0.5, Digit3: 1, Digit4: 2, Digit5: 4 };
+      if (speeds[e.code] !== undefined) { this.setSpeed(speeds[e.code]); sfx.click(); e.preventDefault(); return; }
+      if (e.code === 'Space' && !this.overlay.querySelector('#story-card')) { this.togglePause(); e.preventDefault(); }
+    });
     // Speed buttons
     this.speedBtns.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -882,10 +953,22 @@ export class HUD {
    * re-joined and re-parsed all 150 lines on every message, which the log
    * cannot afford when it runs all session.
    */
+  /** Which kind of line the next addCombatMessage writes: the engine's batch says 'fight'. */
+  private logCategory: 'fight' | 'story' | 'order' | 'world' | null = null;
+
+  /** Read a line's category off its shape when the caller did not say. */
+  private categoryOf(msg: string): 'fight' | 'story' | 'order' | 'world' {
+    if (this.logCategory) return this.logCategory;
+    if (/^\u276f/.test(msg)) return 'order';
+    if (/^(\ud83d\udcdc|\u2726|\ud83d\udc41|\u2620|\ud83d\udd6f|\ud83c\udf19|\ud83d\udde3|\ud83d\udd25)/.test(msg)) return 'story';
+    if (/Victory!|is slain!|takes \d+ damage|Initiative|CRITICAL|misses|A battle begins/.test(msg)) return 'fight';
+    return 'world';
+  }
+
   addCombatMessage(msg: string, color: string = '#ccc') {
     this.combatMessages.push(msg);
     if (this.combatMessages.length > 400) this.combatMessages = this.combatMessages.slice(-200);
-    this.logEl.insertAdjacentHTML('beforeend', this.renderLogLine(msg, color));
+    this.logEl.insertAdjacentHTML('beforeend', this.renderLogLine(msg, color).replace('<div class="dp-log-line', `<div data-cat="${this.categoryOf(msg)}" class="dp-log-line`));
     this.logLineCount++;
     // Trim from the front so the log stays a fixed size all run.
     while (this.logLineCount > 150 && this.logEl.firstElementChild) {
@@ -941,6 +1024,7 @@ export class HUD {
   }
 
   addCombatLogBatch(log: CombatLog) {
+    this.logCategory = 'fight';
     for (const msg of log.messages) {
       let color = '#ccc';
       if (msg.includes('CRIT')) color = '#ffd700';
@@ -955,6 +1039,7 @@ export class HUD {
 
       this.addCombatMessage(msg, color);
     }
+    this.logCategory = null;
   }
 
   /** Clear the combat log (used when a restored run takes over the screen). */

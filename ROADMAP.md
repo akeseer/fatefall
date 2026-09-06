@@ -22,7 +22,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 12. Opportunity attacks shown as their own beat in the presenter.
 - [ ] 13. Cover: pillars and water in the battle scene grant +2 AC to the side behind them.
 - [x] 14. Flanking: two allies adjacent to a foe give advantage. (already in)
-- [ ] 15. Monster morale with bands: when the leader falls, the rest check or flee.
+- [x] 15. Monster morale with bands: when the leader falls, the rest check or flee. (already in)
 - [ ] 16. Boss phases: at half health a boss changes tactics and the backdrop shifts.
 - [ ] 17. Environmental attacks: lair actions that use the room's feature (the altar, the forge).
 - [ ] 18. Conditions on the sprite: poisoned green tint, frightened shiver, paralysed freeze.
@@ -108,13 +108,13 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 - [ ] 81. Screen shake and hit-stop on critical hits, per backend.
 - [ ] 82. Idle animations for party sprites on the map (breathing, weapon shift).
-- [ ] 83. Death animations for monsters instead of vanishing.
+- [x] 83. Death animations for monsters instead of vanishing. (already in)
 - [ ] 84. Weather particles in the battle scene matching the overworld.
 - [ ] 85. Town backdrops by archetype in the battle scene.
 - [ ] 86. Portrait frames by class and a portrait on the level-up card.
 - [ ] 87. A dice tray theme picker: bone, brass, obsidian.
 - [ ] 88. Music per zone genre: a piece for the foundry, one for the theatre.
-- [ ] 89. Log filters: combat only, story only, everything.
+- [x] 89. Log filters: combat only, story only, everything.
 - [ ] 90. A photo mode that hides the HUD and frames the map.
 
 ## I. DM tools (91–100)
@@ -125,7 +125,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [x] 94. Command history with up-arrow recall in the DM box.
 - [ ] 95. Intent model retrain with the new orders, and a confidence chip.
 - [x] 96. A "narrate" order: the DM adds a line to the log as the world.
-- [ ] 97. Speed presets bound to keys, and pause on any card.
-- [ ] 98. A statistics screen: rolls, crits, kills by kind, gold over time.
+- [x] 97. Speed presets bound to keys, and pause on any card.
+- [x] 98. A statistics screen: rolls, crits, kills by kind, gold over time.
 - [ ] 99. Export the run as a text chronicle the player can share.
 - [ ] 100. Achievements: forty of them, with a card and a title when earned.
