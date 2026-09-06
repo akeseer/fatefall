@@ -57,6 +57,7 @@ import { banditGang } from './world/Ambushes';
 import { banterFor } from './events/Banter';
 import { randomPartyName } from './entities/PartyNames';
 import { THEME_MOTIF } from './ui/BattleScenes';
+import { COMPONENT_ITEMS } from './combat/Components';
 import { rarityTag } from './loot/LootTables';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
@@ -326,6 +327,8 @@ class Game {
   public retired: string[] = [];
   /** Arrows in the quiver. Rides in the save. */
   public arrows = 40;
+  /** Warlock pacts, by member id. Rides in the save. */
+  public pacts: Record<string, { demand: string; target: number; progress: number; done: boolean }> = {};
   private retireOffered = new Set<string>();
   /** Ticks left on the torch that is burning; nothing burning when zero. */
   private torchLeft = 0;
@@ -927,6 +930,8 @@ class Game {
       for (const restMsg of this.party.longRest()) {
         this.hud.addCombatMessage(restMsg, '#7c7');
       }
+      this.ritualsAtCamp();
+      this.patronDream();
       this.campScene();
     }
 
@@ -1562,6 +1567,7 @@ class Game {
       if (entered?.kind === 'hazard' && !entered.used) void this.runHazard(entered);
       if (entered?.kind === 'puzzle_room' && !entered.used) this.poseRiddle(entered);
       if (entered?.kind === 'altar' && !entered.used) this.shrineChoice(entered);
+      if (entered?.kind === 'chest' && !entered.used) this.detectMagicOn(entered);
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
       // closes a little of the party's hurts.
       if (this.mode === GameMode.Dungeon && this.delveMood?.label === 'hearth-blessed') {
@@ -1663,6 +1669,7 @@ class Game {
     this.noteProgress();
     this.beginTransition('blinds');
     this.combatEngine.defenseBonus = 0;
+    this.summonAlly(monsters);
     this.combatEngine.onRangedShot = () => { if (this.arrows <= 0) return false; this.arrows--; if (this.arrows === 5) this.hud.addCombatMessage('\ud83c\udff9 Five arrows left in the quiver.', '#a98'); return true; };
     // Cover: pillars, roots and cogs to fight behind.
     const motif = this.mode === GameMode.Dungeon ? THEME_MOTIF[this.dungeonTheme?.id ?? ''] : undefined;
@@ -3131,6 +3138,108 @@ class Game {
     }, { seconds: 30, fallback: () => ({ id: 'stay', label: 'Not yet', text: '' }) });
   }
 
+  // ── Magic beyond the fight: rituals, scrolls, patrons, summons ────────
+
+  /** At the fire the casters do the slow work: reading, identifying, learning. */
+  private ritualsAtCamp(): void {
+    const casters = this.party.alive.filter(m => isCaster(m.charClass.id));
+    if (casters.length === 0) return;
+    // Identify: everything unnamed in the packs gets a name.
+    let identified = 0;
+    for (const m of this.party.members) for (const i of m.inventory) if (i.identified === false) { i.identified = true; identified++; }
+    if (identified > 0) this.hud.addCombatMessage(`\ud83d\udd6f ${casters[0].name} sits with the unknown things from the packs and, by firelight and a slow ritual, names ${identified} of them.`, '#c9a6ff');
+    // Learning: a wizard with a scroll of a spell not yet known copies it into the book.
+    const scrollSpell: Record<string, string> = { scroll_fireball: 'fireball', scroll_cure_wounds: 'cure_wounds', scroll_invisibility: 'invisibility', scroll_lightning_bolt: 'lightning_bolt' };
+    for (const wizard of casters.filter(m => m.charClass.id === 'wizard' || m.charClass.id === 'artificer')) {
+      for (const holder of this.party.members) {
+        const scroll = holder.inventory.find(i => scrollSpell[i.id] && !wizard.knownSpells.includes(scrollSpell[i.id]));
+        if (!scroll) continue;
+        const spell = SPELLS.find(sp => sp.id === scrollSpell[scroll.id]);
+        if (!spell || wizard.level < Math.max(1, spell.level * 2 - 1)) continue;
+        holder.useItem(scroll.id);
+        wizard.knownSpells.push(spell.id);
+        this.hud.addCombatMessage(`\ud83d\udcd6 ${wizard.name} copies ${spell.name} from the scroll into the book, line by careful line. The scroll crumbles; the spell stays.`, '#c9a6ff');
+        this.tally('spells_learned');
+        break;
+      }
+    }
+  }
+
+  /** A caster at a chest: a ritual of detection says what the lid is hiding. */
+  private detectMagicOn(feature: RoomFeature): void {
+    const caster = this.party.alive.find(m => ['wizard', 'artificer', 'cleric', 'sorcerer'].includes(m.charClass.id));
+    if (!caster) return;
+    const what = feature.mimic ? 'it is not a chest at all, and it is hungry' : feature.trapped ? 'the lid is wired' : feature.locked ? 'a stuck lid and nothing worse' : 'nothing on it but dust and coin';
+    this.hud.addCombatMessage(`\ud83d\udd2e ${caster.name} passes a hand over the chest and reads what clings to it: ${what}.`, '#c9a6ff');
+  }
+
+  /** A warlock without a pact dreams of the patron at the fire, and wakes with a task. */
+  private patronDream(): void {
+    const warlock = this.party.alive.find(m => m.charClass.id === 'warlock' && !this.pacts[m.id]);
+    if (!warlock) return;
+    const demands: [string, number][] = [['kills', 12 + warlock.level * 2], ['kills', 20 + warlock.level * 2]];
+    const [demand, target] = demands[Math.floor(Math.random() * demands.length)];
+    this.pacts[warlock.id] = { demand, target, progress: 0, done: false };
+    const wasPaused = this.paused;
+    this.setPaused(true);
+    this.hud.showStoryCard({ kicker: 'The Patron', title: `${warlock.name} dreams`, body: `Something with too many voices leans close in the dream and says the terms plainly: ${target} things dead by the party's hand, and it will be pleased, and its pleasure is worth having.\n\n${warlock.name} wakes with the taste of it and does not say what was promised.` }, () => { if (!wasPaused) this.setPaused(false); }, { seconds: 12 });
+  }
+
+  /** Kills count toward every open pact; a pact kept pays in the patron's coin. */
+  private advancePacts(kills: number): void {
+    if (kills <= 0) return;
+    for (const [id, pact] of Object.entries(this.pacts)) {
+      if (pact.done) continue;
+      pact.progress += kills;
+      const warlock = this.party.members.find(m => m.id === id);
+      if (!warlock) continue;
+      if (pact.progress >= pact.target) {
+        pact.done = true;
+        warlock.abilities.cha = Math.min(20, warlock.abilities.cha + 1);
+        this.tally('pacts');
+        this.hud.addCombatMessage(`\ud83d\udc41 The patron is pleased. ${warlock.name} feels it like a hand on the shoulder: +1 Charisma, and the voices are warmer for a while.`, '#c9a6ff');
+        this.expeditionJournal.push(`${warlock.name} kept the pact`);
+      } else if (pact.progress - kills < pact.target / 2 && pact.progress >= pact.target / 2) {
+        this.hud.addCombatMessage(`\ud83d\udc41 Halfway to what the patron asked of ${warlock.name}.`, '#a8a');
+      }
+    }
+  }
+
+  /** A druid or wizard with a slot to spend calls something to fight beside them. */
+  private summonAlly(foes: Monster[]): void {
+    if (foes.length === 0 || this.party.members.some(m => m.id.startsWith('summon_'))) return;
+    const caster = this.party.alive.find(m => (m.charClass.id === 'druid' || m.charClass.id === 'wizard') && m.level >= 3 && m.canCastSpell(2));
+    if (!caster || Math.random() > 0.5 || this.party.members.length >= 6) return;
+    caster.spendSlotAt(2);
+    const isDruid = caster.charClass.id === 'druid';
+    const name = isDruid ? ['Summoned Wolf', 'Summoned Boar', 'Summoned Bear'][Math.floor(Math.random() * 3)] : ['Bound Sprite', 'Lesser Elemental', 'Arcane Hound'][Math.floor(Math.random() * 3)];
+    const cls = CLASSES.find(c => c.id === (isDruid ? 'barbarian' : 'fighter')) ?? CLASSES[0];
+    const race = RACES.find(r => r.id === 'human') ?? RACES[0];
+    const ally = new GameCharacter(`summon_${Date.now()}`, name, cls, race, { str: 14 + Math.floor(caster.level / 3), dex: 13, con: 12, int: 4, wis: 10, cha: 6 });
+    ally.isTemporaryCompanion = true;
+    ally.baseMaxHp = 8 + caster.level * 3;
+    ally.hp = ally.maxHp;
+    ally.tile = { ...caster.tile };
+    this.party.addMember(ally);
+    this.hud.addCombatMessage(`\u2728 ${caster.name} spends a second-level slot and ${isDruid ? 'the ground gives up' : 'the air knots itself into'} ${name.replace(/^(Summoned|Bound|Lesser|Arcane) /, 'a $1 ').toLowerCase()} to fight beside the party until the fight is done.`, '#c9a6ff');
+    this.tally('summons');
+  }
+
+  /** Whatever was summoned goes back where it came from when the fight ends. */
+  private dismissSummons(): void {
+    for (let i = this.party.members.length - 1; i >= 0; i--) {
+      const m = this.party.members[i];
+      if (!m.id.startsWith('summon_')) continue;
+      this.party.members.splice(i, 1);
+      if (this.party.formation[i]) this.party.formation.splice(i, 1);
+      if (i < this.party.leaderIndex) this.party.leaderIndex--;
+      else if (i === this.party.leaderIndex) this.party.leaderIndex = 0;
+      this.hud.addCombatMessage(`\u2728 ${m.name} ${m.isAlive ? 'fades as the magic lets go' : 'was already gone'}.`, '#a8a');
+    }
+    if (this.party.leaderIndex >= this.party.members.length) this.party.leaderIndex = 0;
+    this.hud.setParty(this.party);
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3284,6 +3393,8 @@ class Game {
           this.history.victories++;
           this.checkRivalsSlain(slainMonsters);
           this.strengthenBonds();
+          this.dismissSummons();
+          this.advancePacts(slainMonsters.filter(m => !m.fled).length);
           if (slainMonsters.some(m => m.hasKey && !m.fled)) {
             this.floorKeyHeld = true;
             this.hud.addCombatMessage('\ud83d\udd11 An iron key, warm from the body. The locked hall will open now.', '#ffd700');
@@ -4529,6 +4640,7 @@ class Game {
     for (const member of this.party.members) {
       if (!member.isDead) this.hud.addCombatMessage(member.gainExhaustion(), '#c66');
     }
+    this.dismissSummons();
     const fallen = this.party.members.filter(m => m.isDead);
     for (const m of fallen) {
       this.hud.addCombatMessage(`\u2620 ${m.name} will not rise again. ${m.charClass.name}, level ${m.level}; ${this.history.kills} foes fell before them.`, '#e0705f');
@@ -4673,6 +4785,14 @@ class Game {
     if (loot.items.length > 0 || loot.goldValue > 0) sfx.chest();
     for (const line of loot.narration) {
       this.hud.addCombatMessage(line, '#dd0');
+    }
+    // A pinch of something rare, now and then, for the spells that want one.
+    if (this.mode === GameMode.Dungeon && this.dungeonLevel >= 2 && Math.random() < 0.1) {
+      const comp = COMPONENT_ITEMS[Math.floor(Math.random() * COMPONENT_ITEMS.length)];
+      if (!this.party.members.some(m => m.hasItem(comp.id))) {
+        this.party.leader.addToInventory({ ...comp });
+        this.hud.addCombatMessage(`\u2697 In a twist of oilcloth: ${comp.name}. ${comp.description}`, '#c9a6ff');
+      }
     }
     // Now and then a hoard holds a map of the floor below.
     if (this.mode === GameMode.Dungeon && Math.random() < 0.12 && !this.party.members.some(m => m.hasItem('dungeon_map'))) {

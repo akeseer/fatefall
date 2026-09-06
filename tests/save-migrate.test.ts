@@ -224,3 +224,11 @@ describe('v20 -> v21 the quiver', () => {
     expect(migrateSave({ version: SAVE_VERSION, arrows: 12 } as any)!.arrows).toBe(12);
   });
 });
+
+describe('v21 -> v22 pacts', () => {
+  it('leaves an older run silent and carries a pact through', () => {
+    expect(migrateSave({ version: 21, party: { members: [] } } as any)!.pacts).toBeUndefined();
+    const pact = { m1: { demand: 'kills', target: 12, progress: 3, done: false } };
+    expect(migrateSave({ version: SAVE_VERSION, pacts: pact } as any)!.pacts).toEqual(pact);
+  });
+});

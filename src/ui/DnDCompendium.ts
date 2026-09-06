@@ -1,4 +1,6 @@
 import { alignmentForKind, WORDLESS_KINDS, KIND_LABEL } from '../entities/MonsterKinds';
+import { spellFxFor } from './SpellFx';
+import { componentFor } from '../combat/Components';
 import {
   ALIGNMENTS,
   ABILITY_SCORES,
@@ -262,6 +264,14 @@ function buildEntries(): CompendiumEntry[] {
       detail('Effect', spell.description),
       ...(spell.higherLevels ? [detail('At Higher Levels', spell.higherLevels)] : []),
     ];
+    // The grimoire's own reading of the spell: how it is delivered, what it is made of.
+    const fx = spellFxFor(spell.name);
+    if (fx) {
+      const on: Record<string, string> = { target: 'one target', foes: 'every foe', self: 'the caster', party: 'the whole party', field: 'the field' };
+      details.push(detail('Delivery', `${fx.motif.replace(/_/g, ' ')} on ${on[fx.on] ?? fx.on}; ${fx.element} in its nature, and it sounds of ${fx.sound}.`));
+    }
+    const comp = playable ? componentFor(playable.id) : undefined;
+    if (comp) details.push(detail('Component', `${comp.name}: ${comp.description}`));
     // Cantrips scale with character level: +1 damage die at 5th, 11th, 17th.
     if (spell.level <= 0 && playable?.damage) {
       const m = playable.damage.match(/^(\d+)d(\d+)/);

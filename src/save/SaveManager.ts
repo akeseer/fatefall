@@ -30,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 21;
+export const SAVE_VERSION = 22;
 
 export interface SavedCharacter {
   id: string;
@@ -167,6 +167,8 @@ export interface SaveData {
   retired?: string[];
   /** Arrows in the quiver. v21+. */
   arrows?: number;
+  /** Warlock pacts, by member id: what the patron asked and how far along it is. v22+. */
+  pacts?: Record<string, { demand: string; target: number; progress: number; done: boolean }>;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -364,7 +366,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 19) current = migrateV19toV20(current);
   if (!current) return null;
   if (current.version === 20) current = migrateV20toV21(current);
+  if (!current) return null;
+  if (current.version === 21) current = migrateV21toV22(current);
   return current;
+}
+
+/** v21 → v22: pacts. Absent means the patrons have not spoken yet. */
+function migrateV21toV22(data: SaveData): SaveData | null {
+  return { ...data, version: 22 };
 }
 
 /** v20 → v21: the quiver. Absent means a full one. */

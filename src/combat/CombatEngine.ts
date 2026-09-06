@@ -1,3 +1,4 @@
+import { componentFor } from './Components';
 import { surgeFor } from './WildMagic';
 import { isUndeadKind, isUnholyKind } from '../entities/MonsterKinds';
 import { GameCharacter } from '../entities/Character';
@@ -136,6 +137,8 @@ export class CombatEngine {
   public onRangedShot: (() => boolean) | null = null;
   /** The room itself as a lair action, when the hall has an altar, a forge, a font. */
   public roomLair: LegendaryActionDef | null = null;
+  /** Spells refused for want of a component this fight, so the log says so once. */
+  private componentRefused = new Set<string>();
   /** Heroes who have spent their reaction this round: a parry, a shield block, a counterspell. */
   private reactionsUsed = new Set<string>();
   /** Bosses that have entered their second phase this fight. */
@@ -164,6 +167,7 @@ export class CombatEngine {
     this.isActive = true;
     this.log = { round: 0, messages: [], isOver: false, winner: null };
     this.phaseTwo.clear();
+    this.componentRefused.clear();
     this.rollInitiative();
     this.checkFrightfulPresence();
     this.setupBosses();
@@ -1281,6 +1285,14 @@ export class CombatEngine {
 
   /** Resolve a character spell; returns true when the turn is spent casting. */
   private castSpell(caster: GameCharacter, spell: Spell, forcedMonsterTarget?: Monster, forcedAllyTarget?: GameCharacter): boolean {
+    const comp = componentFor(spell.id);
+    if (comp && !this.party.members.some(m => m.hasItem(comp.itemId))) {
+      if (!this.componentRefused.has(spell.id)) {
+        this.componentRefused.add(spell.id);
+        this.log.messages.push(`${caster.name} reaches for ${spell.name} and stops: it wants ${comp.name}, and there is none in the pack.`);
+      }
+      return false;
+    }
     const ok = this.castSpellInner(caster, spell, forcedMonsterTarget, forcedAllyTarget);
     if (ok && caster.charClass.id === 'sorcerer' && spell.level > 0 && Math.random() < 0.1) this.wildSurge(caster);
     return ok;
@@ -1767,6 +1779,11 @@ export class CombatEngine {
       monster.template = { ...monster.template, attackBonus: monster.template.attackBonus + 1, damageBonus: monster.template.damageBonus + 2 };
       monster.legendaryActions = LEGENDARY_ACTIONS_PER_ROUND;
       this.log.messages.push(`\ud83d\udd25 ${monster.template.name} enters its second phase \u2014 faster, angrier, and not done.`);
+    }
+    // Counter-magic: a caster among the foes unweaves what the party wove.
+    if (this.partyBlessRounds > 0 && /mage|shaman|priest|witch|sorcer|archmage|lich|necromancer|arcanist|warlock|oracle|hierophant|cultist|hag/i.test(monster.template.name) && Math.random() < 0.35) {
+      this.partyBlessRounds = 0;
+      this.log.messages.push(`\u270b ${monster.template.name} speaks a word backward and the party's blessing goes out like a candle.`);
     }
 
     // Morale check: a broken creature bolts instead of fighting to the death.

@@ -150,6 +150,7 @@ export interface SaveHost {
   mounted: boolean;
   retired: string[];
   arrows: number;
+  pacts: Record<string, { demand: string; target: number; progress: number; done: boolean }>;
 
   // ── Effects a restore has, which belong to Game ──
   /** Put the party underground; the surface world is not what was saved. */
@@ -240,6 +241,7 @@ export class SaveSerializer {
       mounted: this.game.mounted,
       retired: this.game.retired,
       arrows: this.game.arrows,
+      pacts: this.game.pacts,
       hardcore: this.game.hardcore,
       dmDirection: this.game.dmDirection ?? null,
       speed: 800 / this.game.tickInterval,
@@ -446,6 +448,7 @@ export class SaveSerializer {
     this.game.mounted = save.mounted ?? false;
     this.game.retired = [...(save.retired ?? [])];
     this.game.arrows = save.arrows ?? 40;
+    this.game.pacts = { ...(save.pacts ?? {}) };
     this.game.hardcore = save.hardcore ?? false;
     this.game.dmDirection = save.dmDirection ?? undefined;
     this.game.resumeRun();
