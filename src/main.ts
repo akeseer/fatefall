@@ -6757,8 +6757,7 @@ class Game {
       });
       void navigator.clipboard?.writeText(body).then(
         () => this.hud.addCombatMessage('\ud83d\udccb The run is on the clipboard, as text: paste it anywhere.', '#8cf'),
-        () => { this.hud.addCombatMessage('The clipboard refused. The chronicle follows in the log instead.', '#886'); for (const line of body.split('
-').slice(0, 80)) this.hud.addCombatMessage(line || ' ', '#9aa'); },
+        () => { this.hud.addCombatMessage('The clipboard refused. The chronicle follows in the log instead.', '#886'); for (const line of body.split('\n').slice(0, 80)) this.hud.addCombatMessage(line || ' ', '#9aa'); },
       );
       this.hud.showStoryCard({ kicker: 'The run, as text', title: this.party.partyName, body: body.split('\n').slice(0, 14).join('\n').replace(/\n\n+/g, '\n\n') + '\n\n(the whole of it is on the clipboard)' }, () => {}, { seconds: 20 });
       return;
