@@ -206,3 +206,12 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   `LOCATIONS`, `THEME_MONSTERS`, `ThemeLight`, `BattleScenes.THEME_MOTIF` and the themed
   entrance descriptions, which is the checklist for any theme after them. New combat
   narration lines must keep a verb `presentStep`'s attack regex knows.
+- **Monster kinds** (`src/entities/MonsterKinds.ts`): `MonsterTemplate.type` is `MonsterKind`, the
+  fourteen classic types plus twenty-five more (insect, vampire, devil, titan, shade...). Rules
+  that care about a kind ask here (`isUndeadKind`, `isUnholyKind`, `FEARLESS_KINDS`,
+  `TALKING_KINDS`, `WORDLESS_KINDS`, `alignmentForKind`) rather than comparing strings, and
+  `ELEMENT_VS_TYPE` in `Rules` has a row for each. `MonsterMenagerie.ts` holds two creatures per
+  new kind and ten zones (clockwork foundry, jungle ziggurat, frozen necropolis, sky citadel,
+  fungal grotto, pirate cove, astral wreck, desert tomb, haunted theatre, dream labyrinth); its
+  theme lists drop any id the bestiary does not know. New battle motifs (`gears`, `ice`,
+  `jungle`, `sand`, `sky`, `velvet`) are CSS gradient functions in `BattleScenes`.

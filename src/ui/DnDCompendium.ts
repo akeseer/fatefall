@@ -1,3 +1,4 @@
+import { alignmentForKind, WORDLESS_KINDS, KIND_LABEL } from '../entities/MonsterKinds';
 import {
   ALIGNMENTS,
   ABILITY_SCORES,
@@ -82,9 +83,9 @@ function synthesizeBestiary(t: MonsterTemplate): (typeof BESTIARY)[number] {
   return {
     id: t.id,
     name: t.name,
-    type: t.type,
+    type: KIND_LABEL[t.type] ?? t.type,
     size: t.size,
-    alignment: t.type === 'celestial' ? 'lawful good' : t.type === 'fiend' ? 'chaotic evil' : t.type === 'undead' ? 'neutral evil' : t.type === 'beast' || t.type === 'plant' || t.type === 'ooze' ? 'unaligned' : t.cr >= 10 ? 'neutral evil' : 'neutral',
+    alignment: alignmentForKind(t.type, t.cr),
     cr: t.cr,
     ac: t.ac,
     hp: `${t.hp} (${hpDice}d8 + ${Math.max(0, t.hp - hpDice * 4)})`,
@@ -94,7 +95,7 @@ function synthesizeBestiary(t: MonsterTemplate): (typeof BESTIARY)[number] {
     tactics: `Fights with an AC of ${t.ac} and ${t.hp} hit points. ${aggression}`,
     habitat: flavor.habitat,
     abilities: ['Multiattack', ...scoreLabels],
-    languages: t.type === 'beast' || t.type === 'ooze' || t.type === 'plant' ? ['\u2014'] : ['Undercommon or regional dialects'],
+    languages: WORDLESS_KINDS.has(t.type) ? ['\u2014'] : ['Undercommon or regional dialects'],
     senses: [`darkvision 60 ft.`, `passive Perception ${8 + Math.floor(t.abilities.wis / 2)}`],
   };
 }

@@ -1,3 +1,4 @@
+import { TALKING_KINDS } from '../entities/MonsterKinds';
 /**
  * Parley: not every meeting has to be a fight.
  *
@@ -50,7 +51,7 @@ export interface ParleyParty {
 }
 
 /** Creatures with language enough to bargain. */
-const TALKERS = new Set(['humanoid', 'giant', 'fey', 'fiend', 'dragon']);
+const TALKERS = TALKING_KINDS;
 
 export function canParley(foes: ParleyFoe[]): boolean {
   return foes.length > 0 && foes.every(f => TALKERS.has(f.type) && !f.isBoss);

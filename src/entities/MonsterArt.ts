@@ -65,6 +65,31 @@ const TYPE_HUE: Record<MonsterTemplate['type'], [hue: number, sat: number, light
   celestial: [45, 60, 62, '#ffffff'],
   plant: [95, 40, 32, '#ffd23f'],
   elemental: [200, 60, 48, '#ffffff'],
+  insect: [80, 40, 36, '#b8ff5a'],
+  arachnid: [270, 25, 28, '#ff5a3c'],
+  aquatic: [195, 50, 38, '#ffd23f'],
+  avian: [220, 15, 30, '#ffd23f'],
+  reptile: [90, 35, 36, '#ffd23f'],
+  dinosaur: [60, 30, 38, '#ffd23f'],
+  fungus: [285, 30, 45, '#b8ff5a'],
+  crystal: [215, 45, 62, '#8dd8ff'],
+  automaton: [42, 45, 42, '#ff5a3c'],
+  shapechanger: [20, 20, 60, '#3a1c1c'],
+  lycanthrope: [25, 35, 34, '#ff5a3c'],
+  vampire: [340, 30, 22, '#ff5a3c'],
+  spirit: [200, 40, 62, '#9fe8ff'],
+  demon: [355, 55, 30, '#ff5a3c'],
+  devil: [0, 60, 30, '#ff9a3c'],
+  yugoloth: [55, 35, 32, '#b8ff5a'],
+  genie: [215, 60, 50, '#ffffff'],
+  hag: [120, 25, 35, '#ffd23f'],
+  titan: [30, 20, 55, '#ffffff'],
+  wyrm: [100, 30, 30, '#ffd23f'],
+  parasite: [330, 30, 45, '#b8ff5a'],
+  cultist: [290, 30, 25, '#ffffff'],
+  outsider: [250, 40, 22, '#b8ff5a'],
+  dreamborn: [265, 45, 55, '#ffffff'],
+  shade: [240, 12, 18, '#9fe8ff'],
 };
 
 const BODY_BY_NAME: [RegExp, ArtBody][] = [
@@ -88,7 +113,14 @@ export function artForTemplate(t: Pick<MonsterTemplate, 'id' | 'name' | 'type' |
   let body: ArtBody = 'biped';
   for (const [re, b] of BODY_BY_NAME) { if (re.test(t.name)) { body = b; break; } }
   if (body === 'biped') {
-    if (t.type === 'dragon') body = 'flyer';
+    const byKind: Partial<Record<string, ArtBody>> = {
+      insect: 'spider', arachnid: 'spider', aquatic: 'quadruped', avian: 'flyer', reptile: 'quadruped', dinosaur: 'quadruped',
+      fungus: 'tree', crystal: 'brute', automaton: 'brute', spirit: 'wraith', shade: 'wraith', genie: 'wraith', titan: 'brute',
+      wyrm: 'serpent', parasite: 'serpent', outsider: 'orb', dreamborn: 'wraith', demon: 'brute',
+    };
+    const k = byKind[t.type];
+    if (k) body = k;
+    else if (t.type === 'dragon') body = 'flyer';
     else if (t.type === 'ooze') body = 'blob';
     else if (t.type === 'plant') body = 'tree';
     else if (t.type === 'giant' || t.type === 'construct') body = 'brute';
@@ -98,7 +130,15 @@ export function artForTemplate(t: Pick<MonsterTemplate, 'id' | 'name' | 'type' |
   const traits: ArtTrait[] = [];
   const n = t.name;
   if (t.type === 'dragon') traits.push('horns', 'tail', 'wings');
-  if (t.type === 'fiend') traits.push('horns', h % 2 ? 'wings' : 'tail');
+  if (t.type === 'fiend' || t.type === 'demon' || t.type === 'devil' || t.type === 'yugoloth') traits.push('horns', h % 2 ? 'wings' : 'tail');
+  if (t.type === 'vampire') traits.push('fangs', 'cloak');
+  if (t.type === 'lycanthrope') traits.push('fangs', 'claws');
+  if (t.type === 'cultist') traits.push('hood', h % 2 ? 'weapon' : 'staff');
+  if (t.type === 'hag') traits.push('claws', 'hood');
+  if (t.type === 'wyrm') traits.push('spikes', 'horns');
+  if (t.type === 'crystal' || t.type === 'spirit' || t.type === 'outsider' || t.type === 'dreamborn' || t.type === 'genie') traits.push('glow');
+  if (t.type === 'outsider' || t.type === 'parasite') traits.push('tentacles');
+  if (t.type === 'automaton') traits.push('weapon');
   if (t.type === 'celestial') traits.push('wings', 'halo');
   if (t.type === 'undead' && body === 'biped') traits.push(h % 3 ? 'cloak' : 'weapon');
   if (t.type === 'aberration') traits.push('tentacles');

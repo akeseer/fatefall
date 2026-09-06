@@ -1,3 +1,4 @@
+import { isUndeadKind, isUnholyKind } from '../entities/MonsterKinds';
 import { GameCharacter } from '../entities/Character';
 import { Monster } from '../entities/Monster';
 import { Party } from '../entities/Party';
@@ -530,7 +531,7 @@ export class CombatEngine {
           const hits = Math.min(reach, foes.length);
           score = hits >= 2 ? 3 + hits : focus ? 3 : 0;
           if (a.effect === 'drain' && hpPct < 0.6) score += 3;
-          if (a.burst?.doubleAgainst && foes.some(f => a.burst!.doubleAgainst!.includes(f.template.type))) score += 3;
+          if (a.burst?.doubleAgainst && foes.some(f => a.burst!.doubleAgainst!.some(k => k === f.template.type || (k === 'undead' && isUndeadKind(f.template.type)) || (k === 'fiend' && isUnholyKind(f.template.type))))) score += 3;
           break;
         }
         case 'attack':
@@ -1117,7 +1118,7 @@ export class CombatEngine {
         let dealt = 0;
         for (const t of targets) {
           let dmg = rollDice(dice!.count, dice!.size);
-          if (ability.burst?.doubleAgainst?.includes(t.template.type)) dmg *= 2;
+          if (ability.burst?.doubleAgainst?.some(k => k === t.template.type || (k === 'undead' && isUndeadKind(t.template.type)) || (k === 'fiend' && isUnholyKind(t.template.type)))) dmg *= 2;
           dealt += Math.min(dmg, Math.max(0, t.hp));
           this.log.messages.push(`${t.template.name} takes ${dmg} damage (${Math.max(0, t.hp - dmg)}/${t.maxHp} HP)`);
           this.log.messages.push(t.takeDamage(dmg));
@@ -1140,7 +1141,7 @@ export class CombatEngine {
           return true;
         }
         if (ability.id === 'divine_smite') {
-          const unholy = target.template.type === 'undead' || target.template.type === 'fiend';
+          const unholy = isUnholyKind(target.template.type);
           this.log.messages.push(`\u271d ${hero.name} smites ${target.template.name} — holy light pours down the blade${unholy ? ', and the unholy thing screams' : ''}!`);
           this.weaponAttack(hero, target, { count: dice!.count + (unholy ? 1 : 0), size: dice!.size });
           return true;
@@ -1589,7 +1590,7 @@ export class CombatEngine {
       opts.attackRollBonus = (opts.attackRollBonus || 0) + this.warRoomAttackBonus;
     }
     // Hearth-blessed delve: the light the party carries burns the undead.
-    if (this.hearthBlessedUndeadBonus > 0 && target.template.type === 'undead') {
+    if (this.hearthBlessedUndeadBonus > 0 && isUndeadKind(target.template.type)) {
       opts.damageBonus = (opts.damageBonus || 0) + this.hearthBlessedUndeadBonus;
     }
     // Storm or gale weather throws off every strike.
@@ -1754,7 +1755,7 @@ export class CombatEngine {
     }
     // Gloom-day undead strike with supernatural fury (full-moon lycanthropes
     // are handled by their own awakening transformation in startCombat).
-    const gloom = monster.template.type === 'undead' ? this.gloomDayUndeadBonus : 0;
+    const gloom = isUndeadKind(monster.template.type) ? this.gloomDayUndeadBonus : 0;
     // The fury bonus shows as a lower AC to beat (i.e. an easier hit) and a
     // flat damage bump after the strike lands.
     const effectiveAc = target.ac + this.defenseBonus + this.townBuffAC + this.tavernBuffAC

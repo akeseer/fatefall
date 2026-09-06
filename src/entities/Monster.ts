@@ -1,4 +1,6 @@
 import { EXPANSION_MONSTERS, EXPANSION_THEMES } from './MonsterExpansion';
+import { MENAGERIE_MONSTERS, MENAGERIE_THEMES } from './MonsterMenagerie';
+import type { MonsterKind } from './MonsterKinds';
 import { Ability, abilityModifier, rollDice } from '../data/gameData';
 import { Vector2 } from '../engine/types';
 import {
@@ -28,7 +30,7 @@ export interface MonsterTemplate {
   xp: number;
   cr: number;
   size: 'Small' | 'Medium' | 'Large';
-  type: 'beast' | 'undead' | 'humanoid' | 'dragon' | 'aberration' | 'fiend' | 'giant' | 'monstrosity' | 'ooze' | 'construct' | 'fey' | 'celestial' | 'plant' | 'elemental';
+  type: MonsterKind;
 }
 
 export class Monster {
@@ -6029,7 +6031,7 @@ export const MONSTER_TEMPLATES: MonsterTemplate[] = [
 ];
 
 // The second hundred join the table before anything indexes it.
-MONSTER_TEMPLATES.push(...EXPANSION_MONSTERS);
+MONSTER_TEMPLATES.push(...EXPANSION_MONSTERS, ...MENAGERIE_MONSTERS);
 
 export function getMonsterTemplate(id: string): MonsterTemplate | undefined {
   return MONSTER_TEMPLATES.find(m => m.id === id);
@@ -6096,4 +6098,8 @@ export function getRandomMonster(maxCr: number, themeId?: string): MonsterTempla
 // The expansion's theme affinities, and the new themes themselves.
 for (const [theme, ids] of Object.entries(EXPANSION_THEMES)) {
   (THEME_MONSTERS[theme] ??= []).push(...ids);
+}
+for (const [theme, ids] of Object.entries(MENAGERIE_THEMES)) {
+  // Only names the bestiary knows: a theme list must never point at nothing.
+  (THEME_MONSTERS[theme] ??= []).push(...ids.filter(id => MONSTER_TEMPLATES.some(m => m.id === id)));
 }

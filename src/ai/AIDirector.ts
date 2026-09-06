@@ -88,7 +88,8 @@ function assessThreat(
 
   // Type-based threat adjustments
   const type = monster.template.type.toLowerCase();
-  if (type.includes('dragon') || type.includes('aberration')) threat *= 1.3;
+  if (type.includes('dragon') || type.includes('aberration') || type.includes('wyrm') || type.includes('outsider')) threat *= 1.3;
+  if (type === 'titan' || type === 'devil' || type === 'demon') threat *= 1.2;
   if (type.includes('undead') && type.includes('swarm')) threat *= 0.8;
 
   return {

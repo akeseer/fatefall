@@ -1,4 +1,5 @@
 import { EXPANSION_SPECIALS, EXPANSION_BOSS_KITS } from '../entities/MonsterExpansion';
+import { MENAGERIE_SPECIALS, MENAGERIE_BOSS_KITS } from '../entities/MonsterMenagerie';
 import { Ability, abilityModifier, rollDice } from '../data/gameData';
 import { pushDiceRoll } from './DiceEvents';
 
@@ -255,14 +256,14 @@ export function getAttackModifiers(
  * through constructs, and the dead simply do not care about venom.
  */
 const ELEMENT_VS_TYPE: Record<string, Partial<Record<string, number>>> = {
-  radiant: { undead: 1.5, fiend: 1.5, celestial: 0.5 },
-  necrotic: { undead: 0.5, fiend: 0.5, celestial: 1.5 },
-  fire: { plant: 1.5, elemental: 0.5 },
-  cold: { ooze: 1.5, construct: 0.5 },
-  thunder: { construct: 1.5, ooze: 0.5 },
-  lightning: { ooze: 0.5, plant: 1.25 },
-  poison: { undead: 0.5, construct: 0.5, fiend: 0.5 },
-  psychic: { construct: 0.5, ooze: 1.5 },
+  radiant: { undead: 1.5, fiend: 1.5, celestial: 0.5, vampire: 1.5, spirit: 1.5, shade: 1.5, demon: 1.5, devil: 1.5, yugoloth: 1.25, outsider: 1.25, genie: 0.75 },
+  necrotic: { undead: 0.5, fiend: 0.5, celestial: 1.5, vampire: 0.5, spirit: 0.5, shade: 0.5, demon: 0.5, devil: 0.5, yugoloth: 0.5, dreamborn: 1.25 },
+  fire: { plant: 1.5, elemental: 0.5, fungus: 1.5, insect: 1.25, devil: 0.5, genie: 0.5, wyrm: 0.75, crystal: 0.75, spirit: 0.75 },
+  cold: { ooze: 1.5, construct: 0.5, reptile: 1.5, dinosaur: 1.25, aquatic: 0.75, automaton: 0.5, crystal: 0.5, devil: 0.75, spirit: 0.5, shade: 0.5 },
+  thunder: { construct: 1.5, ooze: 0.5, crystal: 1.5, automaton: 1.5, avian: 1.25, titan: 0.75 },
+  lightning: { ooze: 0.5, plant: 1.25, aquatic: 1.5, automaton: 1.25, crystal: 1.25, avian: 0.75, genie: 0.5 },
+  poison: { undead: 0.5, construct: 0.5, fiend: 0.5, vampire: 0.5, spirit: 0.25, shade: 0.25, demon: 0.5, devil: 0.5, yugoloth: 0.5, automaton: 0.25, crystal: 0.25, fungus: 0.5, parasite: 0.5, insect: 1.25, lycanthrope: 1.25 },
+  psychic: { construct: 0.5, ooze: 1.5, automaton: 0.25, crystal: 0.5, fungus: 1.25, cultist: 1.25, dreamborn: 0.5, outsider: 0.5, parasite: 1.25, shapechanger: 1.25, titan: 0.75 },
 };
 
 export interface ElementalResult {
@@ -1238,5 +1239,5 @@ export const BOSS_KITS: Record<string, BossKit> = {
 };
 
 // The expansion's riders and legendary kits.
-Object.assign(MONSTER_SPECIALS, EXPANSION_SPECIALS);
-Object.assign(BOSS_KITS, EXPANSION_BOSS_KITS);
+Object.assign(MONSTER_SPECIALS, EXPANSION_SPECIALS, MENAGERIE_SPECIALS);
+Object.assign(BOSS_KITS, EXPANSION_BOSS_KITS, MENAGERIE_BOSS_KITS);

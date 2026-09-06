@@ -100,6 +100,16 @@ const ENTRANCE_DESCRIPTIONS = [
 
 /** Flavor for entrances, keyed by the dungeon theme the land gave them. */
 const THEMED_ENTRANCE_DESCRIPTIONS: Record<string, string[]> = {
+  clockwork_foundry: ['a brass door in a hillside, warm to the touch, ticking', 'a chimney of black iron rising from the turf, and stairs down inside it'],
+  jungle_ziggurat: ['a stepped stone rising out of the trees, its stair choked with vines and its top lost in canopy', 'a carved mouth in a moss-eaten wall, insects pouring out of it in a slow tide'],
+  frozen_necropolis: ['a crack in a glacier with a street visible inside it, and doors along the street', 'an arch of blue ice with names cut into it, thousands of names'],
+  sky_citadel: ['a stair cut into a mountain that does not stop at the top of the mountain', 'a rope bridge that starts on a crag and ends in cloud'],
+  fungal_grotto: ['a sinkhole ringed with caps the size of cartwheels, glowing faintly blue', 'a cave mouth breathing spores like slow snow'],
+  pirate_cove: ['a sea-cave under a headland, with a ship\'s bell hung at the mouth and a skull on the bell', 'a smugglers\' stair down a cliff to a cave the tide leaves open twice a day'],
+  astral_wreck: ['a silver hull half-buried in a hillside, its planks humming', 'a hole in the ground with stars at the bottom of it'],
+  desert_tomb: ['a stone door in a dune, its seals broken and re-set and broken again', 'a sphinx\'s head rising from the sand, and a stair between its paws'],
+  haunted_theatre: ['a theatre facade with the doors chained and the lamps lit', 'a stage door down an alley, a bill for tonight\'s performance still pasted beside it'],
+  dream_labyrinth: ['a door standing alone in a field, ajar, with a corridor behind it', 'a well whose water shows a ceiling'],
   salt_mine_deeps: [
     'a mine head of white stone, its rails vanishing down into a glitter that is not quite light',
     'a salt-crusted adit propped with timber gone to white, the air out of it dry as a tomb',

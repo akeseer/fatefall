@@ -16,6 +16,7 @@
  * from reading as scripted), so it is easy to unit-test and reason about.
  */
 
+import { FEARLESS_KINDS } from '../entities/MonsterKinds';
 import { GameCharacter } from '../entities/Character';
 import { Monster } from '../entities/Monster';
 import { Party } from '../entities/Party';
@@ -342,7 +343,7 @@ export function advanceToward(
 // ── Monster morale: when to break and run ─────────────────────────────
 
 /** Kinds that fight to the death: they feel no fear, or dying is the point. */
-const FEARLESS_TYPES = new Set(['undead', 'construct', 'ooze', 'plant']);
+const FEARLESS_TYPES = FEARLESS_KINDS;
 
 /**
  * Should this monster break and run? Real 5e fights rarely end in a

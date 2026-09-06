@@ -41,7 +41,7 @@ export interface BattleSceneCss {
   weather: string;
 }
 
-type Motif = 'pillars' | 'cave' | 'roots' | 'embers' | 'mist' | 'stars' | 'water';
+type Motif = 'pillars' | 'cave' | 'roots' | 'embers' | 'mist' | 'stars' | 'water' | 'gears' | 'ice' | 'jungle' | 'sand' | 'sky' | 'velvet';
 
 /** Which scenery a dungeon theme calls for. Unknown themes get the plain hall. */
 const THEME_MOTIF: Record<string, Motif> = {
@@ -63,6 +63,16 @@ const THEME_MOTIF: Record<string, Motif> = {
   drowned_lighthouse: 'water',
   plague_hospice: 'pillars',
   giants_causeway: 'stars',
+  clockwork_foundry: 'gears',
+  jungle_ziggurat: 'jungle',
+  frozen_necropolis: 'ice',
+  sky_citadel: 'sky',
+  fungal_grotto: 'cave',
+  pirate_cove: 'water',
+  astral_wreck: 'stars',
+  desert_tomb: 'sand',
+  haunted_theatre: 'velvet',
+  dream_labyrinth: 'mist',
 };
 
 function rgb(c: [number, number, number], scale = 1, alpha?: number): string {
@@ -124,6 +134,55 @@ function stars(light: string): string {
 function water(light: string): string {
   // Standing water: a reflective band across the floor with slow ripples.
   return `repeating-linear-gradient(180deg, transparent 0 18px, ${light} 18px 19px) 0 45% / 100% 55% no-repeat, radial-gradient(ellipse 60% 20% at 50% 70%, ${light} 0%, transparent 70%)`;
+}
+
+function gears(shade: string, rim: string): string {
+  // Great cogs behind the ranks: rings with a lit rim, at three depths.
+  const cogs: [number, number, number][] = [[18, 22, 62], [58, 8, 90], [86, 30, 48], [40, 40, 34]];
+  return cogs.map(([x, y, r]) =>
+    `radial-gradient(circle ${r}px at ${x}% ${y}%, transparent ${r - 22}px, ${shade} ${r - 20}px, ${shade} ${r - 8}px, ${rim} ${r - 6}px, ${rim} ${r - 4}px, transparent ${r - 2}px)`,
+  ).join(', ');
+}
+
+function ice(sheen: string, deep: string): string {
+  // Ice columns lit from within, and a frost band along the floor line.
+  const cols = [10, 33, 55, 78, 94].map((x, i) =>
+    `linear-gradient(90deg, transparent calc(${x}% - ${12 + (i % 2) * 6}px), ${sheen} calc(${x}% - ${8 + (i % 2) * 6}px), ${deep} ${x}%, ${sheen} calc(${x}% + ${8 + (i % 2) * 6}px), transparent calc(${x}% + ${12 + (i % 2) * 6}px)) top / 100% 66% no-repeat`,
+  );
+  return [...cols, `linear-gradient(180deg, transparent 60%, ${sheen} 64%, transparent 68%)`].join(', ');
+}
+
+function jungle(shade: string, leaf: string): string {
+  // Broad leaves and hanging vines, dense enough to hide things.
+  const leaves = [5, 20, 38, 57, 74, 92].map((x, i) =>
+    `radial-gradient(ellipse ${60 + (i % 3) * 20}px ${28 + (i % 2) * 12}px at ${x}% ${8 + (i * 13) % 30}%, ${leaf} 60%, transparent 66%)`,
+  );
+  const vines = [14, 46, 69, 88].map(x => `linear-gradient(90deg, transparent calc(${x}% - 2px), ${shade} calc(${x}% - 1px), ${shade} calc(${x}% + 1px), transparent calc(${x}% + 2px)) top / 100% 58% no-repeat`);
+  return [...leaves, ...vines].join(', ');
+}
+
+function sand(dune: string, deep: string): string {
+  // Dunes against a hot dark, and a haze of sand in the air.
+  return [
+    `radial-gradient(ellipse 70% 30% at 20% 62%, ${dune} 0%, transparent 70%)`,
+    `radial-gradient(ellipse 80% 26% at 72% 66%, ${dune} 0%, transparent 70%)`,
+    `radial-gradient(ellipse 120% 40% at 50% 100%, ${deep} 0%, transparent 70%)`,
+  ].join(', ');
+}
+
+function sky(cloud: string, deep: string): string {
+  // Cloud banks below the ramparts and a great deal of nothing above.
+  const clouds = [8, 30, 52, 76, 96].map((x, i) =>
+    `radial-gradient(ellipse ${90 + (i % 2) * 40}px ${34 + (i % 3) * 10}px at ${x}% ${58 + (i * 7) % 16}%, ${cloud} 55%, transparent 70%)`,
+  );
+  return [...clouds, `radial-gradient(ellipse 120% 50% at 50% 0%, ${deep} 0%, transparent 70%)`].join(', ');
+}
+
+function velvet(curtain: string, light: string): string {
+  // Curtains gathered at either side, and footlights along the boards.
+  const folds = [3, 8, 13, 87, 92, 97].map(x => `linear-gradient(90deg, transparent calc(${x}% - 3px), ${curtain} calc(${x}% - 1px), ${curtain} calc(${x}% + 1px), transparent calc(${x}% + 3px)) top / 100% 75% no-repeat`);
+  const lights = [12, 26, 40, 54, 68, 82].map(x => `radial-gradient(circle 3px at ${x}% 70%, ${light} 80%, transparent 100%)`);
+  return [`linear-gradient(90deg, ${curtain} 0%, transparent 16%, transparent 84%, ${curtain} 100%) top / 100% 75% no-repeat`, ...folds, ...lights].join(', ');
 }
 
 function trees(shade: string): string {
@@ -228,6 +287,12 @@ function dungeonScene(themeId: string | null): BattleSceneCss {
     case 'mist': scenery = mist(rgb(light, 0.6, 0.18)); break;
     case 'stars': scenery = stars(rgb(light, 1.2, 0.9)); break;
     case 'water': scenery = water(rgb(light, 1, 0.14)); break;
+    case 'gears': scenery = gears(wall, rgb(light, 1, 0.5)); break;
+    case 'ice': scenery = ice(rgb(light, 1, 0.35), rgb(light, 1.1, 0.12)); break;
+    case 'jungle': scenery = jungle(rgb([0.06, 0.14, 0.06]), rgb(mix([0.1, 0.22, 0.08], light, 0.3))); break;
+    case 'sand': scenery = sand(rgb(light, 0.9, 0.3), rgb(light, 0.6, 0.12)); break;
+    case 'sky': scenery = sky(rgb(light, 1, 0.5), rgb(light, 0.8, 0.2)); break;
+    case 'velvet': scenery = velvet(rgb(light, 0.7, 0.35), rgb(light, 1.2, 0.8)); break;
   }
   return {
     sky: `linear-gradient(180deg, #05040a 0%, ${rgb(tinted, 0.45)} 100%)`,

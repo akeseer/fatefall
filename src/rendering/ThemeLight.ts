@@ -33,6 +33,16 @@ const THEME_LIGHT: Record<string, [number, number, number]> = {
   drowned_lighthouse: [0.55, 0.85, 1.0],
   plague_hospice: [0.85, 0.9, 0.6],
   giants_causeway: [0.8, 0.85, 1.0],
+  clockwork_foundry: [1.0, 0.72, 0.4],
+  jungle_ziggurat: [0.7, 1.0, 0.55],
+  frozen_necropolis: [0.65, 0.85, 1.0],
+  sky_citadel: [0.85, 0.92, 1.0],
+  fungal_grotto: [0.7, 0.6, 1.0],
+  pirate_cove: [0.6, 0.85, 0.9],
+  astral_wreck: [0.85, 0.85, 1.0],
+  desert_tomb: [1.0, 0.85, 0.5],
+  haunted_theatre: [1.0, 0.55, 0.55],
+  dream_labyrinth: [0.9, 0.7, 1.0],
 };
 
 /** Plain flame, for the surface and for any theme not in the table. */

@@ -25,7 +25,7 @@ const XP_BY_CR: Record<string, number> = {
 
 export const EXPANSION_ART: Record<string, MonsterArtSpec> = {};
 
-function art(body: ArtBody, main: string, dark: string, accent: string, eye: string, traits: ArtTrait[] = [], scale?: number): MonsterArtSpec {
+export function art(body: ArtBody, main: string, dark: string, accent: string, eye: string, traits: ArtTrait[] = [], scale?: number): MonsterArtSpec {
   return { body, palette: { main, dark, accent, eye }, traits, scale };
 }
 
@@ -294,3 +294,5 @@ export const EXPANSION_BOSS_KITS: Record<string, BossKit> = {
     ],
   },
 };
+
+export { m as defineMonster };
