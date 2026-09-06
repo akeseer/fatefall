@@ -6,7 +6,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 ## A. The party and its people (1–10)
 
 - [x] 1. Chronicle page: each member's road, title, and the deeds journal on one screen.
-- [ ] 2. Party banter on the map: short exchanges between two members triggered by room kinds and mood.
+- [x] 2. Party banter on the map: short exchanges between two members triggered by room kinds and mood.
 - [ ] 3. Bonds: pairs who fight together often gain a small bonus when adjacent in the line.
 - [x] 4. Grudges: a member who was downed by a monster kind gets +1 to hit it thereafter. (already in as vendettas)
 - [x] 5. Member epitaphs: a fallen member's name, level and killer recorded and shown at the title.
@@ -25,8 +25,8 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [x] 15. Monster morale with bands: when the leader falls, the rest check or flee. (already in)
 - [x] 16. Boss phases: at half health a boss changes tactics and the backdrop shifts.
 - [ ] 17. Environmental attacks: lair actions that use the room's feature (the altar, the forge).
-- [ ] 18. Conditions on the sprite: poisoned green tint, frightened shiver, paralysed freeze.
-- [ ] 19. Damage types on the numbers: fire orange, cold blue, radiant gold, with a matching hit sound.
+- [x] 18. Conditions on the sprite: poisoned green tint, frightened shiver, paralysed freeze.
+- [x] 19. Damage types on the numbers: fire orange, cold blue, radiant gold, with a matching hit sound.
 - [ ] 20. A "hold" order: the DM tells a member to hold their action until a condition.
 - [ ] 21. Ranged weapons with range bands and a penalty at the far band.
 - [ ] 22. Ammunition: arrows and bolts counted, restocked in town, running out mid-fight.
@@ -49,7 +49,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 ## D. Items and economy (36–45)
 
-- [ ] 36. Item rarity tiers with colour and price, and sets that give a bonus when worn together.
+- [x] 36. Item rarity tiers with colour and price, and sets that give a bonus when worn together.
 - [ ] 37. Cursed items with a removal quest, not only a temple fee.
 - [ ] 38. Crafting: the forge and the town smith turn monster parts into gear.
 - [ ] 39. Monster parts as loot: hides, fangs, glands, sold or crafted.
@@ -57,7 +57,7 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 - [ ] 41. Shops with stock that changes with the calendar and the town's mood.
 - [ ] 42. Haggling: a Charisma check on big purchases.
 - [ ] 43. A bank in the capital: deposits survive a lost party in hardcore.
-- [ ] 44. Legendary items with names, histories, and a card when found.
+- [x] 44. Legendary items with names, histories, and a card when found.
 - [ ] 45. Trophies: a boss's head mounted in the tavern, with a reputation bonus.
 
 ## E. The world (46–60)
@@ -95,12 +95,12 @@ A working list. Tick items as they land; keep the numbering stable so commits ca
 
 ## G. Story (73–80)
 
-- [ ] 73. Act interludes: a card between acts telling what the antagonist did meanwhile.
+- [x] 73. Act interludes: a card between acts telling what the antagonist did meanwhile.
 - [ ] 74. Companions from the story: an NPC who joins for one act.
 - [ ] 75. Multiple endings by flags, with an epilogue card per member.
 - [ ] 76. Story choices with delayed consequences: a spared enemy returns later.
-- [ ] 77. Rumours that foreshadow the next act's antagonist by name.
-- [ ] 78. A villain's lieutenant on the floor before the boss.
+- [x] 77. Rumours that foreshadow the next act's antagonist by name. (taverns already name the act's villain; the interlude card adds to it)
+- [x] 78. A villain's lieutenant on the floor before the boss.
 - [ ] 79. The Chronicle records choices with what they cost.
 - [ ] 80. New Game Plus: a finished story reseeds with the old party's titles remembered.
 

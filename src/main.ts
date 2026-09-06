@@ -54,6 +54,8 @@ import { pickCampScene, readWatch, type CampMember } from './events/CampScenes';
 import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, canParley, tollFor, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
 import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
+import { banterFor } from './events/Banter';
+import { rarityTag } from './loot/LootTables';
 import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
 import { summarizeFight } from './combat/FightSummary';
 import { newlyEarned, achievementById, type AchievementSnapshot } from './game/Achievements';
@@ -294,6 +296,8 @@ class Game {
   /** Members lost for good. Rides in the save; the title shows the last few. */
   public fallen: { name: string; className: string; level: number; where: string; day: number }[] = [];
   private achievementTicks = 0;
+  /** The act whose lieutenant has already been placed, so each act gets one. */
+  private lieutenantActIndex = 0;
   /** A tile the DM pointed at; the party walks there before anything else. */
   private waypoint: Vector2 | null = null;
   /** The boss hall's doors are locked and a keeper carries the key. */
@@ -911,6 +915,7 @@ class Game {
     this.descending = false; // The new floor is ready — descents may queue again.
     this.hud.addCombatMessage(`Welcome to ${this.dungeonName}!`, '#ffd700');
     this.placeRivals();
+    this.placeLieutenant();
     // A quest that cares about depth may complete the moment this floor lands.
     this.checkActiveQuestProgress();
     this.hud.addCombatMessage(generateDungeonLore(this.dungeonLevel), '#a8a');
@@ -1527,6 +1532,8 @@ class Game {
       this.hud.addCombatMessage(this.describeCurrentRoom(), '#8aa');
       this.manualHold('a new room');
       const entered = this.currentRoom()?.feature;
+      const banter = banterFor(this.party.alive.map(m => ({ name: m.name, classId: m.charClass.id, greed: m.personality.greed, caution: m.personality.caution, aggression: m.personality.aggression, hpPct: m.hp / m.maxHp })), entered?.kind ?? null);
+      if (banter) for (const line of banter) this.hud.addCombatMessage(line, '#c9c2b0');
       if (entered?.kind === 'hazard' && !entered.used) void this.runHazard(entered);
       if (entered?.kind === 'puzzle_room' && !entered.used) this.poseRiddle(entered);
       // Hearth-blessed delve: "wounds knit quicker" — every new room reached
@@ -2875,6 +2882,25 @@ class Game {
     return this.moveParty(dir);
   }
 
+  /** The floor before the act's boss holds the boss's lieutenant. */
+  private placeLieutenant(): void {
+    const act = this.story?.act;
+    if (!act || this.mode !== GameMode.Dungeon) return;
+    if (this.dungeonEntranceId !== act.entranceId || this.dungeonLevel !== act.targetFloor - 1 || act.targetFloor < 2) return;
+    if (this.lieutenantActIndex === act.index) return;
+    this.lieutenantActIndex = act.index;
+    const room = this.rooms[Math.max(1, Math.floor(this.rooms.length * 0.66))];
+    if (!room) return;
+    const pos = findEmptyTile(this.map, room, this.monsters) ?? this.walkableIn(room);
+    if (!pos) return;
+    const base = getRandomMonster(Math.max(1, this.dungeonLevel), this.dungeonTheme?.id);
+    const template: MonsterTemplate = { ...base, name: `${act.bossName}'s lieutenant`, hp: Math.round(base.hp * 1.4), xp: base.xp * 2, attackBonus: base.attackBonus + 1 };
+    const lt = this.spawnMonster(template, pos);
+    lt.alertLevel = 1;
+    this.tally('lieutenants');
+    this.hud.addCombatMessage(`\ud83d\udc41 Somewhere on this floor, ${act.bossName}'s lieutenant keeps the stair. The master is one floor further down, and knows the party is coming.`, '#e8b45a');
+  }
+
   /**
    * Show one engine step as a sequence. The engine resolves a whole turn at
    * once and narrates it; shown all at once, a turn with two attacks read as
@@ -3327,14 +3353,14 @@ class Game {
           break;
         }
         const dealt = m.isAlive ? amountAfter(line, name + ' takes ') : null;
-        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : 'hit'); burst(m.tile, line); if (crit) sfx.crit(); else if (effectFor(line) === 'strike') sfx.hit(); placed = true; break; }
+        if (dealt !== null) { pop(m.tile, '-' + dealt, crit ? 'crit' : (damageTint(line) ?? 'hit')); burst(m.tile, line); elementSound(line); if (crit) sfx.crit(); else if (effectFor(line) === 'strike') sfx.hit(); placed = true; break; }
       }
       if (placed) continue;
 
       for (const c of this.party.members) {
         if (line.includes(c.name + ' is down')) { pop(c.tile, 'down', 'down'); sfx.down(); break; }
         const taken = amountAfter(line, c.name + ' takes ');
-        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : 'hurt'); burst(c.tile, line); if (crit) sfx.crit(); else if (effectFor(line) === 'strike') sfx.hurt(); break; }
+        if (taken !== null) { pop(c.tile, '-' + taken, crit ? 'crit' : (damageTint(line) ?? 'hurt')); burst(c.tile, line); elementSound(line); if (crit) sfx.crit(); else if (effectFor(line) === 'strike') sfx.hurt(); break; }
         const healed = amountAfter(line, c.name + ' heals ');
         if (healed !== null) { pop(c.tile, '+' + healed, 'heal'); burst(c.tile, line, true); break; }
       }
@@ -4407,6 +4433,14 @@ class Game {
     if (loot.items.length > 0 || loot.goldValue > 0) sfx.chest();
     for (const line of loot.narration) {
       this.hud.addCombatMessage(line, '#dd0');
+    }
+    for (const mi of loot.magicItems) {
+      if (mi.rarity !== 'legendary' && mi.rarity !== 'very rare' && mi.rarity !== 'artifact') continue;
+      this.tally('legendaries');
+      this.expeditionJournal.push(`Found ${mi.name} (${mi.rarity})`);
+      const wasPaused = this.paused;
+      this.setPaused(true);
+      this.hud.showStoryCard({ kicker: `${rarityTag(mi.rarity).replace(/:$/, '')} \u2014 found`, title: mi.name, body: `${mi.type}${mi.attunement ? ', requires attunement' : ''}.\n\n${mi.description}` }, () => { if (!wasPaused) this.setPaused(false); }, { seconds: 14 });
     }
 
     this.maybeHeirloom(loot);
@@ -7303,6 +7337,27 @@ function pickBackend(): RenderBackendId {
  * Anything unrecognised is a weapon, which is the common case and the right
  * default: a sword hit gets a spark rather than nothing.
  */
+/** The element a damage line carries, for the colour of its number, or null for plain steel. */
+function damageTint(line: string): FloaterKind | null {
+  if (/fire|flame|burn|scorch|ember|searing|inferno/i.test(line)) return 'fire';
+  if (/cold|frost|ice|freez|chill|rime/i.test(line)) return 'cold';
+  if (/lightning|shock|thunder|electric|storm/i.test(line)) return 'shock';
+  if (/radiant|holy|sacred|smite|sunlight/i.test(line)) return 'radiant';
+  if (/necrotic|drain|wither|grave/i.test(line)) return 'necrotic';
+  if (/poison|venom|acid|toxic/i.test(line)) return 'poison';
+  if (/magic missile|arcane|eldritch|force|psychic|witch bolt/i.test(line)) return 'arcane';
+  return null;
+}
+
+/** The sound of the element, when the line has one the strike sound would not cover. */
+function elementSound(line: string): void {
+  const t = damageTint(line);
+  if (t === 'cold') sfx.cold();
+  else if (t === 'radiant') sfx.radiant();
+  else if (t === 'necrotic') sfx.necrotic();
+  else if (t === 'poison') sfx.poison();
+}
+
 function effectFor(line: string): EffectKind {
   if (/fire|flame|burn|scorch|ember|searing|inferno/i.test(line)) return 'fire';
   if (/lightning|shock|thunder|electric|storm|arc/i.test(line)) return 'shock';

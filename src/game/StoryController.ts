@@ -198,7 +198,13 @@ export class StoryController {
     if (!this.game.quests.some(q => q.id === act.questId)) this.game.quests.push(questForAct(act));
     if (announce) {
       const kicker = act.kind === 'epilogue' ? 'Epilogue' : act.kind === 'finale' ? 'The last act' : `Act ${roman(act.index)}`;
-      this.showCard(kicker, act.title, act.intro);
+      if (act.index > 1 && act.kind !== 'epilogue') {
+        // Meanwhile: what the world did while the party rested.
+        const meanwhile = `While the party rested and counted its coin, the world did not. Word came down the roads of ${act.bossName}: ${act.rumor}.\n\nBelow ${act.entranceName}, on the ${act.targetFloor === 1 ? 'first' : act.targetFloor === 2 ? 'second' : act.targetFloor === 3 ? 'third' : `${act.targetFloor}th`} floor, it has begun.`;
+        this.showCard('Meanwhile', 'Between the acts', meanwhile, () => this.showCard(kicker, act.title, act.intro));
+      } else {
+        this.showCard(kicker, act.title, act.intro);
+      }
     }
   }
 

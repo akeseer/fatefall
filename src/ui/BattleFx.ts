@@ -49,7 +49,7 @@ export interface FxEvent {
   spell?: string;
   /** A skill id from the ability table, or one of the older names the window draws by hand. */
   ability?: string;
-  condition?: 'poisoned' | 'stunned' | 'frightened' | 'held' | 'asleep' | 'entangled' | 'slowed' | 'cursed' | 'blinded';
+  condition?: 'poisoned' | 'stunned' | 'frightened' | 'held' | 'asleep' | 'entangled' | 'slowed' | 'cursed' | 'blinded' | 'paralyzed' | 'petrified';
   buff?: 'bless' | 'shield' | 'haste' | 'invisible' | 'aid' | 'sanctuary' | 'faerie_fire';
   projectile?: boolean;
   aoe?: boolean;
@@ -169,8 +169,8 @@ export function classifyFx(line: string): FxEvent[] {
 
   // Monster specials and the conditions they leave.
   if ((m = /^(.{2,60}?)'s (.{2,50}?) chills (.{2,60}?)'s soul/.exec(text))) return [{ kind: 'special', actor: m[1], target: m[3], element: 'necrotic' }];
-  if ((m = /^(.{2,60}?) (?:is poisoned|is stunned|is frightened|is paralyzed|is restrained|is blinded|falls asleep)/.exec(text))) {
-    const cond: FxEvent['condition'] = /poisoned/.test(text) ? 'poisoned' : /stunned|paralyzed/.test(text) ? 'stunned' : /frightened/.test(text) ? 'frightened' : /restrained/.test(text) ? 'entangled' : /blinded/.test(text) ? 'blinded' : 'asleep';
+  if ((m = /^(.{2,60}?) (?:is poisoned|is stunned|is frightened|is paralyzed|is petrified|turns to stone|is restrained|is blinded|falls asleep)/.exec(text))) {
+    const cond: FxEvent['condition'] = /poisoned/.test(text) ? 'poisoned' : /paralyzed/.test(text) ? 'paralyzed' : /petrified|turns to stone/.test(text) ? 'petrified' : /stunned/.test(text) ? 'stunned' : /frightened/.test(text) ? 'frightened' : /restrained/.test(text) ? 'entangled' : /blinded/.test(text) ? 'blinded' : 'asleep';
     return [{ kind: 'condition', target: m[1], condition: cond }];
   }
 

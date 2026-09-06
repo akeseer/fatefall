@@ -939,6 +939,7 @@ export class HUD {
   private static readonly GLYPH_TONE: Record<string, LogTone> = {
     '💰': 'loot', '🪙': 'loot', '🛒': 'loot', '⚖': 'loot', '🎒': 'loot', '🎥': 'loot',
     '📜': 'info', '📋': 'info', '📍': 'info', '📅': 'info', '🗺️': 'info', '🗺': 'info',
+    '◇': 'loot', '◆': 'loot', '★': 'gold',
     '⬆': 'gold', '🏆': 'gold', '✦': 'gold', '⚔': 'gold', '⚔️': 'gold',
     '⚠': 'warn', '💀': 'harm', '☠': 'harm', '🔥': 'warn',
     '🎲': 'arcane', '⚡': 'arcane', '🌕': 'arcane', '🌑': 'arcane', '🌙': 'arcane',

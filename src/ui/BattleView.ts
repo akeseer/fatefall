@@ -541,6 +541,9 @@ export class BattleView {
         @keyframes bv-vine { 0% { transform: scaleY(0) rotate(var(--rot)); opacity: 0; } 30% { opacity: 1; } 100% { transform: scaleY(1) rotate(var(--rot)); opacity: 0; } }
         .battle-card.bv-shiver .bv-sprite { animation: bv-shiver 0.6s ease-in-out; }
         @keyframes bv-shiver { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-2px); } 40%, 80% { transform: translateX(2px); } }
+        .battle-card.bv-tint-frozen .bv-sprite { filter: grayscale(0.9) brightness(1.15) drop-shadow(0 0 6px #bfe8ff); transition: filter .3s; }
+        .battle-card.bv-tint-fear .bv-sprite { filter: saturate(0.5) brightness(0.85) drop-shadow(0 0 6px #6a4a8a); animation: bv-shiver 0.35s ease-in-out infinite; }
+        .battle-card.bv-tint-stunned .bv-sprite { filter: brightness(1.2) drop-shadow(0 0 6px #ffe95c); animation: bv-shiver 0.9s ease-in-out infinite; }
         .battle-card.bv-tint-poison .bv-sprite { filter: sepia(1) hue-rotate(60deg) saturate(2) drop-shadow(0 0 6px #8ae06a); transition: filter .4s; }
         .battle-card.bv-tint-cursed .bv-sprite { filter: saturate(0.4) brightness(0.8) drop-shadow(0 0 8px #9a6adf); transition: filter .4s; }
         .battle-card.bv-tint-invisible .bv-sprite { opacity: 0.35; filter: blur(0.6px) drop-shadow(0 0 4px #b0c8ff); transition: opacity .5s; }
@@ -1730,12 +1733,21 @@ export class BattleView {
               sfx.poison();
               break;
             case 'stunned':
+              target.card.classList.add('bv-tint-stunned');
+              window.setTimeout(() => target.card.classList.remove('bv-tint-stunned'), 2500);
               for (let i = 0; i < 3; i++) this.fxNode(target.fig, 'bv-star', '#ffe95c', 1200, { '--ph': `${i * 120}deg` }).textContent = '✦';
               sfx.afflict();
               break;
             case 'frightened':
-              this.pulseClass(target.card, 'bv-shiver', 650);
+              target.card.classList.add('bv-tint-fear');
+              window.setTimeout(() => target.card.classList.remove('bv-tint-fear'), 3000);
               this.fxNode(target.fig, 'bv-aura', FX_COLORS.necrotic, 1400);
+              sfx.afflict();
+              break;
+            case 'paralyzed':
+            case 'petrified':
+              target.card.classList.add('bv-tint-frozen');
+              window.setTimeout(() => target.card.classList.remove('bv-tint-frozen'), 3500);
               sfx.afflict();
               break;
             case 'asleep':

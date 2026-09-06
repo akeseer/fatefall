@@ -427,12 +427,32 @@ function describePurse(coins: CoinPurse): string | null {
 }
 
 /** Wrap a MagicItem so it can ride in the party's inventory. */
+/** A glyph and a word for how rare a thing is, for the log. */
+export function rarityTag(rarity: string | undefined): string {
+  switch (rarity) {
+    case 'uncommon': return '\u25c7 Uncommon:';
+    case 'rare': return '\u25c6 Rare:';
+    case 'very rare': return '\u2605 Very rare:';
+    case 'legendary': return '\u2726 Legendary:';
+    case 'artifact': return '\u2726 Artifact:';
+    default: return '';
+  }
+}
+
+/** Tiered gear reads its rarity off its bonus. */
+function gearRarity(name: string): InventoryItem['rarity'] {
+  const m = /\+(\d)/.exec(name);
+  const bonus = m ? parseInt(m[1], 10) : 0;
+  return bonus >= 3 ? 'very rare' : bonus === 2 ? 'rare' : bonus === 1 ? 'uncommon' : 'common';
+}
+
 function magicToInventoryItem(mi: MagicItem): InventoryItem {
   // Weapon- and jewelry-type magic items become equippable gear; the rest
   // stay as treasure flavor items.
   const t = mi.type.toLowerCase();
   if (t.startsWith('weapon') || t === 'staff') {
     return {
+      rarity: mi.rarity,
       id: mi.id,
       name: mi.name,
       type: 'weapon',
@@ -486,8 +506,9 @@ export function rollCombatLoot(sources: LootSource[], dungeonLevel: number): Loo
       piece.curseKind = pickCurseKind(type);
       piece.description += ' Something about it is… off.';
     }
+    piece.rarity = gearRarity(piece.name);
     items.push(piece);
-    narration.push(`Among the spoils: ${piece.name} — ${piece.description}`);
+    narration.push(`Among the spoils: ${rarityTag(piece.rarity)} ${piece.name} — ${piece.description}`.replace(':  ', ': ').replace('spoils:  ', 'spoils: '));
     if (cursedPiece) {
       narration.push(`⚠ A cold breath stirs from the ${piece.name} — handle with care.`);
     }
@@ -514,7 +535,7 @@ export function rollCombatLoot(sources: LootSource[], dungeonLevel: number): Loo
     if (notable.length > 0) {
       const purse = describePurse(drop.coins);
       narration.push(
-        `${src.name}'s corpse yields ${notable.map(n => n.name).join(', ')}${purse ? ` beside ${purse}` : ''}.`
+        `${src.name}'s corpse yields ${notable.map(n => ('rarity' in n && n.rarity ? `${rarityTag(n.rarity)} ` : '') + n.name).join(', ')}${purse ? ` beside ${purse}` : ''}.`
       );
     }
     // A magic item that fits its owner's kind gets a flavor flourish.

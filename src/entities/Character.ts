@@ -27,6 +27,8 @@ export interface InventoryItem {
   value?: number;
   /** Whether this item has been identified. Unidentified items show as '???'. */
   identified?: boolean;
+  /** Magic items carry their rarity; gear gets one from its bonus. */
+  rarity?: 'common' | 'uncommon' | 'rare' | 'very rare' | 'legendary' | 'artifact' | 'varies';
   /** Numeric power value (damage, healing, etc.). */
   power?: number;
   /** Cursed items bind to the wearer until remove curse / temple rite. */

@@ -401,7 +401,7 @@ interface Effect {
   seed: number;
 }
 
-export type FloaterKind = 'hit' | 'crit' | 'hurt' | 'heal' | 'slain' | 'down';
+export type FloaterKind = 'hit' | 'crit' | 'hurt' | 'heal' | 'slain' | 'down' | 'fire' | 'cold' | 'shock' | 'radiant' | 'necrotic' | 'poison' | 'arcane';
 
 const FLOATER_STYLE: Record<FloaterKind, { color: string; size: number }> = {
   hit: { color: '#ffe9a8', size: 13 },
@@ -410,6 +410,14 @@ const FLOATER_STYLE: Record<FloaterKind, { color: string; size: number }> = {
   heal: { color: '#6dea84', size: 13 },
   slain: { color: '#ff8a5a', size: 11 },
   down: { color: '#e05a7a', size: 11 },
+  // The element the blow carried: the number wears its colour.
+  fire: { color: '#ff9a3c', size: 14 },
+  cold: { color: '#9fe0ff', size: 14 },
+  shock: { color: '#ffe95c', size: 14 },
+  radiant: { color: '#ffe08a', size: 14 },
+  necrotic: { color: '#b48cff', size: 14 },
+  poison: { color: '#8ae06a', size: 14 },
+  arcane: { color: '#c9a6ff', size: 14 },
 };
 
 /** One number rising off a creature. World pixels; the camera is applied late. */
