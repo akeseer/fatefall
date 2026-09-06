@@ -718,6 +718,11 @@ export class BattleView {
   }
 
   open(party: Party, monsters: Monster[], sprites: SpriteRenderer, scene?: BattleScene): void {
+    // A new fight takes the window over: any summary still up from the last
+    // one goes, and the close it was holding is forgotten, so it cannot fire
+    // later and shut the window on this fight.
+    this.pendingClose = false;
+    this.dismissSpoils();
     if (scene) this.setScene(scene);
     this.party = party;
     this.enemies = monsters;

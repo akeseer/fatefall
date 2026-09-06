@@ -1119,6 +1119,12 @@ class Game {
     // resume the moment the cycle (and any queued die) finishes.
     if (this.hud.isDiceRolling()) return;
 
+    // The spoils of the last fight are still on screen: the world waits for
+    // them to be read. Exploring on underneath them let the party blunder
+    // into the next fight during the countdown, and the summary's own close
+    // then shut the window over that new fight.
+    if (this.phase !== GamePhase.Combat && this.hud.battleView.isVisible()) return;
+
     // The sun creeps across the sky. Crossing into a new stage of the day is
     // its own small narration when out in the world.
     const prevStage = this.lastClockStage;
