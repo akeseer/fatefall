@@ -704,8 +704,10 @@ export class HUD {
     const progress = q.completed ? 'Complete \u2014 return to town to report' : questProgressText(q, state);
     this.questBarEl.style.display = 'block';
     this.questBarEl.title = `${q.title}: ${q.detail} Reward ${q.rewardGold} gp and ${q.rewardXp} XP each.`;
+    // The story's own posting is named by the tale's chip beside it; the bar keeps the progress.
+    const title = q.id.startsWith('story_') ? 'Main quest' : q.title;
     this.questBarEl.innerHTML =
-      `<span class="qb-title">\ud83d\udcdc ${q.title}</span>` +
+      `<span class="qb-title">\ud83d\udcdc ${title}</span>` +
       `<span class="qb-progress${q.completed ? ' qb-done' : ''}">${q.completed ? '\u2714 ' : ''}${progress}</span>`;
     this.refreshObjectiveBand();
   }
