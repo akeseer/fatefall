@@ -51,9 +51,12 @@ import { CompendiumEntry } from './ui/DnDCompendium';
 import { rollD20, savingThrow, abilityCheck } from './rules/Rules';
 import { hazardByKind, hazardDc, readHazard, type HazardRoll } from './events/Hazards';
 import { pickCampScene, readWatch, type CampMember } from './events/CampScenes';
-import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
+import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, canParley, tollFor, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
 import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
+import { DEFAULT_POLICIES, parsePolicyOrder, describePolicies, type DmPolicies } from './ai/DmPolicies';
+import { summarizeFight } from './combat/FightSummary';
+import { bossOpening, bossBloodied } from './combat/BossVoice';
 import { answersRiddle, pickRiddle, riddleById, riddleDc, RIDDLE_PATIENCE_TICKS, type Riddle } from './events/Riddles';
 import { pickRumor } from './world/TownLife';
 import { dealPersonalQuests, debtPayable, heirloomsPossibleOn, hookLine, pilgrimageArrives, rivalsDueOn, type PersonalQuest } from './events/PersonalQuests';
@@ -278,6 +281,10 @@ class Game {
   private roadEventCooldownUntil = 0;
   /** Each member's own road. Rides in the save. */
   public personalQuests: PersonalQuest[] = [];
+  /** Standing orders: how the party answers tolls and parleys without being asked. Rides in the save. */
+  public dmPolicies: DmPolicies = { ...DEFAULT_POLICIES };
+  /** Bosses that have spoken their bloodied line this fight. */
+  private bossBloodiedSaid = new Set<string>();
   /** A freed prisoner walking with the party to the next town. Not saved. */
   private escortee: { name: string; reward: number } | null = null;
   /** Exploration ticks toward the next thing the dungeon does on its own. */
@@ -1675,6 +1682,10 @@ class Game {
       this.partyRetreat();
     };
     this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
+    this.bossBloodiedSaid.clear();
+    for (const b of monsters.filter(m => m.isBoss || /\(Boss\)/.test(m.template.name))) {
+      this.hud.addCombatMessage(bossOpening(b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, ''), b.template.type, b.id), '#e0705f');
+    }
     this.phase = GamePhase.Combat;
     this.combatTickTimer = 0;
     this.refreshBossBar();
@@ -1990,7 +2001,10 @@ class Game {
       isBoss: m.isBoss || /\(Boss\)/.test(m.template.name),
     }));
     const party = this.parleyParty();
-    const offer = forced ?? parleyOffer(foes, party);
+    if (this.dmPolicies.parley === 'never' && !forced) return false;
+    let offer = forced ?? parleyOffer(foes, party);
+    // "Always parley": a band that can talk is always given the chance.
+    if (!offer && this.dmPolicies.parley === 'always' && canParley(foes)) offer = 'truce';
     if (!offer) return false;
     for (const m of monsters) this.parleyed.add(m.id);
     const speaker = [...this.party.alive].sort((a, b) => this.talkMod(b) - this.talkMod(a))[0];
@@ -2001,7 +2015,9 @@ class Game {
       truce: `\ud83d\udde3 The ${band} stop short. Neither side is sure of the other. Someone has to speak first.`,
     };
     this.hud.addCombatMessage(opening[offer], '#d8c88a');
-    const response = chooseParleyResponse(offer, party);
+    let response = chooseParleyResponse(offer, party);
+    if (offer === 'toll' && this.dmPolicies.tolls === 'refuse') response = 'refuse';
+    if (offer === 'toll' && this.dmPolicies.tolls === 'pay' && this.partyGold() >= tollFor(foes, party)) response = 'accept';
     let check: { success: boolean; natural: number } | null = null;
     let event: DiceRollEvent | null = null;
     if (response === 'persuade') {
@@ -2647,6 +2663,12 @@ class Game {
       this.hud.dice.deferCombat = true;
       const log = this.combatEngine.step();
       const fresh = log.messages.slice(linesBefore);
+      for (const b of this.combatEngine.monsters) {
+        if (!b.isAlive || this.bossBloodiedSaid.has(b.id) || b.hp > b.maxHp / 2) continue;
+        if (!(b.isBoss || /\(Boss\)/.test(b.template.name))) continue;
+        this.bossBloodiedSaid.add(b.id);
+        fresh.push(bossBloodied(b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, ''), b.template.type, b.id));
+      }
       const rolls = getDiceHistory().slice(rollsBefore).filter(e => e.kind === 'attack' || e.kind === 'save' || e.kind === 'death-save');
       this.presenting = true;
       void this.presentStep(log, fresh, actor, rolls).finally(() => { this.presenting = false; });
@@ -2690,6 +2712,7 @@ class Game {
           this.noteProgress();
           this.history.victories++;
           this.checkRivalsSlain(slainMonsters);
+          this.hud.addCombatMessage(summarizeFight(this.combatEngine.log.messages, this.party.members.map(m => m.name), this.combatEngine.log.round).line, '#9aa');
           // Adaptive difficulty: a flawless rout raises future pressure.
           const standing = this.party.alive;
           const avgHpPct = standing.length > 0
@@ -6613,6 +6636,20 @@ class Game {
       this.solveRiddle('dm');
       return;
     }
+    // "narrate: ..." adds a line to the log as the world itself.
+    const narrated = /^(?:narrate|narration|the world|say)\s*[:\-]\s*(.+)$/i.exec(text);
+    if (narrated) {
+      this.hud.addCombatMessage(`\ud83d\udcdc ${narrated[1].trim()}`, '#d8c88a');
+      this.expeditionJournal.push(`The DM: ${narrated[1].trim()}`);
+      return;
+    }
+    // Standing orders: "never pay tolls", "always parley", "loot everything".
+    const policy = parsePolicyOrder(text);
+    if (policy) {
+      this.dmPolicies = { ...this.dmPolicies, ...policy.change };
+      this.hud.addCombatMessage(`\ud83d\udccc ${policy.line}`, '#8cf');
+      return;
+    }
     const result = understand(text, this.dmContext(), this.intentPredictor);
     if (this.dmModelDebug && result.source !== 'none') {
       const p = result.prob !== undefined ? ` ${result.prob.toFixed(2)}` : '';
@@ -6791,7 +6828,12 @@ function startGame() {
   const saves = listSaves();
   game.hud.onStartChoice = (choice, slot) => game.handleStartChoice(choice, slot);
   game.hud.onMainMenu = () => game.returnToMainMenu();
-  game.hud.chronicleProvider = () => game.storyController.chronicle();
+  game.hud.chronicleProvider = () => ({
+    ...game.storyController.chronicle(),
+    roads: game.personalQuests.map(q => `${q.memberName} \u2014 ${q.title.toLowerCase()}${q.done ? `, done: now ${q.memberName} ${q.perk.title}` : q.kind === 'pilgrimage' ? ` (${q.progress}/${q.target} towns)` : ''}`),
+    orders: describePolicies(game.dmPolicies),
+    deeds: game.expeditionJournal.slice(-12).reverse(),
+  });
   game.hud.onRendererChange = (id) => {
     void game.useBackend(id).catch(err => {
       console.warn('[render] backend switch failed, staying put.', err);

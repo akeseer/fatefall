@@ -145,3 +145,16 @@ describe('v14 -> v15 personal quests', () => {
     expect(out.personalQuests).toEqual(quests);
   });
 });
+
+describe('v15 -> v16 standing orders', () => {
+  it('leaves an older run without policies, which restore reads as the defaults', () => {
+    const out = migrateSave({ version: 15, party: { members: [] } } as any)!;
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.dmPolicies).toBeUndefined();
+  });
+
+  it('carries the policies through untouched', () => {
+    const out = migrateSave({ version: SAVE_VERSION, dmPolicies: { tolls: 'refuse', parley: 'always', loot: 'all' } } as any)!;
+    expect(out.dmPolicies).toEqual({ tolls: 'refuse', parley: 'always', loot: 'all' });
+  });
+});

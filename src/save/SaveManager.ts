@@ -1,5 +1,6 @@
 import type { StoryState } from '../story/Story';
 import type { PersonalQuest } from '../events/PersonalQuests';
+import type { DmPolicies } from '../ai/DmPolicies';
 /**
  * Save / load — persists runs between sessions in up to three named slots.
  *
@@ -29,7 +30,7 @@ import { BanditCampState } from '../quests/BanditCamps';
 export const SAVE_SLOT_COUNT = 3;
 /** Key used by the original single-slot implementation; migrated to slot 1. */
 export const LEGACY_SAVE_KEY = 'rpg-ai-party-save-v1';
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 
 export interface SavedCharacter {
   id: string;
@@ -138,6 +139,8 @@ export interface SaveData {
   story?: StoryState | null;
   /** Each member's own road (debt, rival, heirloom, pilgrimage). Absent on older runs, which are dealt theirs on load. v15+. */
   personalQuests?: PersonalQuest[];
+  /** Standing orders: how the party answers tolls and parleys without being asked. v16+. */
+  dmPolicies?: DmPolicies;
   /** GameSpeed value (0.25 | 0.5 | 1 | 2 | 4). */
   speed: number;
   camera: { x: number; y: number; targetX: number; targetY: number };
@@ -323,7 +326,14 @@ export function migrateSave(data: SaveData): SaveData | null {
   if (current.version === 13) current = migrateV13toV14(current);
   if (!current) return null;
   if (current.version === 14) current = migrateV14toV15(current);
+  if (!current) return null;
+  if (current.version === 15) current = migrateV15toV16(current);
   return current;
+}
+
+/** v15 → v16: standing orders. Absent means the party decides each time, as before. */
+function migrateV15toV16(data: SaveData): SaveData | null {
+  return { ...data, version: 16 };
 }
 
 /** v14 → v15: personal quests. An older run has none yet; restore deals them. */
