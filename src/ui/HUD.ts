@@ -50,11 +50,22 @@ export class HUD {
     if (!text) {
       el.style.display = 'none';
       el.textContent = '';
-      return;
+    } else {
+      el.style.display = 'inline-flex';
+      el.textContent = `\ud83d\udcd6 ${text}`;
+      el.title = `${text} \u2014 open the Chronicle`;
     }
-    el.style.display = 'inline-block';
-    el.textContent = `\ud83d\udcd6 ${text}`;
-    el.title = text;
+    this.refreshObjectiveBand();
+  }
+
+  /** The objective band is only there when a posting or the tale has something to say. */
+  private refreshObjectiveBand(): void {
+    const band = this.overlay.querySelector('#objective-band') as HTMLElement | null;
+    if (!band) return;
+    const quest = this.overlay.querySelector('#quest-bar') as HTMLElement | null;
+    const story = this.overlay.querySelector('#story-chip') as HTMLElement | null;
+    const any = (quest && quest.style.display !== 'none') || (story && story.style.display !== 'none');
+    band.style.display = any ? 'flex' : 'none';
   }
 
   /**
@@ -319,6 +330,28 @@ export class HUD {
         /* An icon carries the colour; the label stays parchment, so seven
            controls read as one set instead of seven unrelated buttons. */
         #hud-top button .ic { margin-right: 5px; }
+        /* The strip's rows and chips. Chips are short labels with the detail
+           in their tooltip, so the row never has to cut a word in half. */
+        #top-strip .ts-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        #top-strip .ts-chip {
+          display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+          font-family: ${T.bodyFont}; font-size: 10.5px; line-height: 1.4; white-space: nowrap;
+          padding: 2px 9px; border-radius: 999px;
+          background: rgba(10,9,12,0.78); border: 1px solid ${T.line}; color: ${T.text};
+          box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+        }
+        #top-strip .ts-band {
+          display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          padding: 5px 10px 5px 12px; border-radius: ${T.r2};
+          background: linear-gradient(90deg, rgba(14,12,16,0.86), rgba(14,12,16,0.7) 70%, rgba(14,12,16,0.0));
+          border-left: 2px solid ${T.gold}; max-width: 720px;
+        }
+        #top-strip #quest-bar { font-family: ${T.bodyFont}; font-size: 11.5px; line-height: 1.45; color: ${T.text}; min-width: 0; flex: 1 1 320px; white-space: normal; }
+        #top-strip #quest-bar .qb-title { color: ${T.gold}; font-weight: bold; }
+        #top-strip #quest-bar .qb-progress { color: ${T.muted}; margin-left: 8px; }
+        #top-strip #quest-bar .qb-done { color: ${T.good}; }
+        #top-strip .ts-story { border-color: ${T.goldDim}; color: ${T.gold}; pointer-events: auto; cursor: pointer; }
+        #top-strip .ts-story:hover { background: rgba(232,197,106,0.12); }
         /* Sound: a small drawer under the speaker, one slider per bus. */
         #audio-pop {
           position: absolute; top: 44px; right: 10px; z-index: 40;
@@ -428,15 +461,23 @@ export class HUD {
       <!-- Top strip: dungeon title + quest tracker, pinned on their own row below the
            controls so the title can never run underneath the buttons. Both truncate
            with ellipsis when the window is narrow. -->
-      <div id="top-strip" style="position:absolute; top:44px; left:10px; right:10px; display:flex; align-items:center; gap:8px; z-index:25; pointer-events:none;">
-        <div id="dungeon-title" class="dp-title" style="font-size:17px; font-weight:bold; color:${T.gold}; text-shadow:0 1px 0 rgba(0,0,0,0.9), 0 0 12px rgba(232,197,106,0.35); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; min-width:104px;">
-          Fatefall
+      <!-- Top strip: two rows under the controls. The first names the place,
+           with the sky and the delve's mood at its right; the second is the
+           objective band: the posting the party is working and where the tale
+           stands. Nothing here truncates: short labels, and the band wraps. -->
+      <div id="top-strip" style="position:absolute; top:44px; left:10px; right:10px; display:flex; flex-direction:column; gap:5px; z-index:25; pointer-events:none;">
+        <div class="ts-row">
+          <div id="dungeon-title" class="dp-title" style="font-size:17px; font-weight:bold; color:${T.gold}; text-shadow:0 1px 0 rgba(0,0,0,0.9), 0 0 12px rgba(232,197,106,0.35); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1 1 auto; min-width:0;">
+            Fatefall
+          </div>
+          <div id="weather-chip" class="ts-chip" style="display:none;"></div>
+          <div id="delve-mood-chip" class="ts-chip" style="display:none; border-color:#5a4468; color:#e0c8f0;"></div>
         </div>
-        <div id="quest-bar" class="dp-chip dp-chip-trunc" style="display:none; flex:1 1 auto; min-width:0; box-shadow:0 2px 10px rgba(0,0,0,0.5); overflow:hidden; text-overflow:ellipsis;"></div>
-        <div id="story-chip" class="dp-chip dp-chip-trunc" title="Open the Chronicle" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:${T.goldDim}; color:${T.gold}; pointer-events:auto; cursor:pointer;"></div>
-        <div id="weather-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;"></div>
+        <div id="objective-band" class="ts-band" style="display:none;">
+          <div id="quest-bar" style="display:none;"></div>
+          <div id="story-chip" class="ts-chip ts-story" title="Open the Chronicle" style="display:none;"></div>
+        </div>
         <div id="error-banner" role="alert" style="display:none; position:absolute; top:34px; left:0; right:0; margin:0 auto; max-width:720px; background:rgba(56,14,12,0.96); border:1px solid #a4574c; border-radius:${T.r2}; padding:8px 12px; font-size:12px; color:#f4c6c6; box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; white-space:normal;"></div>
-        <div id="delve-mood-chip" class="dp-chip dp-chip-trunc" style="display:none; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; border-color:#5a4468; color:#e0c8f0; box-shadow:0 0 10px rgba(150,80,200,0.18);"></div>
       </div>
 
       <!-- DM command bar -->
@@ -656,18 +697,17 @@ export class HUD {
     if (!q || q.turnedIn) {
       this.questBarEl.style.display = 'none';
       this.questBarEl.innerHTML = '';
+      this.refreshObjectiveBand();
       return;
     }
     const state = this.questStateProvider();
-    const progress = q.completed ? '\u2714 Complete \u2014 return to town to report' : questProgressText(q, state);
-    const accent = q.completed ? T.gold : T.info;
-    const border = q.completed ? T.goldDim : T.line;
-    this.questBarEl.style.display = 'inline-block';
-    this.questBarEl.style.borderColor = border;
+    const progress = q.completed ? 'Complete \u2014 return to town to report' : questProgressText(q, state);
+    this.questBarEl.style.display = 'block';
+    this.questBarEl.title = `${q.title}: ${q.detail} Reward ${q.rewardGold} gp and ${q.rewardXp} XP each.`;
     this.questBarEl.innerHTML =
-      `<span style="color:${accent}; font-weight:bold;">\ud83d\udcdc ${q.title}</span>` +
-      `<span style="color:${T.muted}; margin-left:10px;">${progress}</span>` +
-      `<span style="color:${T.faint}; margin-left:10px;">${q.rewardGold} gp \u00b7 ${q.rewardXp} XP</span>`;
+      `<span class="qb-title">\ud83d\udcdc ${q.title}</span>` +
+      `<span class="qb-progress${q.completed ? ' qb-done' : ''}">${q.completed ? '\u2714 ' : ''}${progress}</span>`;
+    this.refreshObjectiveBand();
   }
 
   /** Render live boss bars (HP + legendary action pips) above the combat log. */
@@ -910,11 +950,9 @@ export class HUD {
       el.textContent = '';
       return;
     }
-    el.style.display = 'flex';
-    el.textContent = state.effects.length
-      ? `${state.icon} ${state.label} \u2014 ${state.effects.join(', ')}`
-      : `${state.icon} ${state.label}`;
-    el.title = el.textContent; // the strip truncates it when crowded
+    el.style.display = 'inline-flex';
+    el.textContent = `${state.icon} ${state.label.replace(/_/g, ' ')}`;
+    el.title = state.effects.length ? `${state.label.replace(/_/g, ' ')}: ${state.effects.join(', ')}` : state.label;
     const tint = { rain: '#9fb8d8', heavy_rain: '#7e9cc8', fog: '#bfcfe0',
       snow: '#eef2fb', sandstorm: '#e0c180', magical_aurora: '#d0a0f0',
       eerie_mist: '#9ad4a8', blood_red_sky: '#f09078' } as Record<string, string>;
@@ -930,11 +968,9 @@ export class HUD {
       el.textContent = '';
       return;
     }
-    el.style.display = 'flex';
-    el.textContent = state.effects.length
-      ? `${state.icon} Delve: ${state.label} \u2014 ${state.effects.join(', ')}`
-      : `${state.icon} Delve: ${state.label}`;
-    el.title = el.textContent; // the strip truncates it when crowded
+    el.style.display = 'inline-flex';
+    el.textContent = `${state.icon} ${state.label}`;
+    el.title = state.effects.length ? `Delve mood, ${state.label}: ${state.effects.join(', ')}` : `Delve mood: ${state.label}`;
   }
 
   /** Full-screen start overlay: pick a save slot, then continue or begin fresh. */

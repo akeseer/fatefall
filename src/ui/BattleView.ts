@@ -800,12 +800,16 @@ export class BattleView {
     const actors = this.lastTurnActors.filter(a => (a as GameCharacter).isAlive !== false && (a as GameCharacter).hp > 0);
     this.turnOrderEl.innerHTML = '';
     if (actors.length === 0) return;
+    // Only the acting combatant is shown. A parade of every initiative chip
+    // was more to read than it was worth, and the field already shows who is
+    // lit; the header just names them.
+    const acting = actors.filter(a => this.actorId(a) === currentActorId);
     const label = document.createElement('span');
     label.style.cssText = `flex:0 0 auto; font-size:9px; color:${T.faint}; margin-right:6px; letter-spacing:1px;`;
-    label.textContent = 'TURN ORDER';
+    label.textContent = acting.length ? 'ACTING' : '';
     this.turnOrderEl.appendChild(label);
     let activeChip: HTMLElement | null = null;
-    for (const a of actors) {
+    for (const a of acting) {
       const id = this.actorId(a);
       const isMonster = this.isMonster(a);
       const chip = document.createElement('span');
