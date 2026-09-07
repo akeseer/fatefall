@@ -100,7 +100,7 @@ import { LOCATIONS, getRandomElement, LocationTemplate, getLocation, MAGIC_ITEMS
 import { getLLM } from './ai/LLMService';
 import { sfx } from './audio/Sfx';
 import { getAudio } from './audio/Audio';
-import { getMusic, type MusicMood } from './audio/Music';
+import { getMusic, type MusicMood, dungeonMood, surfaceMood } from './audio/Music';
 import { getAmbience, NIGHT_BELOW } from './audio/Ambience';
 import { StoryController } from './game/StoryController';
 import { resolveDeadEnd, stuckStage } from './ai/DeadEnd';
@@ -4432,19 +4432,10 @@ class Game {
       if (tl?.festival) return 'festival';
       return this.clock.light < 0.34 ? 'town_night' : 'town';
     }
-    if (this.mode === GameMode.Dungeon) {
-      const t = this.dungeonTheme?.id ?? '';
-      if (/clockwork_foundry|astral_wreck|ancient_dwarven_hall|salt_mine_deeps|forge/.test(t)) return 'dungeon_clockwork';
-      if (/haunted_theatre|vampire_castle|plague_hospice|frozen_necropolis|shadowfell_crossing|royal_crypt|crypt|necropolis|catacomb/.test(t)) return 'dungeon_haunted';
-      if (/drowned|pirate_cove|sewer|grotto|flooded|cistern|sunken|lighthouse/.test(t)) return 'dungeon_water';
-      if (/jungle|fungal|fey_glade|forest|overgrown|thorn|swamp|hive/.test(t)) return 'dungeon_wild';
-      if (/sky_citadel|giants_causeway|mountain|peak|aerie|cloud/.test(t)) return 'dungeon_sky';
-      if (/desert|tomb|volcanic|pyramid|sand|ziggurat/.test(t)) return 'dungeon_sand';
-      return this.dungeonLevel >= 4 ? 'dungeon_deep' : 'dungeon';
-    }
-    const w = this.weather?.type ?? '';
-    if (/heavy_rain|thunderstorm|blizzard|sandstorm|storm/.test(w)) return 'overworld_storm';
-    return this.clock.light < 0.34 ? 'overworld_night' : 'overworld';
+    if (this.mode === GameMode.Dungeon) return dungeonMood(this.dungeonTheme?.id, this.dungeonLevel);
+    // The surface: the biome the party stands in, unless a storm or the night says otherwise.
+    const region = this.worldRegions.length > 0 ? regionAt(this.worldRegions, this.party.leader.tile) : undefined;
+    return surfaceMood(region?.biome ?? null, this.clock.light, this.weather?.type ?? null);
   }
 
   /** The transition in flight. Advanced in render(), since it is a property of the picture. */
