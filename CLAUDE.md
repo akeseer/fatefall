@@ -318,3 +318,9 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   taken and turned in, achievements, story cards (`page`, played in `HUD.showStoryCard`), keys,
   riddles, waypoints, the altar's bell, the forge, the library, moved stone, the vault, horns for
   caravans and ships, a parley chord and a short triumph; each is wired at the event's own line.
+- **Surface tiles** (`MapRenderer.ts`, the overworld switch): every terrain's dressing is placed by
+  `cellHash` with its own salts, never at fixed offsets, so nothing repeats at the tile's period.
+  `fieldShade` (two overlapping block sizes summed) tints the ground of grass, sand, snow, desert and
+  swamp across the land; `tint` lightens or darkens a hex colour; `tuft` and `ripple` are the shared
+  strokes. Grass takes the season's colour and holds its flowers back in winter; one forest tile in
+  four is a pine; open water with water on all four sides sits deeper and carries drifting crests.

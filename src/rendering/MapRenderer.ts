@@ -115,6 +115,48 @@ function cellHash(x: number, y: number, k: number): number {
   return (h < 0 ? -h : h) % 97;
 }
 
+/** A hex colour lightened (positive) or darkened (negative) by a few steps per channel. */
+function tint(hex: string, delta: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (v: number) => Math.max(0, Math.min(255, v + delta));
+  const r = c((n >> 16) & 255);
+  const g = c((n >> 8) & 255);
+  const b = c(n & 255);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+/**
+ * A slow variation across the land: one value per four-by-four block of
+ * tiles, so a meadow has lighter and darker fields in it rather than being
+ * one colour to the horizon, and the variation has no thirty-two-pixel period.
+ */
+function fieldShade(x: number, y: number): number {
+  // Two blocks of different sizes summed, so the seams of one are broken by
+  // the other and the field does not read as a grid of squares.
+  const a = (cellHash(x >> 2, y >> 2, 91) % 3) - 1;
+  const b = (cellHash((x + 2) >> 3, (y + 1) >> 3, 93) % 3) - 1;
+  return a + b;
+}
+
+/** A tuft of grass: three blades and the dark at their root. */
+function tuft(ctx: CanvasRenderingContext2D, px: number, py: number, lit: string, dark: string): void {
+  ctx.fillStyle = dark;
+  ctx.fillRect(px, py + 5, 5, 1);
+  ctx.fillStyle = lit;
+  ctx.fillRect(px, py + 2, 1, 3);
+  ctx.fillRect(px + 2, py, 1, 5);
+  ctx.fillRect(px + 4, py + 2, 1, 3);
+}
+
+/** A ripple in sand or snow: a lit crest and the shadow it throws. */
+function ripple(ctx: CanvasRenderingContext2D, px: number, py: number, w: number, lit: string, shade: string): void {
+  ctx.fillStyle = lit;
+  ctx.fillRect(px, py, w, 1);
+  ctx.fillRect(px + 2, py - 1, Math.max(1, w - 6), 1);
+  ctx.fillStyle = shade;
+  ctx.fillRect(px + 1, py + 1, w - 1, 1);
+}
+
 /**
  * Lay a flat terrain tile and mottle it.
  *
@@ -2239,17 +2281,58 @@ export class MapRenderer {
 
         switch (tile) {
           case TileType.Grass: {
-            mottledTile(ctx, sx, sy, x, y, '#2d5a2d', '#2a552a', 5);
-            if (hash % 19 === 0) {
-              ctx.fillStyle = 'rgba(120,200,90,0.5)';
-              ctx.fillRect(f(sx) + 8, f(sy) + 6, 2, 4);
-              ctx.fillRect(f(sx) + 10, f(sy) + 4, 2, 2);
-            } else if (hash % 23 === 0) {
-              ctx.fillStyle = 'rgba(200,180,120,0.5)';
-              ctx.fillRect(f(sx) + 16, f(sy) + 18, 3, 3);
-            } else if (hash % 31 === 0) {
-              ctx.fillStyle = 'rgba(40,30,20,0.25)';
-              ctx.fillRect(f(sx) + 6, f(sy) + 20, 8, 4);
+            // The ground: the season's green, shaded by the field it is in,
+            // with the old mottle on top of that.
+            const base = tint(this.seasonColor(TileType.Grass) ?? '#2d5a2d', fieldShade(x, y) * 2);
+            mottledTile(ctx, sx, sy, x, y, base, tint(base, -5), 5);
+            const X = f(sx);
+            const Y = f(sy);
+            // Tufts, two to four, wherever their hashes put them.
+            const lit = tint(base, 22);
+            const dark = tint(base, -14);
+            const n = 2 + (cellHash(x, y, 5) % 3);
+            for (let i = 0; i < n; i++) {
+              const px = cellHash(x, y, 101 + i) % 27;
+              const py = cellHash(x, y, 131 + i) % 26;
+              tuft(ctx, X + px, Y + py, lit, dark);
+            }
+            const kind = cellHash(x, y, 151);
+            if (kind % 7 === 0 && this.season !== 'winter') {
+              // Flowers: three heads of one colour, each on a stem. None in the snow.
+              const colours = ['#e8d060', '#e6e6f2', '#d868a0', '#f0a050'];
+              const col = colours[cellHash(x, y, 157) % colours.length];
+              for (let i = 0; i < 3; i++) {
+                const px = cellHash(x, y, 161 + i) % 28;
+                const py = 4 + (cellHash(x, y, 167 + i) % 24);
+                ctx.fillStyle = dark;
+                ctx.fillRect(X + px + 1, Y + py + 2, 1, 3);
+                ctx.fillStyle = col;
+                ctx.fillRect(X + px, Y + py, 3, 2);
+              }
+            } else if (kind % 11 === 0) {
+              // A stone, lit from the north-west, with the grass shading it.
+              const px = 4 + (cellHash(x, y, 171) % 20);
+              const py = 6 + (cellHash(x, y, 173) % 18);
+              ctx.fillStyle = '#5c5f62';
+              ctx.fillRect(X + px, Y + py, 6, 4);
+              ctx.fillStyle = '#8a8d90';
+              ctx.fillRect(X + px, Y + py, 4, 2);
+              ctx.fillStyle = 'rgba(0,0,0,0.25)';
+              ctx.fillRect(X + px + 1, Y + py + 4, 6, 1);
+            } else if (kind % 9 === 0) {
+              // Clover: a darker patch with a lighter leaf or two.
+              const px = cellHash(x, y, 181) % 22;
+              const py = cellHash(x, y, 183) % 24;
+              ctx.fillStyle = tint(base, -9);
+              ctx.fillRect(X + px, Y + py + 1, 9, 5);
+              ctx.fillRect(X + px + 1, Y + py, 7, 7);
+              ctx.fillStyle = tint(base, 12);
+              ctx.fillRect(X + px + 2, Y + py + 2, 2, 2);
+              ctx.fillRect(X + px + 5, Y + py + 3, 2, 2);
+            } else if (kind % 13 === 0) {
+              // Bare earth showing through.
+              ctx.fillStyle = 'rgba(70,52,30,0.35)';
+              ctx.fillRect(X + (cellHash(x, y, 191) % 20), Y + (cellHash(x, y, 193) % 22), 10, 6);
             }
             break;
           }
@@ -2270,16 +2353,43 @@ export class MapRenderer {
             const ct = f(sy) + (northWood ? -7 : 3) + jy;
             const cw = (westWood ? 33 : 24) + (fh % 4) * 2;
             const ch = (northWood ? 32 : 22);
-            ctx.fillStyle = fh % 3 === 0 ? '#2f6033' : '#2c5a30';
-            ctx.fillRect(cl, ct, cw, ch);
-            // Sunlit crown to the north-west, matching the mountains' light.
-            ctx.fillStyle = '#3d7a41';
-            ctx.fillRect(f(sx) + 6 + jx, f(sy) + 6 + jy, 10, 6);
-            ctx.fillStyle = '#36703a';
-            ctx.fillRect(f(sx) + 18 + jx, f(sy) + 12 + jy, 6, 5);
+            const pine = cellHash(x, y, 47) % 4 === 0;
+            if (pine) {
+              // A pine: tiers narrowing to a point, the west side lit, on a
+              // taller trunk. One wood in four, so a forest has both.
+              const ax = f(sx) + 15 + jx;
+              const top = f(sy) + 2 + jy - (northWood ? 4 : 0);
+              const tiers = [[3, 6], [6, 6], [9, 7], [12, 7]];
+              let ty = top;
+              for (const [half, th] of tiers) {
+                ctx.fillStyle = '#244a2a';
+                ctx.fillRect(ax - half, ty, half * 2 + 1, th);
+                ctx.fillStyle = '#2f6134';
+                ctx.fillRect(ax - half, ty, half, th - 1);
+                ty += th - 2;
+              }
+              ctx.fillStyle = '#3d7a41';
+              ctx.fillRect(ax - 1, top, 2, 3);
+            } else {
+              ctx.fillStyle = fh % 3 === 0 ? '#2f6033' : '#2c5a30';
+              ctx.fillRect(cl, ct, cw, ch);
+              // Sunlit crown to the north-west, matching the mountains' light.
+              ctx.fillStyle = '#3d7a41';
+              ctx.fillRect(f(sx) + 6 + jx, f(sy) + 6 + jy, 10, 6);
+              ctx.fillStyle = '#36703a';
+              ctx.fillRect(f(sx) + 18 + jx, f(sy) + 12 + jy, 6, 5);
+              // A little of the crown's own shadow on its south-east.
+              ctx.fillStyle = 'rgba(0,0,0,0.14)';
+              ctx.fillRect(cl + cw - 6, ct + ch - 5, 6, 5);
+            }
             // Trunk
             ctx.fillStyle = '#5a4024';
-            ctx.fillRect(f(sx) + 14 + jx, f(sy) + 24, 4, 6);
+            ctx.fillRect(f(sx) + 14 + jx, f(sy) + (pine ? 22 : 24), pine ? 3 : 4, pine ? 8 : 6);
+            // Undergrowth at the foot, where a hash puts it.
+            if (fh % 5 === 0) {
+              ctx.fillStyle = '#3a6a34';
+              ctx.fillRect(f(sx) + (cellHash(x, y, 53) % 24), f(sy) + 26 + (cellHash(x, y, 59) % 4), 5, 2);
+            }
             // Shade under the crown, only where the wood actually ends.
             if ((map.tiles[y + 1]?.[x] ?? TileType.Void) !== TileType.Forest) {
               ctx.fillStyle = 'rgba(0,0,0,0.2)';
@@ -2353,46 +2463,151 @@ export class MapRenderer {
           }
           case TileType.Water: {
             const shimmer = Math.sin(this.time * 2 + x * 0.6 + y * 0.4) * 0.5 + 0.5;
-            ctx.fillStyle = `rgb(${Math.floor(34 + shimmer * 10)},${Math.floor(68 + shimmer * 14)},${Math.floor(136 + shimmer * 22)})`;
+            // Open water is darker than the shallows: a tile with water on all
+            // four sides sits deeper.
+            const deep = [[0, -1], [1, 0], [0, 1], [-1, 0]].every(([dx, dy]) => (map.tiles[y + dy]?.[x + dx] ?? TileType.Void) === TileType.Water);
+            const dip = deep ? 10 : 0;
+            ctx.fillStyle = `rgb(${Math.floor(34 + shimmer * 10 - dip)},${Math.floor(68 + shimmer * 14 - dip)},${Math.floor(136 + shimmer * 22 - dip)})`;
             ctx.fillRect(f(sx), f(sy), TILE_SIZE, TILE_SIZE);
-            ctx.fillStyle = `rgba(190,220,255,${0.12 + shimmer * 0.16})`;
-            ctx.fillRect(f(sx) + ((x * 13 + y * 7) % 20), f(sy) + 8, 6, 1);
-            ctx.fillRect(f(sx) + ((x * 7 + y * 11) % 20), f(sy) + 20, 8, 1);
+            // Crests drift east with the wind, each on its own hashed row and
+            // phase, with the trough's dark under each.
+            for (let i = 0; i < 2; i++) {
+              const h = cellHash(x, y, 201 + i);
+              const row = 4 + (h % 24);
+              const w = 5 + (h % 5);
+              const drift = Math.floor(this.time * (6 + (h % 4)) + h * 3) % (TILE_SIZE + w) - w;
+              ctx.fillStyle = `rgba(190,220,255,${0.14 + shimmer * 0.16})`;
+              ctx.fillRect(f(sx) + drift, f(sy) + row, w, 1);
+              ctx.fillStyle = 'rgba(10,30,70,0.25)';
+              ctx.fillRect(f(sx) + drift + 1, f(sy) + row + 1, w - 1, 1);
+            }
+            // A glint on the deep, now and then.
+            if (deep && cellHash(x, y, 211) % 9 === 0 && shimmer > 0.8) {
+              ctx.fillStyle = 'rgba(230,240,255,0.5)';
+              ctx.fillRect(f(sx) + (cellHash(x, y, 213) % 28), f(sy) + (cellHash(x, y, 217) % 28), 2, 1);
+            }
             break;
           }
           case TileType.Sand: {
-            mottledTile(ctx, sx, sy, x, y, '#b0a060', '#a89854', 41);
-            ctx.fillStyle = 'rgba(255,240,200,0.35)';
-            ctx.fillRect(f(sx) + 6, f(sy) + 8, 3, 2);
-            ctx.fillRect(f(sx) + 18, f(sy) + 22, 3, 2);
+            const base = tint('#b0a060', fieldShade(x, y) * 2);
+            mottledTile(ctx, sx, sy, x, y, base, tint(base, -6), 41);
+            // Wind ripples, two or three, on their own rows.
+            const n = 2 + (cellHash(x, y, 221) % 2);
+            for (let i = 0; i < n; i++) {
+              const h = cellHash(x, y, 223 + i);
+              ripple(ctx, f(sx) + (h % 10), f(sy) + 4 + ((h * 7 + i * 9) % 26), 14 + (h % 9), tint(base, 26), tint(base, -12));
+            }
+            if (cellHash(x, y, 229) % 8 === 0) {
+              ctx.fillStyle = tint(base, -30);
+              ctx.fillRect(f(sx) + (cellHash(x, y, 231) % 28), f(sy) + (cellHash(x, y, 233) % 28), 2, 2);
+            }
             break;
           }
           case TileType.Snow: {
-            mottledTile(ctx, sx, sy, x, y, '#d8dce0', '#ccd2d8', 43);
-            ctx.fillStyle = 'rgba(180,200,230,0.4)';
-            ctx.fillRect(f(sx) + 8, f(sy) + 6, 4, 3);
-            ctx.fillRect(f(sx) + 20, f(sy) + 18, 4, 3);
+            const base = tint('#d8dce0', fieldShade(x, y) * 2);
+            mottledTile(ctx, sx, sy, x, y, base, tint(base, -8), 43);
+            // Drifts: a soft lit mound with blue shadow on its lee side.
+            const h = cellHash(x, y, 241);
+            if (h % 3 !== 2) {
+              const px = f(sx) + (h % 16);
+              const py = f(sy) + 4 + ((h * 5) % 22);
+              const w = 10 + (h % 8);
+              ctx.fillStyle = tint(base, 14);
+              ctx.fillRect(px + 1, py, w - 2, 2);
+              ctx.fillRect(px, py + 1, w, 2);
+              ctx.fillStyle = 'rgba(150,175,215,0.45)';
+              ctx.fillRect(px + 2, py + 3, w - 2, 1);
+            }
+            // The blue in the hollows, and a sparkle now and then.
+            ctx.fillStyle = 'rgba(160,185,225,0.35)';
+            ctx.fillRect(f(sx) + (cellHash(x, y, 251) % 26), f(sy) + (cellHash(x, y, 253) % 26), 4, 3);
+            if (cellHash(x, y, 257) % 5 === 0 && Math.sin(this.time * 3 + x * 1.7 + y) > 0.6) {
+              ctx.fillStyle = 'rgba(255,255,255,0.9)';
+              ctx.fillRect(f(sx) + (cellHash(x, y, 259) % 30), f(sy) + (cellHash(x, y, 263) % 30), 1, 1);
+            }
             break;
           }
           case TileType.Desert: {
-            mottledTile(ctx, sx, sy, x, y, '#a08040', '#967a3a', 47);
-            ctx.fillStyle = 'rgba(200,180,110,0.4)';
-            ctx.fillRect(f(sx) + 2, f(sy) + 16, 14, 3);
-            ctx.fillStyle = 'rgba(60,40,10,0.25)';
-            ctx.fillRect(f(sx) + 16, f(sy) + 22, 12, 2);
+            const base = tint('#a08040', fieldShade(x, y) * 2);
+            mottledTile(ctx, sx, sy, x, y, base, tint(base, -7), 47);
+            const kind = cellHash(x, y, 271);
+            if (kind % 6 === 0) {
+              // Cracked earth: a few dark lines meeting.
+              ctx.fillStyle = tint(base, -34);
+              const px = f(sx) + 4 + (cellHash(x, y, 277) % 14);
+              const py = f(sy) + 4 + (cellHash(x, y, 281) % 14);
+              ctx.fillRect(px, py, 9, 1);
+              ctx.fillRect(px + 8, py, 1, 7);
+              ctx.fillRect(px + 3, py - 5, 1, 6);
+              ctx.fillRect(px + 8, py + 6, 6, 1);
+            } else if (kind % 17 === 0) {
+              // A cactus, with arms, and its shadow to the south-east.
+              const px = f(sx) + 8 + (cellHash(x, y, 283) % 12);
+              const py = f(sy) + 6 + (cellHash(x, y, 293) % 8);
+              ctx.fillStyle = 'rgba(0,0,0,0.22)';
+              ctx.fillRect(px + 2, py + 14, 8, 2);
+              ctx.fillStyle = '#4f7a3a';
+              ctx.fillRect(px + 2, py, 3, 15);
+              ctx.fillRect(px - 2, py + 4, 2, 5);
+              ctx.fillRect(px - 2, py + 4, 4, 2);
+              ctx.fillRect(px + 6, py + 6, 2, 4);
+              ctx.fillRect(px + 4, py + 6, 4, 2);
+              ctx.fillStyle = '#6f9e52';
+              ctx.fillRect(px + 2, py, 1, 15);
+            } else {
+              // Dune ripples, the same hand as the sand.
+              const n = 1 + (kind % 2);
+              for (let i = 0; i < n; i++) {
+                const h = cellHash(x, y, 301 + i);
+                ripple(ctx, f(sx) + (h % 10), f(sy) + 5 + ((h * 7 + i * 11) % 24), 12 + (h % 10), tint(base, 24), tint(base, -14));
+              }
+            }
             break;
           }
           case TileType.Swamp: {
-            mottledTile(ctx, sx, sy, x, y, '#2a4a2e', '#25452a', 53);
-            // Murky pool
-            ctx.fillStyle = 'rgba(40,90,50,0.6)';
-            ctx.fillRect(f(sx) + 8, f(sy) + 10, 16, 12);
-            // Lily pad
-            ctx.fillStyle = '#3f7a3a';
-            ctx.fillRect(f(sx) + 12, f(sy) + 16, 8, 3);
-            // Bubbles
-            ctx.fillStyle = 'rgba(160,220,160,0.4)';
-            ctx.fillRect(f(sx) + 18, f(sy) + 8, 2, 2);
+            const base = tint(this.seasonColor(TileType.Swamp) ?? '#2a4a2e', fieldShade(x, y) * 2);
+            mottledTile(ctx, sx, sy, x, y, base, tint(base, -5), 53);
+            const X = f(sx);
+            const Y = f(sy);
+            const h = cellHash(x, y, 311);
+            if (h % 4 !== 3) {
+              // A pool, sized and placed by the hash, its far bank lit.
+              const pw = 10 + (h % 12);
+              const ph = 7 + ((h >> 1) % 9);
+              const px = X + (cellHash(x, y, 313) % (TILE_SIZE - pw));
+              const py = Y + (cellHash(x, y, 317) % (TILE_SIZE - ph));
+              ctx.fillStyle = 'rgba(36,86,60,0.75)';
+              ctx.fillRect(px, py, pw, ph);
+              ctx.fillStyle = 'rgba(60,120,80,0.5)';
+              ctx.fillRect(px + 1, py, pw - 2, 1);
+              if (h % 3 === 0) {
+                ctx.fillStyle = '#3f7a3a';
+                ctx.fillRect(px + 2 + (h % 4), py + 2 + (h % 3), 5, 3);
+              }
+              // A bubble rising, on its own clock.
+              const rise = ((this.time * 1.5 + h) % 3) / 3;
+              if (rise < 0.8) {
+                ctx.fillStyle = `rgba(160,220,160,${0.5 - rise * 0.4})`;
+                ctx.fillRect(px + 3 + (h % (pw - 5)), py + ph - 2 - Math.floor(rise * (ph - 3)), 2, 2);
+              }
+            }
+            // Reeds, in ones and twos.
+            const reeds = 1 + (cellHash(x, y, 331) % 3);
+            for (let i = 0; i < reeds; i++) {
+              const rx = X + (cellHash(x, y, 337 + i) % 30);
+              const ry = Y + 6 + (cellHash(x, y, 347 + i) % 16);
+              ctx.fillStyle = '#1f3a22';
+              ctx.fillRect(rx, ry, 1, 9);
+              ctx.fillStyle = '#5a4a2a';
+              ctx.fillRect(rx, ry - 1, 2, 3);
+            }
+            if (h % 11 === 0) {
+              // A fallen log, half sunk.
+              ctx.fillStyle = '#3e2e1c';
+              ctx.fillRect(X + 4, Y + 20 + (h % 6), 18, 3);
+              ctx.fillStyle = '#5a4428';
+              ctx.fillRect(X + 4, Y + 20 + (h % 6), 18, 1);
+            }
             break;
           }
           case TileType.Road: {
