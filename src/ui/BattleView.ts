@@ -16,6 +16,8 @@ import type { MenuSkill } from '../combat/CombatEngine';
 import { spellFxFor, type SpellFx } from './SpellFx';
 import { sfx } from '../audio/Sfx';
 import { T, classColor, hpColor } from './Theme';
+import { KIND_LABEL } from '../entities/MonsterKinds';
+import type { ActiveCondition } from '../rules/Rules';
 
 /** A consumable the command menu can offer: a potion or scroll in someone's pack. */
 export interface MenuConsumable {
@@ -53,6 +55,22 @@ export class BattleView {
   private heroRow: HTMLElement;
   /** The scrolling frame of the narration panel. */
   private feedEl: HTMLElement;
+  /** The log's window (filter attribute) and its jump-to-newest button. */
+  private feedRootEl: HTMLElement;
+  private feedNewestEl: HTMLElement;
+  /** Whether the log is scrolled to its newest line; a reader scrolled up is left alone. */
+  private feedStuck = true;
+  /** The focus panel: whoever is hovered, targeted, commanded or acting. */
+  private focusBodyEl: HTMLElement;
+  private focusWhyEl: HTMLElement;
+  private titleEl: HTMLElement;
+  private subEl: HTMLElement;
+  private hoverId: string | null = null;
+  private currentActorId: string | null = null;
+  private round = 1;
+  private scene: BattleScene | null = null;
+  /** Sprite thumbnails by combatant id, rasterised once per fight. */
+  private thumbs: Map<string, string> = new Map();
   /** The lines themselves, bottom-anchored inside that frame. */
   private feedLinesEl: HTMLElement;
   private roundEl: HTMLElement;
@@ -279,14 +297,18 @@ export class BattleView {
           max-width: 100%; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.8);
         }
         .bv-hpbar {
-          position: relative; width: 100%; height: 6px; border-radius: 2px; overflow: hidden;
+          position: relative; width: 100%; height: 7px; border-radius: 2px; overflow: hidden;
           background: rgba(0,0,0,0.6); border: 1px solid rgba(232,197,106,0.28);
+          background-image: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(0,0,0,0.6) calc(25% - 1px) 25%);
         }
         /* Two fills: the pale ghost drains slowly behind the live bar, so a
            blow reads as a chunk of health torn away rather than a snap. */
         .bv-hpghost { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,225,200,0.55); transition: width .9s ease-out .22s; }
         .bv-hpfill { position: absolute; left: 0; top: 0; bottom: 0; transition: width .3s ease-out, background-color .3s ease; }
-        .bv-hpnum { font-size: 9px; color: ${T.muted}; line-height: 1.1; text-shadow: 0 1px 2px #000; }
+        .bv-hpnum { font-size: 9.5px; color: ${T.muted}; line-height: 1.1; text-shadow: 0 1px 2px #000; font-variant-numeric: tabular-nums; }
+        .battle-card { cursor: default; }
+        .battle-card.bv-can-target { cursor: crosshair; }
+        .battle-card.bv-can-target:hover .bv-ring { opacity: 0.6; border-color: #ff7a5a; }
         .bv-extra { font-size: 8.5px; line-height: 1.2; text-align: center; max-width: 100%; text-shadow: 0 1px 2px #000; }
         /* Queued-order chip on hero stands: slides in when an order lands. */
         @keyframes bv-chip-in {
@@ -629,48 +651,145 @@ export class BattleView {
           text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,0.6), 0 0 1px #000;
           animation: battle-damage-pop 0.9s ease-out forwards;
         }
-        /* ── Turn order ─────────────────────────────────────────────
-           One strip of initiative chips under the header; the acting one
-           is kept in view by scrolling the strip, never the page. */
-        .bv-turn-chip {
-          display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
-          font-size: 9px; padding: 1px 7px; border-radius: 9px;
-          border: 1px solid ${T.line}; background: rgba(16,14,19,0.88); color: ${T.text};
-          white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis;
-        }
-        .bv-turn-chip.foe { border-color: #6a3630; background: rgba(34,15,13,0.88); color: #dbaa9e; }
-        .bv-turn-chip.active {
-          border-color: ${T.gold}; color: #f2dca0;
-          box-shadow: 0 0 9px rgba(232,197,106,0.45);
-          animation: pad-pip-blink 1.6s ease-in-out infinite;
-        }
-        .bv-turn-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
-        /* ── Party status window ────────────────────────────────────
-           The bottom-left window when no one is being asked for orders:
-           one line per hero, the way the classic screens list the party. */
-        .bv-status-row {
-          display: grid; grid-template-columns: 14px minmax(0, 1fr) 62px 54px; align-items: center; gap: 0 6px;
-          padding: 3px 4px; border-radius: ${T.r1}; font-size: 11.5px;
-        }
-        .bv-status-row.active { background: rgba(232,197,106,0.10); }
-        .bv-status-row .bar.res { height: 2px; margin-top: 1px; border-color: rgba(255,255,255,0.08); }
-        .bv-status-row .cur { color: ${T.gold}; font-size: 9px; opacity: 0; animation: menu-cursor-blink 0.9s steps(1) infinite; }
-        .bv-status-row.active .cur { opacity: 1; }
-        .bv-status-row .nm { font-family: ${T.titleFont}; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .bv-status-row .sub { font-size: 8.5px; color: ${T.muted}; font-family: ${T.bodyFont}; font-weight: normal; letter-spacing: 0; }
-        .bv-status-row .hp { font-family: ${T.monoFont}; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
-        .bv-status-row .pips { font-size: 8px; color: ${T.info}; text-align: right; white-space: nowrap; overflow: hidden; }
-        .bv-status-row .bar { grid-column: 2 / 5; height: 3px; border-radius: 2px; background: rgba(0,0,0,0.55); border: 1px solid rgba(232,197,106,0.18); overflow: hidden; margin-top: 1px; }
-        .bv-status-row .bar > div { height: 100%; transition: width .3s ease-out; }
-        .bv-status-row .conds { grid-column: 2 / 5; font-size: 8.5px; color: #e8a99e; }
-        .bv-status-row .chipwrap { grid-column: 2 / 5; }
+        /* ── Frame ──────────────────────────────────────────────────
+           A tactical layout: the header names the place and carries the
+           full initiative order as portrait tiles; the bottom is three
+           windows — party, log, focus — that read at a glance. */
+        #battle-top { flex:0 0 auto; height:46px; display:flex; align-items:center; gap:12px; padding:0 14px; border-bottom:1px solid ${T.rule}; background:linear-gradient(180deg, rgba(10,9,12,0.94), rgba(10,9,12,0.72)); }
+        #battle-title { flex:0 0 auto; display:flex; flex-direction:column; min-width:0; max-width:230px; }
+        #battle-title .place { font-family:${T.titleFont}; font-size:12.5px; letter-spacing:0.14em; color:${T.gold}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-transform:uppercase; }
+        #battle-title .sub { font-size:9.5px; color:${T.muted}; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+        #battle-round { flex:0 0 auto; font-family:${T.monoFont}; font-size:10.5px; letter-spacing:0.14em; color:${T.text}; padding:3px 9px; border:1px solid ${T.line}; border-radius:${T.r2}; background:rgba(0,0,0,0.4); }
+        #battle-order { flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:5px; overflow:hidden; white-space:nowrap; height:100%; -webkit-mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); }
+        #battle-order .lbl { flex:0 0 auto; font-size:8px; letter-spacing:0.18em; color:${T.faint}; margin-right:4px; }
+        .bv-init { display:inline-flex; flex-direction:column; align-items:center; flex:0 0 auto; width:40px; padding:2px 0 1px; border-radius:${T.r2}; border:1px solid ${T.line}; background:rgba(16,14,19,0.85); opacity:0.75; transition:transform .2s ease, opacity .2s ease, border-color .2s ease; position:relative; cursor:default; }
+        .bv-init img { width:24px; height:24px; image-rendering:pixelated; display:block; }
+        .bv-init .nm { font-size:7.5px; color:${T.muted}; max-width:36px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.3; font-family:${T.titleFont}; }
+        .bv-init.foe { border-color:#5a2f2a; background:rgba(34,15,13,0.85); }
+        .bv-init.foe .nm { color:#dbaa9e; }
+        .bv-init.boss { border-color:#a8781e; }
+        .bv-init.boss::before { content:'\u265b'; position:absolute; top:-7px; right:-3px; font-size:9px; color:#ffb020; text-shadow:0 0 4px #000; }
+        .bv-init.next { opacity:0.95; }
+        .bv-init:hover { opacity:1; border-color:${T.lineHot}; }
+        .bv-init.active { opacity:1; transform:scale(1.14); border-color:${T.gold}; box-shadow:0 0 10px rgba(232,197,106,0.45); background:rgba(60,48,14,0.9); margin:0 3px; }
+        .bv-init.active .nm { color:#f2dca0; }
+        .bv-init.active::after { content:''; position:absolute; left:50%; bottom:-7px; width:0; height:0; margin-left:-4px; border:4px solid transparent; border-top-color:${T.gold}; }
+        .bv-init-sep { flex:0 0 auto; width:1px; height:28px; background:${T.rule}; margin:0 5px 0 3px; position:relative; }
+        .bv-init-sep::after { content:attr(data-r); position:absolute; top:-2px; left:4px; font-size:7.5px; color:${T.faint}; letter-spacing:0.12em; font-family:${T.monoFont}; }
+        #battle-controls { flex:0 0 auto; display:flex; align-items:center; gap:8px; }
+        #battle-speed { display:flex; border:1px solid ${T.line}; border-radius:${T.r2}; overflow:hidden; }
+        #battle-speed button { padding:4px 8px; font-size:10px; cursor:pointer; border:0; border-radius:0; background:rgba(20,18,23,0.9); color:${T.muted}; font-family:${T.monoFont}; }
+        #battle-speed button + button { border-left:1px solid ${T.line}; }
+        #battle-speed button:hover { color:${T.gold}; }
+        #battle-speed button.on { background:linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95)); color:#f2dca0; }
+        #battle-mode { padding:4px 11px; font-size:10px; cursor:pointer; border-radius:${T.r2}; font-family:${T.titleFont}; letter-spacing:0.08em; min-width:66px; }
+        #battle-help { padding:3px 8px; font-size:10px; cursor:pointer; border:1px solid ${T.line}; border-radius:${T.r2}; background:rgba(20,18,23,0.9); color:${T.muted}; font-family:${T.monoFont}; }
+        #battle-help:hover { color:${T.gold}; border-color:${T.goldDim}; }
+        /* ── Bottom windows ── */
+        #battle-bottom { flex:0 0 auto; height:242px; display:flex; gap:8px; padding:8px 12px 10px; background:linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.42)); }
+        .bv-panel { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; color:${T.text}; position:relative; }
+        .bv-panel-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 10px 5px; border-bottom:1px solid ${T.rule}; }
+        .bv-panel-head .t { font-family:${T.titleFont}; font-size:9.5px; letter-spacing:0.18em; color:${T.goldDim}; text-transform:uppercase; }
+        .bv-panel-head .h { font-size:8.5px; color:${T.faint}; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .bv-panel-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:5px 8px 6px; }
+        #battle-party-status { flex:0 0 300px; }
+        #battle-focus { flex:0 0 236px; }
+        #battle-feed { flex:1 1 auto; }
+        /* ── Party rows ── */
+        .bv-status-row { display:grid; grid-template-columns:26px minmax(0, 1fr) 58px; grid-template-areas:'pic nm hp' 'pic bar bar' 'pic ex ex'; align-items:center; column-gap:7px; row-gap:2px; padding:4px 6px 4px 5px; border-radius:${T.r2}; border:1px solid transparent; font-size:11.5px; margin:1px 0; position:relative; }
+        .bv-status-row.click { cursor:pointer; }
+        .bv-status-row.click:hover { border-color:${T.lineHot}; background:rgba(255,255,255,0.03); }
+        .bv-status-row.active { background:rgba(232,197,106,0.10); border-color:rgba(232,197,106,0.35); }
+        .bv-status-row.active::before { content:''; position:absolute; left:-1px; top:5px; bottom:5px; width:3px; border-radius:2px; background:${T.gold}; box-shadow:0 0 6px rgba(232,197,106,0.6); }
+        .bv-status-row.down { opacity:0.5; }
+        .bv-status-row .pic { grid-area:pic; width:26px; height:26px; image-rendering:pixelated; display:block; align-self:start; margin-top:1px; filter:drop-shadow(0 1px 1px rgba(0,0,0,0.6)); }
+        .bv-status-row .nm { grid-area:nm; font-family:${T.titleFont}; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11.5px; }
+        .bv-status-row .sub { font-size:8.5px; color:${T.muted}; font-family:${T.bodyFont}; font-weight:normal; letter-spacing:0; }
+        .bv-status-row .hp { grid-area:hp; font-family:${T.monoFont}; font-size:11px; text-align:right; font-variant-numeric:tabular-nums; }
+        .bv-status-row .bars { grid-area:bar; display:flex; flex-direction:column; gap:2px; }
+        .bv-bar { position:relative; height:5px; border-radius:2px; background:rgba(0,0,0,0.55); border:1px solid rgba(232,197,106,0.18); overflow:hidden; }
+        .bv-bar > .f { height:100%; transition:width .3s ease-out; }
+        .bv-bar.res { height:3px; border-color:rgba(255,255,255,0.08); }
+        .bv-bar .tick { position:absolute; top:0; bottom:0; width:1px; background:rgba(0,0,0,0.55); }
+        .bv-status-row .ex { grid-area:ex; display:flex; flex-wrap:wrap; gap:3px; align-items:center; }
+        .bv-status-row .ex:empty { display:none; }
+        .bv-pips { font-size:8px; color:${T.info}; white-space:nowrap; font-family:${T.monoFont}; }
+        /* ── Condition pills ── */
+        .bv-pill { display:inline-flex; align-items:center; gap:3px; font-size:8px; line-height:1.5; padding:0 5px; border-radius:999px; border:1px solid rgba(232,150,140,0.45); background:rgba(70,20,16,0.6); color:#f0b8ae; white-space:nowrap; }
+        .bv-pill .n { font-family:${T.monoFont}; color:${T.faint}; font-size:7.5px; }
+        .bv-pill.good { border-color:rgba(120,220,160,0.45); background:rgba(16,60,36,0.6); color:#a8ecc4; }
+        .bv-pills { display:flex; flex-wrap:wrap; gap:3px; justify-content:center; }
+        .bv-order-chip { font-size:8px; padding:1px 6px; border-radius:7px; border:1px solid ${T.goldDim}; background:rgba(60,48,14,0.75); color:#f2dca0; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; animation:bv-chip-in 0.25s ease-out; }
+        /* ── Focus panel ── */
+        #battle-focus .fhead { display:flex; align-items:center; gap:8px; }
+        #battle-focus .fhead img { width:40px; height:40px; image-rendering:pixelated; flex:0 0 auto; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.6)); }
+        #battle-focus .fwho { min-width:0; }
+        #battle-focus .fname { font-family:${T.titleFont}; font-weight:bold; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        #battle-focus .fkind { font-size:8.5px; color:${T.muted}; letter-spacing:0.1em; text-transform:uppercase; margin-top:1px; }
+        #battle-focus .fstats { display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; margin-top:7px; }
+        #battle-focus .fstat { padding:3px 4px; border:1px solid ${T.line}; border-radius:${T.r2}; background:rgba(0,0,0,0.35); text-align:center; }
+        #battle-focus .fstat .k { font-size:7.5px; letter-spacing:0.14em; color:${T.faint}; text-transform:uppercase; }
+        #battle-focus .fstat .v { font-family:${T.monoFont}; font-size:12px; color:${T.text}; font-variant-numeric:tabular-nums; }
+        #battle-focus .frow { margin-top:6px; font-size:10px; color:${T.muted}; line-height:1.45; }
+        #battle-focus .frow b { color:${T.text}; font-weight:normal; }
+        #battle-focus .fconds { display:flex; flex-wrap:wrap; gap:3px; margin-top:6px; }
+        #battle-focus .fempty { color:${T.faint}; font-style:italic; font-size:10.5px; padding:6px 2px; }
+        #battle-focus .tag { display:inline-block; font-size:7.5px; letter-spacing:0.12em; padding:0 5px; border-radius:3px; border:1px solid ${T.goldDim}; color:${T.gold}; margin-left:5px; vertical-align:middle; }
+        #battle-focus .tag.bad { border-color:#8a3a30; color:#ef8272; }
+        /* ── Log ── */
+        .bv-filters { display:flex; gap:2px; }
+        .bv-filters button { padding:1px 7px; font-size:8.5px; cursor:pointer; border:1px solid transparent; border-radius:999px; background:transparent; color:${T.faint}; letter-spacing:0.06em; font-family:${T.bodyFont}; }
+        .bv-filters button:hover { color:${T.text}; }
+        .bv-filters button.on { color:${T.gold}; border-color:${T.goldDim}; background:rgba(60,48,14,0.5); }
+        #battle-feed-scroll { display:flex; flex-direction:column; padding:0; }
+        #battle-feed-lines { margin-top:auto; flex:0 0 auto; padding:6px 12px 8px; }
+        #battle-feed[data-filter='attack'] .dp-log-line:not([data-cat='attack']):not(.dp-log-break),
+        #battle-feed[data-filter='magic'] .dp-log-line:not([data-cat='magic']):not(.dp-log-break),
+        #battle-feed[data-filter='talk'] .dp-log-line:not([data-cat='talk']):not(.dp-log-break) { display:none; }
+        #battle-feed-newest { position:absolute; right:12px; bottom:8px; z-index:3; padding:3px 9px; font-size:9px; border-radius:999px; border:1px solid ${T.goldDim}; background:rgba(40,32,10,0.95); color:#f2dca0; cursor:pointer; display:none; font-family:${T.bodyFont}; }
+        /* ── Command menu ── */
+        #battle-command-menu { position:absolute; left:12px; bottom:10px; z-index:25; width:300px; min-height:224px; max-height:66%; overflow-y:auto; font-family:${T.bodyFont}; color:${T.text}; padding:0 0 8px; }
+        .bv-menu-head { display:flex; align-items:center; gap:8px; padding:7px 10px 6px; border-bottom:1px solid ${T.rule}; background:rgba(0,0,0,0.28); position:sticky; top:0; z-index:1; }
+        .bv-menu-head img { width:30px; height:30px; image-rendering:pixelated; flex:0 0 auto; }
+        .bv-menu-head .who { min-width:0; flex:1; }
+        .bv-menu-head .who .n { font-family:${T.titleFont}; font-size:12.5px; color:${T.gold}; letter-spacing:0.06em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .bv-menu-head .who .s { font-size:9px; color:${T.muted}; font-family:${T.monoFont}; margin-top:1px; }
+        .bv-menu-head .q { font-size:8px; letter-spacing:0.12em; padding:1px 6px; border-radius:3px; border:1px solid ${T.info}; color:${T.info}; flex:0 0 auto; }
+        .bv-menu-note { font-size:9.5px; color:${T.muted}; padding:5px 10px 0; line-height:1.4; }
+        .bv-menu-note.q { color:${T.info}; }
+        .bv-menu-title { font-size:12px; color:${T.gold}; margin:8px 0 6px; text-align:center; letter-spacing:1px; font-family:${T.titleFont}; }
+        .bv-menu-btn { display:flex; justify-content:space-between; align-items:center; width:calc(100% - 16px); gap:10px; padding:7px 10px; margin:3px 8px; cursor:pointer; text-align:left; background:rgba(255,255,255,0.035); color:${T.text}; border:1px solid ${T.line}; border-radius:${T.r2}; font-size:12.5px; font-family:${T.bodyFont}; }
+        .bv-menu-btn.danger { background:rgba(58,24,20,0.85); color:#ef9a8a; }
+        .bv-menu-btn .lbl { display:flex; align-items:center; min-width:0; }
+        .bv-menu-btn .sub { color:${T.muted}; font-size:9.5px; text-align:right; flex:0 1 auto; }
+        .bv-menu-btn .key { display:inline-block; min-width:16px; margin-right:8px; padding:1px 4px; background:rgba(0,0,0,0.45); border:1px solid ${T.line}; border-radius:3px; color:${T.goldDim}; font-size:10px; text-align:center; font-family:${T.monoFont}; }
+        .bv-menu-sec { display:flex; gap:5px; margin:7px 8px 0; padding-top:7px; border-top:1px solid ${T.rule}; }
+        .bv-menu-sec button { flex:1; padding:5px 4px; cursor:pointer; font-size:10.5px; background:rgba(255,255,255,0.03); color:${T.goldDim}; border:1px solid ${T.line}; border-radius:${T.r2}; font-family:${T.bodyFont}; }
+        .bv-menu-sec button:hover { border-color:${T.gold}; color:#f2dca0; }
+        .bv-menu-hint { margin:7px 8px 0; padding-top:6px; border-top:1px solid ${T.rule}; color:${T.faint}; font-size:9px; text-align:center; line-height:1.4; }
+        /* ── Spoils ── */
+        #battle-spoils { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:32; width:min(540px, 90%); max-height:78%; overflow-y:auto; padding:0; box-shadow:0 6px 40px rgba(0,0,0,0.8), 0 0 26px rgba(255,200,60,0.22); font-family:${T.bodyFont}; color:#e8e0c8; }
+        .bv-sp-head { text-align:center; padding:16px 20px 12px; background:linear-gradient(180deg, rgba(232,197,106,0.10), transparent); border-bottom:1px solid ${T.rule}; }
+        .bv-sp-head .t { font-family:${T.titleFont}; font-size:24px; font-weight:bold; color:${T.gold}; letter-spacing:8px; text-shadow:0 0 14px rgba(232,197,106,0.55); }
+        .bv-sp-head .s { font-size:9.5px; color:${T.goldDim}; letter-spacing:3px; margin-top:4px; font-style:italic; }
+        .bv-sp-stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; padding:12px 20px 0; }
+        .bv-sp-stat { padding:7px 8px; border:1px solid ${T.line}; border-radius:${T.r2}; background:rgba(0,0,0,0.3); text-align:center; }
+        .bv-sp-stat .k { font-size:8px; letter-spacing:0.16em; color:${T.faint}; text-transform:uppercase; }
+        .bv-sp-stat .v { font-family:${T.monoFont}; font-size:16px; margin-top:2px; }
+        .bv-sp-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:12px 20px 0; }
+        .bv-sp-sec { font-size:8.5px; letter-spacing:0.16em; color:${T.goldDim}; margin-bottom:5px; text-transform:uppercase; font-family:${T.titleFont}; }
+        .bv-sp-item { font-size:11.5px; margin:3px 0; }
+        .bv-sp-kill { display:inline-block; margin:2px 6px 2px 0; font-size:10px; color:${T.muted}; padding:1px 7px; border:1px solid ${T.line}; border-radius:999px; }
+        .bv-sp-foot { display:flex; justify-content:center; padding:14px 20px 16px; }
       </style>
-      <div id="battle-top" style="flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px; padding:0 14px; border-bottom:1px solid ${T.rule}; background:rgba(0,0,0,0.35);">
-        <div id="battle-round" style="flex:0 0 auto; color:${T.text}; font-size:13px; font-weight:bold; letter-spacing:2px;">ROUND 1</div>
-        <div id="battle-order" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:4px; overflow:hidden; white-space:nowrap; -webkit-mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent); mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent);"></div>
-        <div style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
-          <div id="battle-speed" style="display:flex; gap:3px;"></div>
-          <button id="battle-mode" title="Toggle command mode: Manual = you pick every hero's action; Auto = the AI resolves all turns" style="padding:3px 9px; font-size:10px; cursor:pointer; background:linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95)); color:#f2dca0; border:1px solid ${T.goldDim}; border-radius:4px;">Manual</button>
+      <div id="battle-top">
+        <div id="battle-title"><div class="place">Battle</div><div class="sub"></div></div>
+        <div id="battle-round">ROUND 1</div>
+        <div id="battle-order"></div>
+        <div id="battle-controls">
+          <div id="battle-speed"></div>
+          <button id="battle-mode" title="Toggle command mode: Manual = you pick every hero's action; Auto = the AI resolves all turns" style="background:linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95)); color:#f2dca0; border:1px solid ${T.goldDim};">Manual</button>
+          <button id="battle-help" title="Controls and key bindings (F1)">?</button>
         </div>
       </div>
       <!-- The field: foes on the left, the party on the right, both in ranks
@@ -685,28 +804,41 @@ export class BattleView {
         <div id="battle-enemies" style="position:absolute; left:0; top:0; bottom:0; width:42%;"></div>
         <div id="battle-heroes" style="position:absolute; right:0; top:0; bottom:0; width:42%;"></div>
       </div>
-      <!-- The bottom windows: party status (the command menu docks over it
-           when a hero is asked for orders) and the narration box. -->
-      <div id="battle-bottom" style="flex:0 0 auto; height:232px; display:flex; gap:10px; padding:8px 14px 12px; background:linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.35));">
-        <div id="battle-party-status" class="dp-window" style="flex:0 0 292px; min-width:0; padding:8px 10px; overflow:hidden; display:flex; flex-direction:column; color:${T.text};">
-          <div class="dp-section-label" style="color:${T.goldDim}; font-size:9px; margin-bottom:4px; text-align:center;">◆ Party ◆</div>
-          <div id="battle-party-rows" style="flex:1 1 auto; min-height:0; overflow-y:auto;"></div>
+      <!-- The bottom windows: the party (the command menu docks over it
+           when a hero is asked for orders), the log, and the focus sheet. -->
+      <div id="battle-bottom">
+        <div id="battle-party-status" class="dp-window bv-panel">
+          <div class="bv-panel-head"><span class="t">Party</span><span class="h" id="battle-party-hint"></span></div>
+          <div id="battle-party-rows" class="bv-panel-body"></div>
         </div>
-        <div id="battle-feed" class="dp-window" style="flex:1 1 auto; min-width:0; padding:9px 13px; overflow-y:auto; color:${T.text}; display:flex; flex-direction:column;">
-          <div id="battle-feed-lines" style="margin-top:auto; flex:0 0 auto;"></div>
+        <div id="battle-feed" class="dp-window bv-panel" data-filter="all">
+          <div class="bv-panel-head"><span class="t">Battle log</span><div class="bv-filters"><button data-f="all" class="on" title="Everything">All</button><button data-f="attack" title="Blows, hits and misses">Blows</button><button data-f="magic" title="Spells, skills and healing">Magic</button><button data-f="talk" title="What was said">Words</button></div></div>
+          <div id="battle-feed-scroll" class="bv-panel-body"><div id="battle-feed-lines"></div></div>
+          <button id="battle-feed-newest">\u2193 newest</button>
+        </div>
+        <div id="battle-focus" class="dp-window bv-panel">
+          <div class="bv-panel-head"><span class="t">Focus</span><span class="h" id="battle-focus-why"></span></div>
+          <div id="battle-focus-body" class="bv-panel-body"></div>
         </div>
       </div>
     `;
     this.enemyRow = this.root.querySelector('#battle-enemies')!;
     this.heroRow = this.root.querySelector('#battle-heroes')!;
     this.statusRowsEl = this.root.querySelector('#battle-party-rows')!;
-    this.feedEl = this.root.querySelector('#battle-feed')!;
+    this.feedEl = this.root.querySelector('#battle-feed-scroll')!;
+    this.feedRootEl = this.root.querySelector('#battle-feed')!;
+    this.feedNewestEl = this.root.querySelector('#battle-feed-newest')!;
+    this.focusBodyEl = this.root.querySelector('#battle-focus-body')!;
+    this.focusWhyEl = this.root.querySelector('#battle-focus-why')!;
+    this.titleEl = this.root.querySelector('#battle-title .place')!;
+    this.subEl = this.root.querySelector('#battle-title .sub')!;
     this.feedLinesEl = this.root.querySelector('#battle-feed-lines')!;
     this.roundEl = this.root.querySelector('#battle-round')!;
     this.bannerEl = this.root.querySelector('#battle-banner')!;
     this.turnOrderEl = this.root.querySelector('#battle-order')!;
     this.buildSpeedControls();
     this.buildModeToggle();
+    this.wirePanels();
     window.addEventListener('keydown', this.handleMenuKey);
     this.startPadPoll();
     overlay.appendChild(this.root);
@@ -739,6 +871,7 @@ export class BattleView {
     this.pendingClose = false;
     this.dismissSpoils();
     if (scene) this.setScene(scene);
+    this.scene = scene ?? null;
     this.party = party;
     this.enemies = monsters;
     this.spellRenderer = sprites;
@@ -751,10 +884,18 @@ export class BattleView {
     window.addEventListener('keydown', this.handleMenuKey);
     this.startPadPoll();
     this.feedLinesEl.innerHTML = '';
+    this.feedStuck = true;
+    this.feedNewestEl.style.display = 'none';
     this.lastTurnActors = []; // fresh fight — bar fills on the first tick
     if (this.turnOrderEl) this.turnOrderEl.innerHTML = '';
+    this.thumbs.clear();
+    this.hoverId = null;
+    this.currentActorId = null;
+    this.round = 1;
     this.renderEnemies();
     this.renderHeroes();
+    this.renderTitle();
+    this.renderFocus();
   }
 
   isVisible(): boolean {
@@ -792,11 +933,15 @@ export class BattleView {
     // A boss's second phase: the hall goes red at the edges for the rest of the fight.
     if ((opts.messages ?? []).some(m => m.includes('second phase'))) this.root.style.boxShadow = 'inset 0 0 140px rgba(200, 30, 20, 0.4)';
     this.roundEl.textContent = `ROUND ${Math.max(1, opts.round)}`;
+    this.round = Math.max(1, opts.round);
     if (opts.actors) this.lastTurnActors = opts.actors;
+    if (opts.currentActorId) this.currentActorId = opts.currentActorId;
     this.renderTurnOrder(opts.currentActorId);
 
     // Light up the acting combatant.
     this.highlightActors(opts.actors, opts.currentActorId);
+    this.renderFocus();
+    this.renderTitle();
 
     if (opts.over) {
       if (opts.winner === 'party') {
@@ -819,43 +964,260 @@ export class BattleView {
    */
   private renderTurnOrder(currentActorId?: string | null): void {
     if (!this.turnOrderEl) return;
-    const actors = this.lastTurnActors.filter(a => (a as GameCharacter).isAlive !== false && (a as GameCharacter).hp > 0);
-    this.turnOrderEl.innerHTML = '';
+    const actors = this.lastTurnActors.filter(a => (a as GameCharacter).isAlive !== false && a.hp > 0);
+    const bar = this.turnOrderEl;
+    bar.innerHTML = '';
     if (actors.length === 0) return;
-    // Only the acting combatant is shown. A parade of every initiative chip
-    // was more to read than it was worth, and the field already shows who is
-    // lit; the header just names them.
-    const acting = actors.filter(a => this.actorId(a) === currentActorId);
-    const label = document.createElement('span');
-    label.style.cssText = `flex:0 0 auto; font-size:9px; color:${T.faint}; margin-right:6px; letter-spacing:1px;`;
-    label.textContent = acting.length ? 'ACTING' : '';
-    this.turnOrderEl.appendChild(label);
-    let activeChip: HTMLElement | null = null;
-    for (const a of acting) {
+    // The whole order, as portrait tiles, starting from whoever is acting:
+    // what follows is what comes next, and a divider marks where the round
+    // turns over. Hover any tile for that combatant's sheet.
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = 'INITIATIVE';
+    bar.appendChild(lbl);
+    const curIdx = actors.findIndex(a => this.actorId(a) === currentActorId);
+    const start = curIdx >= 0 ? curIdx : 0;
+    for (let k = 0; k < actors.length; k++) {
+      const i = (start + k) % actors.length;
+      if (k > 0 && i === 0) {
+        const sep = document.createElement('span');
+        sep.className = 'bv-init-sep';
+        sep.dataset.r = `R${this.round + 1}`;
+        bar.appendChild(sep);
+      }
+      const a = actors[i];
       const id = this.actorId(a);
-      const isMonster = this.isMonster(a);
-      const chip = document.createElement('span');
-      chip.className = 'bv-turn-chip' + (isMonster ? ' foe' : '') + (id === currentActorId ? ' active' : '');
-      const boss = isMonster && (a as Monster).isBoss;
-      const dotColor = isMonster ? (boss ? '#ffb020' : '#ff6a5a') : '#6ab8ff';
-      const name = isMonster ? (a as Monster).template.name : a.name;
-      chip.title = isMonster
-        ? `${name} — acts here this round${boss ? ' (BOSS)' : ''}`
-        : `${name} — acts here this round`;
-      const dot = `<span class="dot" style="background:${dotColor};${boss ? ' box-shadow:0 0 5px #ffb020;' : ''}"></span>`;
-      chip.innerHTML = `${dot}${name}${boss ? ' ♛' : ''}`;
-      this.turnOrderEl.appendChild(chip);
-      if (id === currentActorId) activeChip = chip;
+      const mon = this.isMonster(a);
+      const name = mon ? (a as Monster).template.name : a.name;
+      const boss = mon && ((a as Monster).isBoss || name.includes('(Boss)'));
+      const tile = document.createElement('span');
+      tile.className = 'bv-init' + (mon ? ' foe' : '') + (boss ? ' boss' : '') + (k === 0 && curIdx >= 0 ? ' active' : k === 1 ? ' next' : '');
+      tile.dataset.id = id;
+      const when = k === 0 && curIdx >= 0 ? 'acting now' : k === 1 ? 'acts next' : `${k} turns away`;
+      tile.title = `${name.replace(' (Boss)', '')}${boss ? ' (boss)' : ''} \u2014 ${when}`;
+      const short = name.replace(' (Boss)', '').split(' ')[0];
+      tile.innerHTML = `<img src="${this.thumb(a)}" alt="" draggable="false"><span class="nm">${short}</span>`;
+      bar.appendChild(tile);
     }
-    // A big fight's strip runs past the header: slide it so the acting
-    // chip is in view. Scroll the strip's own box, never the page.
-    if (activeChip) {
-      const bar = this.turnOrderEl;
-      const want = (activeChip as HTMLElement).offsetLeft + (activeChip as HTMLElement).offsetWidth - (bar.clientWidth - 30);
-      bar.scrollLeft = Math.max(0, want);
+    bar.scrollLeft = 0;
+  }
+
+  /** A combatant's sprite as a data URL, rasterised once per fight. */
+  private thumb(a: GameCharacter | Monster): string {
+    const id = this.actorId(a);
+    let src = this.thumbs.get(id);
+    if (!src) {
+      src = this.spriteSrc(a);
+      if (src) this.thumbs.set(id, src);
+    }
+    return src;
+  }
+
+  /** The place and the odds, in the header. */
+  private renderTitle(): void {
+    const sc = this.scene;
+    let place = 'Battle';
+    if (sc) {
+      const pretty = (id: string | null | undefined) => (id ?? '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+      if (sc.place === 'dungeon') place = pretty(sc.themeId) || 'The Deep';
+      else if (sc.place === 'town') place = pretty(sc.townArchetype) ? `${pretty(sc.townArchetype)} Streets` : 'The Streets';
+      else place = pretty(sc.biome) ? `The ${pretty(sc.biome)} Road` : 'The Open Road';
+    }
+    const alive = this.enemies.filter(m => m.isAlive).length;
+    const boss = this.enemies.some(m => m.isBoss || m.template.name.includes('(Boss)'));
+    const parts = [`${alive} of ${this.enemies.length} ${this.enemies.length === 1 ? 'foe' : 'foes'} standing`];
+    if (boss) parts.push('boss fight');
+    if (sc) {
+      const d = sc.daylight;
+      parts.push(sc.place === 'dungeon' ? 'torchlight' : d < 0.2 ? 'night' : d < 0.45 ? 'twilight' : 'daylight');
+      if (sc.weather) parts.push(sc.weather.replace(/_/g, ' '));
+    }
+    if (this.titleEl.textContent !== place) this.titleEl.textContent = place;
+    const sub = parts.join(' \u00b7 ');
+    if (this.subEl.textContent !== sub) this.subEl.textContent = sub;
+  }
+
+  /** Find a combatant on either side by id. */
+  private findActor(id: string): GameCharacter | Monster | null {
+    for (const m of this.enemies) if (m.id === id) return m;
+    for (const h of this.party?.members ?? []) if (h.id === id) return h;
+    return null;
+  }
+
+  /**
+   * The focus sheet: whoever the player is looking at. A hovered combatant
+   * wins; then the target under the crosshair; then the hero being
+   * commanded; then whoever is acting.
+   */
+  private renderFocus(): void {
+    if (!this.focusBodyEl) return;
+    let id: string | null = null;
+    let why = '';
+    if (this.hoverId && this.findActor(this.hoverId)) { id = this.hoverId; why = 'hovered'; }
+    else if (this.targeting) {
+      const c = this.targeting.candidates[this.targeting.index];
+      if (c) { id = c.id; why = 'in the crosshair'; }
+    } else if (this.menuHero && this.menuEl && this.menuEl.style.display !== 'none') { id = this.menuHero.id; why = 'awaiting orders'; }
+    else if (this.currentActorId) { id = this.currentActorId; why = 'acting'; }
+    const a = id ? this.findActor(id) : null;
+    this.focusWhyEl.textContent = a ? why : '';
+    if (!a) {
+      const empty = '<div class="fempty">Hover a combatant, a party row or an initiative tile for their sheet.</div>';
+      if (this.focusBodyEl.innerHTML !== empty) this.focusBodyEl.innerHTML = empty;
+      return;
+    }
+    const html = this.isMonster(a) ? this.monsterSheet(a) : this.heroSheet(a);
+    if (this.focusBodyEl.innerHTML !== html) this.focusBodyEl.innerHTML = html;
+  }
+
+  private static readonly GOOD_CONDITIONS = new Set(['blessed', 'hasted', 'shielded', 'inspired', 'raging', 'invisible', 'concentrating', 'protected', 'hidden', 'fortified']);
+
+  /** Conditions as pills with their turns left. */
+  private pillsHtml(conds: ActiveCondition[], wrap = true): string {
+    if (conds.length === 0) return '';
+    const pills = conds.map(c => {
+      const meta = CONDITION_META[c.id];
+      const good = BattleView.GOOD_CONDITIONS.has(c.id);
+      const title = meta ? `${meta.label}: ${meta.effect}` : c.name;
+      const n = c.turnsLeft > 0 && c.turnsLeft < 99 ? `<span class="n">${c.turnsLeft}</span>` : '';
+      return `<span class="bv-pill${good ? ' good' : ''}" title="${title.replace(/"/g, '&quot;')}">${meta?.label ?? c.name}${n}</span>`;
+    }).join('');
+    return wrap ? `<div class="bv-pills">${pills}</div>` : pills;
+  }
+
+  private statCell(k: string, v: string, color?: string): string {
+    return `<div class="fstat"><div class="k">${k}</div><div class="v"${color ? ` style="color:${color};"` : ''}>${v}</div></div>`;
+  }
+
+  private barHtml(frac: number, color: string, cls = ''): string {
+    const f = Math.max(0, Math.min(1, frac));
+    return `<div class="bv-bar ${cls}"><div class="f" style="width:${(f * 100).toFixed(1)}%; background:${color};"></div><span class="tick" style="left:25%"></span><span class="tick" style="left:50%"></span><span class="tick" style="left:75%"></span></div>`;
+  }
+
+  private monsterSheet(m: Monster): string {
+    const t = m.template;
+    const boss = m.isBoss || t.name.includes('(Boss)');
+    const frac = m.hp / Math.max(1, m.maxHp);
+    const kind = KIND_LABEL[t.type] ?? t.type;
+    const state = !m.isAlive ? (m.fled ? '<span class="tag bad">FLED</span>' : '<span class="tag bad">SLAIN</span>') : boss ? '<span class="tag">BOSS</span>' : '';
+    const desc = (t.description ?? '').split(/(?<=[.!?])\s/)[0] ?? '';
+    const blurb = desc.length > 150 ? desc.slice(0, 147) + '\u2026' : desc;
+    return `
+      <div class="fhead"><img src="${this.thumb(m)}" alt="" draggable="false"><div class="fwho">
+        <div class="fname" style="color:${boss ? T.gold : '#dbaa9e'};">${t.name.replace(' (Boss)', '')}${state}</div>
+        <div class="fkind">${kind} \u00b7 CR ${t.cr}</div></div></div>
+      <div class="fstats">${this.statCell('Hit points', `${Math.max(0, Math.round(m.hp))}/${m.maxHp}`, hpColor(frac))}${this.statCell('Armour', String(t.ac))}${this.statCell('To hit', `+${t.attackBonus}`)}</div>
+      <div style="margin-top:6px;">${this.barHtml(frac, hpColor(frac))}</div>
+      ${m.conditions.length ? `<div class="fconds">${this.pillsHtml(m.conditions, false)}</div>` : ''}
+      ${blurb ? `<div class="frow">${blurb}</div>` : ''}`;
+  }
+
+  private heroSheet(h: GameCharacter): string {
+    const accent = classColor(h.charClass.id);
+    const frac = h.hp / Math.max(1, h.maxHp);
+    const res = h.resourceKind === 'blood' ? null : { label: RESOURCE_LABEL[h.resourceKind], color: RESOURCE_COLOR[h.resourceKind], cur: h.resource, max: h.resourceMax };
+    const pips = this.slotPips(h);
+    const order = this.queuedOrders.get(h.id);
+    const state = h.isDead ? '<span class="tag bad">DEAD</span>' : h.isDying ? '<span class="tag bad">DYING</span>' : h.id === this.parkedHeroId && this.menuEl && this.menuEl.style.display !== 'none' ? '<span class="tag">YOUR ORDERS</span>' : '';
+    return `
+      <div class="fhead"><img src="${this.thumb(h)}" alt="" draggable="false"><div class="fwho">
+        <div class="fname" style="color:${accent};">${h.name}${state}</div>
+        <div class="fkind">Level ${h.level} ${h.charClass.name}</div></div></div>
+      <div class="fstats">${this.statCell('Hit points', `${Math.max(0, Math.round(h.hp))}/${h.maxHp}`, hpColor(frac))}${this.statCell('Armour', String(h.ac))}${res ? this.statCell(res.label, `${res.cur}/${res.max}`, res.color) : this.statCell('Blood', 'HP', '#e05a4a')}</div>
+      <div style="margin-top:6px; display:flex; flex-direction:column; gap:3px;">${this.barHtml(frac, hpColor(frac))}${res ? this.barHtml(res.cur / Math.max(1, res.max), res.color, 'res') : ''}</div>
+      ${pips ? `<div class="frow">Spell slots <b class="bv-pips">${pips}</b></div>` : ''}
+      ${h.conditions.length ? `<div class="fconds">${this.pillsHtml(h.conditions, false)}</div>` : ''}
+      ${order ? `<div class="frow">Standing order <b>${this.chipLabel(h, order)}</b></div>` : ''}`;
+  }
+
+  /**
+   * Hover, click and filter wiring for the three windows and the field.
+   * Delegated once, so rebuilt rows and stands need no listeners of their own.
+   */
+  private wirePanels(): void {
+    const setHover = (id: string | null) => {
+      if (this.hoverId === id) return;
+      this.hoverId = id;
+      this.renderFocus();
+    };
+    const hoverable = (el: HTMLElement, selector: string) => {
+      el.addEventListener('mouseover', e => {
+        const hit = (e.target as HTMLElement).closest(selector) as HTMLElement | null;
+        setHover(hit?.dataset.id ?? null);
+      });
+      el.addEventListener('mouseleave', () => setHover(null));
+    };
+    hoverable(this.enemyRow, '.battle-card');
+    hoverable(this.heroRow, '.battle-card');
+    hoverable(this.turnOrderEl, '.bv-init');
+    hoverable(this.statusRowsEl, '.bv-status-row');
+
+    // A stand under the crosshair is chosen with a click and fired with a second.
+    const clickStand = (e: MouseEvent) => {
+      const card = (e.target as HTMLElement).closest('.battle-card') as HTMLElement | null;
+      const id = card?.dataset.id;
+      if (!id) return;
+      if (this.targeting) {
+        const idx = this.targeting.candidates.findIndex(c => c.id === id);
+        if (idx < 0) return;
+        if (idx === this.targeting.index) this.confirmTarget();
+        else { this.targeting.index = idx; this.renderMenu(); }
+        sfx.click();
+        return;
+      }
+      this.jumpMenuTo(id);
+    };
+    this.enemyRow.addEventListener('click', clickStand);
+    this.heroRow.addEventListener('click', clickStand);
+    this.statusRowsEl.addEventListener('click', e => {
+      const row = (e.target as HTMLElement).closest('.bv-status-row') as HTMLElement | null;
+      if (row?.dataset.id) this.jumpMenuTo(row.dataset.id);
+    });
+
+    // The log's filters and its jump-to-newest.
+    for (const b of Array.from(this.feedRootEl.querySelectorAll<HTMLButtonElement>('.bv-filters button'))) {
+      b.addEventListener('click', () => {
+        this.feedRootEl.dataset.filter = b.dataset.f ?? 'all';
+        for (const o of Array.from(this.feedRootEl.querySelectorAll('.bv-filters button'))) o.classList.toggle('on', o === b);
+        this.feedEl.scrollTop = this.feedEl.scrollHeight;
+        sfx.click();
+      });
+    }
+    this.feedEl.addEventListener('scroll', () => {
+      const stuck = this.feedEl.scrollTop + this.feedEl.clientHeight >= this.feedEl.scrollHeight - 6;
+      this.feedStuck = stuck;
+      this.feedNewestEl.style.display = stuck ? 'none' : 'block';
+    });
+    this.feedNewestEl.addEventListener('click', () => {
+      this.feedStuck = true;
+      this.feedEl.scrollTop = this.feedEl.scrollHeight;
+      this.feedNewestEl.style.display = 'none';
+    });
+    this.root.querySelector('#battle-help')!.addEventListener('click', () => { sfx.click(); this.toggleControlsOverlay(); });
+  }
+
+  /**
+   * Move the command menu to a hero by pointing at them: a party row or
+   * their stand. The same rules as Tab: the parked hero gets the live menu,
+   * anyone else is given a queued order.
+   */
+  private jumpMenuTo(id: string): void {
+    if (!this.menuEl || this.menuEl.style.display === 'none' || !this.menuHero || this.targeting) return;
+    const hero = this.partyRoster.find(m => m.id === id) ?? this.party?.members.find(m => m.id === id);
+    if (!hero || !hero.isAlive || hero.id === this.menuHero.id) return;
+    if (hero.id === this.parkedHeroId) {
+      this.menuHero = hero;
+      this.menuSpells = this.spellsFor ? this.spellsFor(hero) : [];
+      this.menuItems = this.itemsFor ? this.itemsFor() : [];
+      this.menuPane = 'root';
+      this.menuIsQueued = false;
+      this.renderMenu();
     } else {
-      this.turnOrderEl.scrollLeft = 0;
+      this.showQueuedMenuFor(hero);
     }
+    sfx.click();
+    this.renderPartyStatus();
+    this.renderFocus();
   }
 
   /**
@@ -1915,14 +2277,26 @@ export class BattleView {
     body.textContent = text;
     if (color) { line.style.color = color; gutter.style.color = color; }
     line.append(gutter, body);
+    line.dataset.cat = BattleView.feedCategory(msg, line.classList.contains('dp-log-speech'));
     this.appendFeedLine(line);
+  }
+
+  /** Which filter a log line answers to: blows, magic, words, or the rest. */
+  private static feedCategory(msg: string, speech: boolean): string {
+    if (speech || /\b(says|shouts|cries|whispers|mutters|roars|hisses|laughs|snarls|calls out)\b/i.test(msg)) return 'talk';
+    if (/\b(casts|spell|sigil|arcane|heals|restores|Words of power|channel|smite|ki\b|rage|invokes|conjures|summons|surge|counterspell)/i.test(msg)) return 'magic';
+    if (/\b(strikes|hits|slashes|smashes|drives|chops|connects|feints|lands|misses|takes \d+ damage|attacks?|swings|bites|claws|shoots|fires|stabs|parries|blocks|CRIT|slain|goes down|falls)\b/i.test(msg)) return 'attack';
+    return 'misc';
   }
 
   /** Append to the feed and keep it to a fixed length. */
   private appendFeedLine(line: HTMLElement): void {
     this.feedLinesEl.appendChild(line);
-    while (this.feedLinesEl.children.length > 60) this.feedLinesEl.removeChild(this.feedLinesEl.firstChild!);
-    this.feedEl.scrollTop = this.feedEl.scrollHeight;
+    while (this.feedLinesEl.children.length > 120) this.feedLinesEl.removeChild(this.feedLinesEl.firstChild!);
+    // A reader who scrolled up to check something keeps their place; the
+    // newest button says there is more below.
+    if (this.feedStuck) this.feedEl.scrollTop = this.feedEl.scrollHeight;
+    else this.feedNewestEl.style.display = 'block';
   }
 
   /**
@@ -2173,24 +2547,22 @@ export class BattleView {
   private fillEnemyCard(card: HTMLElement, m: Monster): void {
     const boss = m.isBoss || m.template.name.includes('(Boss)');
     card.classList.toggle('bv-boss', boss);
-    const conds = m.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
+    card.classList.toggle('bv-can-target', !!this.targeting && this.targeting.candidates.some(c => c.id === m.id));
     this.fillStand(card, {
-      name: `${boss ? '♛ ' : ''}${m.template.name}`,
+      name: `${boss ? '♛ ' : ''}${m.template.name.replace(' (Boss)', '')}`,
       nameColor: boss ? T.gold : '#dbaa9e',
       hp: m.hp, maxHp: m.maxHp, down: !m.isAlive,
-      extraHtml: conds ? `<span style="color:#e8a99e;">${conds}</span>` : '',
+      extraHtml: this.pillsHtml(m.conditions),
       sprite: m,
     });
   }
 
   private fillHeroCard(card: HTMLElement, hero: GameCharacter): void {
     const accent = classColor(hero.charClass.id);
-    const conds = hero.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
     const deadMarker = hero.isDead || hero.isDying ? ` <span style="color:#ef8272;">&#9760;</span>` : '';
-    const pips = this.slotPips(hero);
+    card.classList.toggle('bv-can-target', !!this.targeting && this.targeting.candidates.some(c => c.id === hero.id));
     const extras = [
-      pips ? `<div class="dp-num" style="color:${T.info};">${pips}</div>` : '',
-      conds ? `<div style="color:#e8a99e;">${conds}</div>` : '',
+      this.pillsHtml(hero.conditions),
       this.queuedChipHtml(hero),
     ].join('');
     this.fillStand(card, {
@@ -2209,29 +2581,32 @@ export class BattleView {
    */
   private renderPartyStatus(): void {
     if (!this.party || !this.statusRowsEl) return;
+    const menuOpen = !!this.menuEl && this.menuEl.style.display !== 'none' && !!this.menuHero;
     const rows: string[] = [];
     for (const hero of this.party.members) {
       const accent = classColor(hero.charClass.id);
       const frac = Math.max(0, Math.min(1, hero.hp / Math.max(1, hero.maxHp)));
       const active = hero.id === this.activeHeroId;
-      const conds = hero.conditions.map(c => CONDITION_META[c.id]?.label ?? c.name).join(', ');
       const dead = hero.isDead || hero.isDying;
       const pips = this.slotPips(hero);
       const chip = this.queuedChipHtml(hero);
+      const clickable = menuOpen && !dead && hero.isAlive && hero.id !== this.menuHero?.id;
+      const res = hero.resourceKind !== 'blood'
+        ? this.barHtml(hero.resource / Math.max(1, hero.resourceMax), RESOURCE_COLOR[hero.resourceKind], 'res')
+        : '';
       rows.push(`
-        <div class="bv-status-row${active ? ' active' : ''}" style="${dead ? 'opacity:0.55;' : ''}">
-          <span class="cur">▶</span>
+        <div class="bv-status-row${active ? ' active' : ''}${dead ? ' down' : ''}${clickable ? ' click' : ''}" data-id="${hero.id}" title="${clickable ? `Give ${hero.name} an order` : hero.name}">
+          <img class="pic" src="${this.thumb(hero)}" alt="" draggable="false">
           <span class="nm" style="color:${accent};">${hero.name}${dead ? ' <span style="color:#ef8272;">&#9760;</span>' : ''} <span class="sub">Lv${hero.level} ${hero.charClass.name}</span></span>
           <span class="hp" style="color:${hpColor(frac)};">${Math.max(0, Math.round(hero.hp))}<span style="color:${T.faint};">/${hero.maxHp}</span></span>
-          <span class="pips">${pips}</span>
-          <div class="bar"><div style="width:${(frac * 100).toFixed(1)}%; background:${hpColor(frac)};"></div></div>
-          ${hero.resourceKind !== 'blood' ? `<div class="bar res" title="${RESOURCE_LABEL[hero.resourceKind]} ${hero.resource}/${hero.resourceMax}"><div style="width:${((hero.resource / Math.max(1, hero.resourceMax)) * 100).toFixed(1)}%; background:${RESOURCE_COLOR[hero.resourceKind]};"></div></div>` : ''}
-          ${conds ? `<div class="conds">${conds}</div>` : ''}
-          ${chip ? `<div class="chipwrap">${chip}</div>` : ''}
+          <div class="bars">${this.barHtml(frac, hpColor(frac))}${res}</div>
+          <div class="ex">${pips ? `<span class="bv-pips" title="Spell slots left, by level">${pips}</span>` : ''}${this.pillsHtml(hero.conditions, false)}${chip}</div>
         </div>`);
     }
     const html = rows.join('');
     if (this.statusRowsEl.innerHTML !== html) this.statusRowsEl.innerHTML = html;
+    const hint = this.root.querySelector('#battle-party-hint') as HTMLElement | null;
+    if (hint) hint.textContent = menuOpen ? 'click a hero to give orders' : this.mode === 'manual' ? 'manual command' : 'the party acts on its own';
   }
 
   /** Short human label for a queued order ('⚔ Attack', '✦ Fireball', …). */
@@ -2320,10 +2695,7 @@ export class BattleView {
       btn.className = 'battle-speed-btn';
       btn.dataset.speed = String(s);
       btn.textContent = `${s}x`;
-      btn.style.cssText = [
-        'padding:3px 7px; font-size:10px; cursor:pointer;',
-        `background:rgba(20,18,23,0.9); color:${T.muted}; border:1px solid ${T.line}; border-radius:4px;`,
-      ].join('');
+      btn.title = `Combat at ${s}x`;
       btn.addEventListener('click', () => this.setSpeed(s));
       bar.appendChild(btn);
     }
@@ -2345,10 +2717,7 @@ export class BattleView {
     const btns = this.root.querySelectorAll('.battle-speed-btn');
     btns.forEach(b => {
       const el = b as HTMLElement;
-      const active = parseFloat(el.dataset.speed!) === speed;
-      el.style.background = active ? 'linear-gradient(180deg, rgba(84,66,26,0.95), rgba(52,40,16,0.95))' : 'rgba(20,18,23,0.9)';
-      el.style.color = active ? '#f2dca0' : T.muted;
-      el.style.borderColor = active ? T.goldDim : T.line;
+      el.classList.toggle('on', parseFloat(el.dataset.speed!) === speed);
     });
     this.onSpeedChange?.(speed);
   }
@@ -2380,6 +2749,14 @@ export class BattleView {
     // Drop remap/overlay state too — nothing should survive the window.
     this.remapping = null;
     if (this.controlsEl) this.controlsEl.style.display = 'none';
+    this.hoverId = null;
+    this.currentActorId = null;
+    this.thumbs.clear();
+    this.focusBodyEl.innerHTML = '';
+    this.focusWhyEl.textContent = '';
+    this.feedRootEl.dataset.filter = 'all';
+    for (const o of Array.from(this.feedRootEl.querySelectorAll('.bv-filters button'))) o.classList.toggle('on', (o as HTMLElement).dataset.f === 'all');
+    this.feedNewestEl.style.display = 'none';
   }
 
   /**
@@ -2514,19 +2891,23 @@ export class BattleView {
     }
   }
 
+  /** The menu's masthead: the hero's portrait, name, health and pool, and whether the order queues. */
+  private menuHeader(hero: GameCharacter): HTMLElement {
+    const head = document.createElement('div');
+    head.className = 'bv-menu-head';
+    const queued = this.menuIsQueued && hero.id !== this.parkedHeroId;
+    const pool = hero.resourceKind === 'blood' ? `blood ${hero.hp}` : `${RESOURCE_LABEL[hero.resourceKind].toLowerCase()} ${hero.resource}/${hero.resourceMax}`;
+    const pad = this.padConnected ? '<span class="pad-pip" title="Gamepad connected — D-pad move · Ⓐ confirm · Ⓑ back · LB hero">🎮</span>' : '';
+    head.innerHTML = `<img src="${this.thumb(hero)}" alt="" draggable="false"><div class="who"><div class="n">${hero.name} — your command?</div><div class="s">HP ${Math.max(0, Math.round(hero.hp))}/${hero.maxHp} · ${pool} · AC ${hero.ac}</div></div>${queued ? '<span class="q">QUEUED</span>' : ''}${pad}`;
+    return head;
+  }
+
   private renderMenu(): void {
     if (!this.menuHero) return;
     if (!this.menuEl) {
       this.menuEl = document.createElement('div');
       this.menuEl.id = 'battle-command-menu';
       this.menuEl.className = 'dp-window';
-      this.menuEl.style.cssText = [
-        'position:absolute; left:14px; bottom:12px; z-index:25;',
-        // Tall enough to cover the party status window it docks over, even
-        // as the three-line aim prompt; grows upward for a long spell list.
-        'width:292px; min-height:212px; max-height:64%; overflow-y:auto;',
-        `font-family:${T.bodyFont}; color:${T.text}; padding:10px 12px;`,
-      ].join('');
       this.root.appendChild(this.menuEl);
     }
     this.menuEl.style.display = 'block';
@@ -2537,16 +2918,9 @@ export class BattleView {
 
     const menuBtn = (label: string, sub: string, onClick: () => void, danger = false, keyHint?: string) => {
       const b = document.createElement('button');
-      b.style.cssText = [
-        'display:flex; justify-content:space-between; align-items:center; width:100%; gap:10px;',
-        'padding:8px 12px; margin:3px 0; cursor:pointer; text-align:left;',
-        `background:${danger ? 'rgba(58,24,20,0.85)' : 'rgba(255,255,255,0.035)'}; color:${danger ? '#ef9a8a' : T.text};`,
-        `border:1px solid ${danger ? '#6a3630' : T.line}; border-radius:${T.r2}; font-size:12.5px;`,
-      ].join('');
-      const keyTag = keyHint
-        ? `<span class="dp-num" style="display:inline-block; min-width:16px; margin-right:8px; padding:1px 4px; background:rgba(0,0,0,0.45); border:1px solid ${T.line}; border-radius:3px; color:${T.goldDim}; font-size:10px; text-align:center;">${keyHint}</span>`
-        : '';
-      b.innerHTML = `<span style="display:flex; align-items:center;">${keyTag}${label}</span><span style="color:${T.muted}; font-size:10px;">${sub}</span>`;
+      b.className = 'bv-menu-btn' + (danger ? ' danger' : '');
+      const keyTag = keyHint ? `<span class="key">${keyHint}</span>` : '';
+      b.innerHTML = `<span class="lbl">${keyTag}${label}</span><span class="sub">${sub}</span>`;
       const btnIndex = this.menuButtons.length;
       // Mouse and keyboard share one cursor: hovering moves it, arrows move
       // it back. The highlight persists until the cursor moves again.
@@ -2562,8 +2936,9 @@ export class BattleView {
       const cur = this.targeting.candidates[this.targeting.index];
       const aimingAllies = this.targeting.cmd.type === 'spell' && (!cur || !cur.isEnemy);
       this.menuEl.innerHTML = ''; // targeting owns the whole pane
+      this.menuEl.appendChild(this.menuHeader(hero));
       const title = document.createElement('div');
-      title.style.cssText = `font-size:12.5px; color:${T.gold}; margin:2px 0 7px; text-align:center; letter-spacing:1px;`;
+      title.className = 'bv-menu-title';
       title.textContent = aimingAllies ? '✛ Choose an ally…' : '✛ Choose a target…';
       this.menuEl.appendChild(title);
       const cancelBtn = menuBtn('← Cancel', 'Esc', () => this.cancelTargeting(), true);
@@ -2575,29 +2950,30 @@ export class BattleView {
       this.menuButtons.push({ el: cancelBtn, onClick: () => this.cancelTargeting(), key: '', danger: true });
       this.applyTargetCursor();
       const hint = document.createElement('div');
-      hint.style.cssText = `font-size:9px; color:${T.faint}; margin-top:6px; text-align:center;`;
-      hint.textContent = this.padConnected ? '🎮 D-pad target · Ⓐ confirm · Ⓑ cancel' : '↑↓ target · Enter confirm · Esc cancel';
+      hint.className = 'bv-menu-hint';
+      hint.textContent = this.padConnected ? '🎮 D-pad target · Ⓐ confirm · Ⓑ cancel' : '↑↓ or click a stand to aim · Enter or click again to confirm · Esc cancel';
       this.menuEl.appendChild(hint);
       this.menuCursor = this.menuButtons.findIndex(b => b.key === '1');
       this.applyCursor();
+      this.renderPartyStatus();
+      this.renderFocus();
       return;
     }
 
     const backBtn = menuBtn('← Back', 'Esc', () => { this.menuPane = 'root'; this.renderMenu(); }, false, '');
     const queuedTag = this.menuIsQueued && hero.id !== this.parkedHeroId
-      ? `<div style="font-size:10px; color:${T.muted}; margin-top:2px;">⏳ order will be queued — Tab to reach another hero</div>`
-      : `<div style="font-size:10px; color:${T.muted}; margin-top:2px;">Tab: cycle heroes · Shift+2: recast last spell</div>`;
+      ? `<div class="bv-menu-note">⏳ This order is queued for ${hero.name}'s turn. Tab or click a party row for another hero.</div>`
+      : `<div class="bv-menu-note">Tab or click a party row to give the others orders · Shift+${labelFor(this.binds.quickcast)} recasts the last spell</div>`;
     const queuedCount = this.queuedOrders.size;
     const queuedList = queuedCount > 0
-      ? `<div style="font-size:10px; color:${T.info}; margin-bottom:4px;">Queued: ${[...this.queuedOrders.entries()].map(([id, c]) => {
+      ? `<div class="bv-menu-note q">Queued: ${[...this.queuedOrders.entries()].map(([id, c]) => {
           const m = this.partyRoster.find(x => x.id === id);
           const name = m ? m.name : '?';
           const label = c.type === 'attack' ? 'Attack' : c.type === 'flee' ? 'Flee' : c.type === 'item' ? 'Item' : c.type === 'ability' ? (getAbilityById(c.abilityId ?? '')?.name ?? 'Skill') : this.lastSpellByHero.get(id)?.spellName ?? 'Spell';
           return `${name} → ${label}`;
         }).join(', ')}</div>`
       : '';
-    const padPip = this.padConnected ? '<span class="pad-pip" title="Gamepad connected — D-pad move · Ⓐ confirm · Ⓑ back · LB hero">🎮</span> ' : '';
-    const header = `<div class="dp-title" style="font-size:13px; color:${T.gold}; letter-spacing:1.2px; margin-bottom:6px; border-bottom:1px solid ${T.rule}; padding-bottom:6px;">${padPip}⌘ ${hero.name}${this.menuIsQueued && hero.id !== this.parkedHeroId ? ' (queued)' : ''} — your command?</div>${queuedTag}${queuedList}`;
+    const header = `${this.menuHeader(hero).outerHTML}${queuedTag}${queuedList}`;
 
     if (this.menuPane === 'root') {
       this.menuEl.innerHTML = header;
@@ -2626,18 +3002,12 @@ export class BattleView {
         this.pickCommand({ type: 'flee' }), true, labelFor(this.binds.flee)));
       // Formation presets: queue a standard opener for the whole party.
       const presetRow = document.createElement('div');
-      presetRow.style.cssText = `display:flex; gap:5px; margin-top:7px; padding-top:7px; border-top:1px solid ${T.rule};`;
+      presetRow.className = 'bv-menu-sec';
       for (const [name, preset] of Object.entries(BattleView.PRESETS)) {
         const p = document.createElement('button');
-        p.style.cssText = [
-          'flex:1; padding:5px 4px; cursor:pointer; font-size:10.5px;',
-          `background:rgba(255,255,255,0.03); color:${T.goldDim}; border:1px solid ${T.line}; border-radius:${T.r2};`,
-        ].join('');
         p.innerHTML = preset.label;
         const presetBind = { standard: this.binds.formationStandard, careful: this.binds.formationCareful, reckless: this.binds.formationReckless }[name] ?? '';
         p.title = `Formation — ${preset.hint} (key ${labelFor(presetBind)}; queues every hero's default order)`;
-        p.addEventListener('mouseenter', () => { p.style.borderColor = T.gold; p.style.color = '#f2dca0'; });
-        p.addEventListener('mouseleave', () => { p.style.borderColor = T.line; p.style.color = T.goldDim; });
         p.addEventListener('click', () => this.runPreset(name));
         presetRow.appendChild(p);
       }
@@ -2648,7 +3018,7 @@ export class BattleView {
       const kind = hero.resourceKind;
       const poolColor = RESOURCE_COLOR[kind];
       const poolLine = document.createElement('div');
-      poolLine.style.cssText = `font-size:10.5px; color:${T.muted}; margin:2px 0 6px;`;
+      poolLine.className = 'bv-menu-note';
       poolLine.innerHTML = kind === 'blood'
         ? `<span style="color:${poolColor};">Blood</span> — skills are paid in hit points (${hero.hp}/${hero.maxHp})`
         : `<span style="color:${poolColor};">${RESOURCE_LABEL[kind]}</span> ${hero.resource}/${hero.resourceMax} · +${resourceRegen(kind)} a round`;
@@ -2713,7 +3083,7 @@ export class BattleView {
 
     // Keyboard hint row under the menu.
     const hint = document.createElement('div');
-    hint.style.cssText = `margin-top:7px; padding-top:6px; border-top:1px solid ${T.rule}; color:${T.faint}; font-size:9px; text-align:center;`;
+    hint.className = 'bv-menu-hint';
     if (this.quickCastFlash) {
       hint.style.color = T.gold;
       hint.textContent = this.quickCastFlash;
@@ -2736,6 +3106,8 @@ export class BattleView {
     const cur = this.menuButtons[this.menuCursor];
     if (!cur || !cur.key) this.menuCursor = this.defaultCursorIndex();
     this.applyCursor();
+    this.renderPartyStatus();
+    this.renderFocus();
   }
 
   /** First selectable (numbered) entry — the cursor's home position. */
@@ -2750,8 +3122,8 @@ export class BattleView {
     if (this.cursorEl && this.cursorEl.parentElement) this.cursorEl.remove();
     this.cursorEl = null;
     this.menuButtons.forEach(b => {
-      b.el.style.borderColor = b.danger ? '#6a3630' : T.line;
-      b.el.style.background = b.danger ? 'rgba(58,24,20,0.85)' : 'rgba(255,255,255,0.035)';
+      b.el.style.removeProperty('border-color');
+      b.el.style.removeProperty('background');
       const old = b.el.querySelector('.menu-cursor');
       if (old) old.remove();
     });
@@ -3184,6 +3556,8 @@ export class BattleView {
       return;
     }
     this.targeting = { cmd, candidates, index: 0 };
+    this.renderEnemies();
+    this.renderHeroes();
     this.renderMenu(); // menu repurposes itself as the aim prompt
   }
 
@@ -3221,6 +3595,8 @@ export class BattleView {
     const cur = this.targeting.candidates[this.targeting.index];
     const cmd = this.targeting.cmd;
     this.targeting = null;
+    this.renderEnemies();
+    this.renderHeroes();
     if (cmd.type === 'attack') cmd.targetMonsterId = cur?.id;
     else if (cmd.type === 'spell') {
       if (cur?.isEnemy) cmd.targetMonsterId = cur.id;
@@ -3234,6 +3610,8 @@ export class BattleView {
     this.targeting = null;
     this.applyTargetCursor(); // clears the ring
     this.menuPane = 'root';
+    this.renderEnemies();
+    this.renderHeroes();
     this.renderMenu();
   }
 
@@ -3309,12 +3687,6 @@ export class BattleView {
       this.spoilsEl = document.createElement('div');
       this.spoilsEl.id = 'battle-spoils';
       this.spoilsEl.className = 'dp-window';
-      this.spoilsEl.style.cssText = [
-        'position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:32;',
-        'min-width:320px; max-width:460px; max-height:70%; overflow-y:auto; padding:16px 20px;',
-        'box-shadow:0 6px 40px rgba(0,0,0,0.8), 0 0 26px rgba(255,200,60,0.22);',
-        `font-family:${T.bodyFont}; color:#e8e0c8;`,
-      ].join('');
       this.root.appendChild(this.spoilsEl);
     }
     this.spoilsEl.style.display = 'block';
@@ -3323,35 +3695,31 @@ export class BattleView {
       magic: '✦', potion: '🧪', scroll: '📜', treasure: '💎', other: '·',
     };
     const itemLines = spoils.items.length === 0
-      ? `<div style="color:${T.faint}; font-size:11px; margin:3px 0; font-style:italic;">The corpses yield nothing but dust.</div>`
+      ? `<div class="bv-sp-item" style="color:${T.faint}; font-style:italic;">The corpses yield nothing but dust.</div>`
       : spoils.items.map(i =>
-        `<div style="font-size:11px; margin:3px 0; color:${i.kind === 'magic' ? '#c8a8ff' : i.kind === 'treasure' ? '#e8c860' : '#a8d8b0'};">` +
+        `<div class="bv-sp-item" style="color:${i.kind === 'magic' ? '#c8a8ff' : i.kind === 'treasure' ? '#e8c860' : '#a8d8b0'};">` +
         `${kindIcon[i.kind]} ${i.name}</div>`).join('');
-    const killLines = spoils.kills.map(k =>
-      `<span style="display:inline-block; margin:2px 8px 2px 0; font-size:10px; color:${T.muted};">☠ ${k.count}× ${k.name}</span>`).join('');
+    const killLines = spoils.kills.map(k => `<span class="bv-sp-kill">☠ ${k.count}× ${k.name}</span>`).join('');
+    const rounds = this.round;
+    const standing = this.party ? this.party.members.filter(m => m.isAlive && m.hp > 0).length : 0;
+    const total = this.party ? this.party.members.length : 0;
 
     this.spoilsEl.innerHTML = `
-      <div style="text-align:center; margin-bottom:10px;">
-        <div style="font-family:${T.titleFont}; font-size:23px; font-weight:bold; color:${T.gold}; letter-spacing:6px; text-shadow:0 0 14px rgba(232,197,106,0.55);">
-          ${spoils.boss ? '⭐ VICTORY! ⭐' : 'VICTORY!'}
-        </div>
-        <div style="font-size:10px; color:${T.goldDim}; letter-spacing:3px; margin-top:4px; font-style:italic;">THE FIELD IS YOURS</div>
+      <div class="bv-sp-head">
+        <div class="t">${spoils.boss ? '⭐ VICTORY ⭐' : 'VICTORY'}</div>
+        <div class="s">${spoils.boss ? 'THE BOSS IS DOWN' : 'THE FIELD IS YOURS'} · ${rounds} ${rounds === 1 ? 'ROUND' : 'ROUNDS'} · ${standing} OF ${total} STANDING</div>
       </div>
-      <div style="border-top:1px solid ${T.rule}; padding-top:8px;">
-        <div style="display:flex; justify-content:space-between; font-size:12px; margin:4px 0;">
-          <span style="color:${T.muted};">Experience</span><span class="dp-num" style="color:${T.info};">+${spoils.xpEach} XP each</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-size:12px; margin:4px 0;">
-          <span style="color:${T.muted};">Coin</span><span class="dp-num" style="color:${T.coin};">💰 ${spoils.gold} gp</span>
-        </div>
+      <div class="bv-sp-stats">
+        <div class="bv-sp-stat"><div class="k">Experience</div><div class="v" style="color:${T.info};">+${spoils.xpEach}</div><div class="k" style="margin-top:1px;">each</div></div>
+        <div class="bv-sp-stat"><div class="k">Coin</div><div class="v" style="color:${T.coin};">${spoils.gold}</div><div class="k" style="margin-top:1px;">gold</div></div>
+        <div class="bv-sp-stat"><div class="k">Slain</div><div class="v">${spoils.kills.reduce((n, k) => n + k.count, 0)}</div><div class="k" style="margin-top:1px;">foes</div></div>
       </div>
-      <div style="border-top:1px solid ${T.rule}; margin-top:8px; padding-top:6px;">
-        <div class="dp-section-label" style="font-size:9px; color:${T.goldDim}; margin-bottom:4px;">SPOILS</div>
-        ${itemLines}
+      <div class="bv-sp-cols">
+        <div><div class="bv-sp-sec">Spoils</div>${itemLines}</div>
+        <div><div class="bv-sp-sec">The fallen</div>${killLines || `<span class="bv-sp-kill">none</span>`}</div>
       </div>
-      ${killLines ? `<div style="border-top:1px solid ${T.rule}; margin-top:8px; padding-top:6px;">${killLines}</div>` : ''}
-      <div style="text-align:center; margin-top:12px;">
-        <button id="spoils-continue" style="padding:9px 30px; background:linear-gradient(180deg, rgba(96,80,36,0.95), rgba(58,46,20,0.95)); color:#f6e7bd; border:1px solid ${T.goldDim}; border-radius:${T.r2}; cursor:pointer; font-family:${T.titleFont}; font-size:13px; letter-spacing:2px; box-shadow:0 0 14px rgba(232,197,106,0.2);">Continue ▸</button>
+      <div class="bv-sp-foot">
+        <button id="spoils-continue" class="dp-btn-gold dp-title" style="padding:9px 30px; font-size:13px; letter-spacing:2px; border-radius:${T.r2}; box-shadow:0 0 14px rgba(232,197,106,0.2); cursor:pointer;">Continue ▸</button>
       </div>
     `;
     this.spoilsEl.querySelector('#spoils-continue')!.addEventListener('click', () => this.dismissSpoils());

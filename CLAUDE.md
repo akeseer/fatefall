@@ -269,3 +269,15 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   every change so `noteFullscreen` keeps the setting truthful. F11 and Alt+Enter toggle. The panel
   is `ui/SettingsPanel.ts`, opened from the title screen, the ⚙ button and the Sound drawer; it
   never holds state, it redraws from `Game.settings` after every change.
+- **Battle window layout** (`ui/BattleView.ts`): the header carries the place (`renderTitle` from the
+  `BattleScene`), the round, and the whole initiative order as portrait tiles (`renderTurnOrder`,
+  rotated so the acting one is first, a divider where the round turns), then speed, mode and a `?`
+  for the controls overlay. The bottom is three `.bv-panel` windows: party rows (`renderPartyStatus`,
+  clickable to move the command menu with `jumpMenuTo`), the log (`data-cat` per line from
+  `feedCategory`, filters on `#battle-feed[data-filter]`, sticky scrolling with a newest button), and
+  the focus sheet (`renderFocus`: hovered, then crosshair, then commanded, then acting; `monsterSheet`
+  / `heroSheet`). Hover and click are delegated once in `wirePanels`; a stand under the crosshair is
+  chosen with one click and fired with a second. Conditions are `.bv-pill`s everywhere
+  (`pillsHtml`). Sprite thumbnails come from `thumb()` and are cleared per fight. The menu, its
+  buttons, the presets and the spoils are class-styled (`.bv-menu-*`, `.bv-sp-*`) in the template's
+  stylesheet, so restyling them is CSS, not code.
