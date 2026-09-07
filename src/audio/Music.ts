@@ -51,7 +51,11 @@
 
 import { getAudio } from './Audio';
 
-export type MusicMood = 'title' | 'overworld' | 'overworld_night' | 'town' | 'dungeon' | 'dungeon_clockwork' | 'dungeon_haunted' | 'battle' | 'boss' | 'none';
+export type MusicMood =
+  | 'title' | 'overworld' | 'overworld_night' | 'overworld_storm'
+  | 'town' | 'town_night' | 'festival'
+  | 'dungeon' | 'dungeon_deep' | 'dungeon_clockwork' | 'dungeon_haunted' | 'dungeon_wild' | 'dungeon_water' | 'dungeon_sky' | 'dungeon_sand'
+  | 'battle' | 'boss' | 'victory' | 'none';
 
 // ── Tunables ──
 
@@ -99,6 +103,10 @@ const DRIP_ONE_IN = 22;
 export const MAJOR: readonly number[] = [0, 2, 4, 5, 7, 9, 11];
 export const AEOLIAN: readonly number[] = [0, 2, 3, 5, 7, 8, 10];
 export const PHRYGIAN: readonly number[] = [0, 1, 3, 5, 7, 8, 10];
+export const DORIAN: readonly number[] = [0, 2, 3, 5, 7, 9, 10];
+export const LYDIAN: readonly number[] = [0, 2, 4, 6, 7, 9, 11];
+export const MIXOLYDIAN: readonly number[] = [0, 2, 4, 5, 7, 9, 10];
+export const HARMONIC_MINOR: readonly number[] = [0, 2, 3, 5, 7, 8, 11];
 
 /** Semitones above the key root of a scale degree; degrees outside 0..6 wrap through octaves. */
 export function scaleNote(scale: readonly number[], degree: number): number {
@@ -515,10 +523,207 @@ const DUNGEON_HAUNTED: Piece = {
   progression: [0, 5, 6, 0, 3, 0, 6, 0, 5, 3, 6, 0, 0, 5, 6, 0],
 };
 
+
+/** Town after dark: the same lilt in the relative minor, slower, the lead mostly resting. */
+const TOWN_NIGHT: Piece = {
+  ...TOWN,
+  seed: 0x7047,
+  bpm: 132,
+  root: 52,
+  scale: AEOLIAN,
+  //           i  VI i  VII i  VI iv VII  VI III VI i  iv VII i  i
+  progression: [0, 5, 0, 6, 0, 5, 3, 6, 5, 2, 5, 0, 3, 6, 0, 0],
+  lead: { ...TOWN.lead, gain: 0.08, density: 0.5, lowpass: 1800 },
+  pad: { ...TOWN.pad, gain: 0.035, lowpass: 1100, attack: 0.5 },
+};
+
+/** A festival: the town's lilt at a run in the mixolydian, with a drum and a tambourine of hat. */
+const FESTIVAL: Piece = {
+  ...TOWN,
+  seed: 0xfe57,
+  bpm: 208,
+  root: 57,
+  scale: MIXOLYDIAN,
+  //           I  bVII I  IV  I  bVII IV I   V  IV bVII I  IV bVII I  I
+  progression: [0, 6, 0, 3, 0, 6, 3, 0, 4, 3, 6, 0, 3, 6, 0, 0],
+  lead: {
+    ...TOWN.lead,
+    type: 'square',
+    gain: 0.09,
+    lowpass: 2600,
+    vibrato: 12,
+    density: 0.95,
+    phrases: [
+      ...TOWN.lead.phrases,
+      [[0, 2, 0], [2, 2, 2], [4, 2, 4], [6, 2, 5], [8, 2, 4], [10, 2, 2]],
+      [[0, 2, 4], [2, 2, 4], [4, 2, 5], [6, 2, 4], [8, 4, 2]],
+      [[0, 3, 7], [3, 3, 5], [6, 3, 4], [9, 3, 2]],
+    ],
+  },
+  drums: { kick: [0, 6], snare: [3, 9], hat: [0, 2, 4, 6, 8, 10], openHat: [11], gain: 0.5 },
+};
+
+/** The deep floors: the dungeon lower and slower still, the lead nearly gone. */
+const DUNGEON_DEEP: Piece = {
+  ...DUNGEON,
+  seed: 0xdee9,
+  bpm: 46,
+  root: 43,
+  lead: { ...DUNGEON.lead, gain: 0.06, density: 0.28 },
+  pad: { ...DUNGEON.pad, lowpass: 380, gain: 0.035, attack: 1.8 },
+};
+
+/** The wild places: jungle, glade, grotto of fungus. Dorian, a hand drum, the lead a flute. */
+const DUNGEON_WILD: Piece = {
+  ...DUNGEON,
+  seed: 0x0d1d,
+  bpm: 84,
+  root: 52,
+  scale: DORIAN,
+  //           i  IV i  VII i  IV ii VII  i  III IV i  ii VII i  i
+  progression: [0, 3, 0, 6, 0, 3, 1, 6, 0, 2, 3, 0, 1, 6, 0, 0],
+  bass: { ...DUNGEON.bass, type: 'sine', pattern: [[0, 6, 0], [6, 4, 7], [10, 6, 0]] },
+  lead: {
+    ...DUNGEON.lead,
+    type: 'triangle',
+    octave: 24,
+    gain: 0.07,
+    lowpass: 2600,
+    attack: 0.04,
+    vibrato: 8,
+    density: 0.55,
+    phrases: [
+      [[0, 4, 0], [4, 4, 2], [8, 8, 4]],
+      [[0, 2, 4], [2, 2, 5], [4, 4, 4], [8, 8, 2]],
+      [[4, 4, 7], [8, 4, 6], [12, 4, 4]],
+      [[0, 6, 2], [6, 2, 4], [8, 8, 0]],
+      [[0, 12, 4]],
+    ],
+  },
+  pad: { ...DUNGEON.pad, type: 'triangle', lowpass: 900, gain: 0.03 },
+  drums: { kick: [0, 10], snare: [], hat: [4, 12], openHat: [], gain: 0.35 },
+  drip: false,
+};
+
+/** Drowned places: the dungeon with more water in it, a higher, thinner lead like light on a pool. */
+const DUNGEON_WATER: Piece = {
+  ...DUNGEON,
+  seed: 0x0aa7,
+  bpm: 54,
+  root: 47,
+  scale: AEOLIAN,
+  //           i  VI III VII i  iv VI VII  i  III iv i  VI VII i  i
+  progression: [0, 5, 2, 6, 0, 3, 5, 6, 0, 2, 3, 0, 5, 6, 0, 0],
+  lead: { ...DUNGEON.lead, octave: 24, gain: 0.055, lowpass: 3000, attack: 0.15, density: 0.5 },
+  pad: { ...DUNGEON.pad, type: 'triangle', lowpass: 700, gain: 0.035, attack: 1.5 },
+  drip: true,
+};
+
+/** High places: citadel, causeway, peak. Lydian, airy, a pad an octave up and no water at all. */
+const DUNGEON_SKY: Piece = {
+  ...DUNGEON,
+  seed: 0x5c1e,
+  bpm: 72,
+  root: 55,
+  scale: LYDIAN,
+  //           I  II I  V   I  II vi V   I  vii II I   vi V  I  I
+  progression: [0, 1, 0, 4, 0, 1, 5, 4, 0, 6, 1, 0, 5, 4, 0, 0],
+  bass: { ...DUNGEON.bass, type: 'sine', pattern: [[0, 8, 0], [8, 8, 7]] },
+  lead: { ...DUNGEON.lead, type: 'triangle', octave: 24, gain: 0.07, lowpass: 2800, attack: 0.1, vibrato: 6, density: 0.6 },
+  pad: { type: 'triangle', octave: 12, gain: 0.035, lowpass: 1400, attack: 0.9, detune: 6, sevenths: true },
+  drip: false,
+};
+
+/** Sand and fire: tomb and volcano. The harmonic minor's raised seventh, a square lead under a low filter. */
+const DUNGEON_SAND: Piece = {
+  ...DUNGEON,
+  seed: 0x5a4d,
+  bpm: 66,
+  root: 50,
+  scale: HARMONIC_MINOR,
+  //           i  VI V  i   iv i  V  i   VI III iv V   i  VI V  i
+  progression: [0, 5, 4, 0, 3, 0, 4, 0, 5, 2, 3, 4, 0, 5, 4, 0],
+  lead: {
+    ...DUNGEON.lead,
+    type: 'square',
+    octave: 12,
+    gain: 0.05,
+    lowpass: 1400,
+    attack: 0.05,
+    vibrato: 14,
+    density: 0.5,
+    phrases: [
+      [[0, 4, 0], [4, 2, 1], [6, 2, 0], [8, 8, 6]],
+      [[0, 8, 4], [8, 4, 3], [12, 4, 1]],
+      [[4, 4, 6], [8, 4, 0], [12, 4, 1]],
+      [[0, 12, 0]],
+    ],
+  },
+  drip: false,
+};
+
+/** The road in a storm: the night's minor at a march, a kick under it like distant thunder. */
+const OVERWORLD_STORM: Piece = {
+  ...OVERWORLD_NIGHT,
+  seed: 0x5707,
+  bpm: 100,
+  root: 45,
+  scale: PHRYGIAN,
+  lead: { ...OVERWORLD_NIGHT.lead, density: 0.45, gain: 0.07 },
+  pad: { ...OVERWORLD_NIGHT.pad, type: 'sawtooth', lowpass: 700, gain: 0.03 },
+  drums: { kick: [0, 8, 11], snare: [], hat: [], openHat: [], gain: 0.55 },
+};
+
+/** Victory: a fanfare over the spoils. C major at a march, a square lead climbing, snare on the backbeat. */
+const VICTORY: Piece = {
+  seed: 0x71c7,
+  bpm: 138,
+  stepsPerBeat: 4,
+  beatsPerBar: 4,
+  root: 60,
+  scale: MAJOR,
+  //           I  IV V  I   vi IV V  I   IV I  V  vi  IV V  I  I
+  progression: [0, 3, 4, 0, 5, 3, 4, 0, 3, 0, 4, 5, 3, 4, 0, 0],
+  bass: {
+    type: 'triangle',
+    octave: -12,
+    gain: 0.16,
+    lowpass: 700,
+    pattern: [[0, 4, 0], [4, 4, 0], [8, 4, 7], [12, 4, 'approach']],
+  },
+  lead: {
+    type: 'square',
+    octave: 12,
+    gain: 0.11,
+    lowpass: 2600,
+    attack: 0.01,
+    vibrato: 8,
+    density: 1,
+    phrases: [
+      [[0, 2, 0], [2, 2, 2], [4, 2, 4], [6, 2, 7], [8, 8, 9]],
+      [[0, 4, 4], [4, 4, 7], [8, 4, 9], [12, 4, 11]],
+      [[0, 2, 7], [2, 2, 7], [4, 4, 9], [8, 2, 7], [10, 2, 4], [12, 4, 7]],
+      [[0, 3, 0], [3, 3, 4], [6, 2, 7], [8, 8, 11]],
+    ],
+    cadence: [[[0, 4, 7], [4, 4, 4], [8, 8, 0]], [[0, 2, 9], [2, 2, 7], [4, 4, 4], [8, 8, 0]]],
+  },
+  pad: { type: 'triangle', octave: 0, gain: 0.04, lowpass: 2000, attack: 0.05, detune: 6, sevenths: false },
+  drums: { kick: [0, 8], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12, 14], openHat: [], gain: 0.7 },
+};
+
 export const PIECES: Readonly<Record<Exclude<MusicMood, 'none'>, Piece>> = {
   title: TITLE,
   dungeon_clockwork: DUNGEON_CLOCKWORK,
   dungeon_haunted: DUNGEON_HAUNTED,
+  dungeon_deep: DUNGEON_DEEP,
+  dungeon_wild: DUNGEON_WILD,
+  dungeon_water: DUNGEON_WATER,
+  dungeon_sky: DUNGEON_SKY,
+  dungeon_sand: DUNGEON_SAND,
+  town_night: TOWN_NIGHT,
+  festival: FESTIVAL,
+  overworld_storm: OVERWORLD_STORM,
+  victory: VICTORY,
   overworld: OVERWORLD,
   overworld_night: OVERWORLD_NIGHT,
   town: TOWN,

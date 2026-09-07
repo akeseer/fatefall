@@ -639,6 +639,231 @@ export const sfx = {
     tone('sawtooth', 100, 70, t, 0.5, 0.14, { lowpass: 700 });
   },
 
+  // ── Doors, traps and the dark ──
+
+  /** A door swinging open: a wooden creak rising, then the latch falling back. */
+  doorOpen(): void {
+    if (!gate('doorOpen')) return;
+    const t = now();
+    tone('sawtooth', 90, 160, t, 0.22, 0.06, { lowpass: 700, sweep: 'lin' });
+    hiss('bandpass', 900, t, 0.18, 0.05, 2);
+    tone('square', 260, 200, t + 0.22, 0.05, 0.1, { lowpass: 1200 });
+  },
+
+  /** A locked door: the handle rattled twice against iron. */
+  doorLocked(): void {
+    if (!gate('doorLocked')) return;
+    const t = now();
+    for (let i = 0; i < 2; i++) {
+      tone('square', 330, 300, t + i * 0.11, 0.05, 0.12, { lowpass: 2200 });
+      hiss('highpass', 4000, t + i * 0.11, 0.04, 0.08);
+    }
+  },
+
+  /** A key turning: two clicks and the bolt drawing back. */
+  unlock(): void {
+    if (!gate('unlock')) return;
+    const t = now();
+    tone('square', 1200, 1200, t, 0.03, 0.1);
+    tone('square', 900, 900, t + 0.09, 0.03, 0.1);
+    tone('sine', 180, 120, t + 0.18, 0.14, 0.22);
+    hiss('bandpass', 1500, t + 0.18, 0.1, 0.08, 1.5);
+  },
+
+  /** A secret door found: stone grinding, then a breath of air from the room behind it. */
+  secret(): void {
+    if (!gate('secret')) return;
+    const t = now();
+    hiss('lowpass', 500, t, 0.4, 0.16);
+    tone('sawtooth', 70, 55, t, 0.4, 0.08, { lowpass: 300 });
+    hiss('bandpass', 2400, t + 0.42, 0.3, 0.05, 0.6);
+    for (let i = 0; i < 3; i++) tone('sine', 880 + i * 220, 880 + i * 220, t + 0.5 + i * 0.09, 0.2, 0.05);
+  },
+
+  /** A trap springing: a mechanism's snap and a rush. */
+  trapSpring(): void {
+    if (!gate('trapSpring')) return;
+    const t = now();
+    tone('square', 800, 300, t, 0.05, 0.16, { lowpass: 3000 });
+    hiss('highpass', 2500, t + 0.02, 0.14, 0.14);
+    tone('sine', 120, 60, t + 0.06, 0.16, 0.24);
+  },
+
+  /** A trap disarmed: a careful click, and the spring easing. */
+  disarm(): void {
+    if (!gate('disarm')) return;
+    const t = now();
+    tone('square', 1500, 1500, t, 0.025, 0.08);
+    tone('square', 1100, 1100, t + 0.12, 0.025, 0.08);
+    tone('sine', 400, 250, t + 0.22, 0.2, 0.06, { sweep: 'lin' });
+  },
+
+  /** A torch lit: a strike, and the flame catching with a soft roar. */
+  torch(): void {
+    if (!gate('torch')) return;
+    const t = now();
+    hiss('highpass', 5000, t, 0.05, 0.12);
+    hiss('bandpass', 700, t + 0.05, 0.45, 0.1, 0.5);
+    tone('sine', 110, 130, t + 0.05, 0.4, 0.05, { sweep: 'lin' });
+  },
+
+  /** The last torch dying: a hiss thinning out, and a low note that stays. */
+  dark(): void {
+    if (!gate('dark')) return;
+    const t = now();
+    hiss('bandpass', 1200, t, 0.5, 0.1, 0.7);
+    tone('sine', 82, 55, t + 0.2, 1.2, 0.14, { attack: 0.3 });
+  },
+
+  /** Making camp: the fire settling, a log knocking, an ember popping. */
+  camp(): void {
+    if (!gate('camp')) return;
+    const t = now();
+    hiss('lowpass', 600, t, 0.8, 0.08);
+    tone('sine', 140, 110, t + 0.15, 0.1, 0.16, { lowpass: 400 });
+    for (let i = 0; i < 3; i++) hiss('highpass', 4000 + i * 800, t + 0.3 + i * 0.22, 0.03, 0.06);
+  },
+
+  // ── Quests, keys and cards ──
+
+  /** Taking a posting: a quill's scratch and a small, rising resolve. */
+  questTake(): void {
+    if (!gate('questTake')) return;
+    const t = now();
+    hiss('bandpass', 3600, t, 0.12, 0.06, 0.8);
+    tone('triangle', 523, 523, t + 0.1, 0.1, 0.1);
+    tone('triangle', 784, 784, t + 0.2, 0.18, 0.1);
+  },
+
+  /** A quest turned in: three notes up and a warm chord to close. */
+  questDone(): void {
+    if (!gate('questDone')) return;
+    const t = now();
+    const notes = [523, 659, 784];
+    notes.forEach((f, i) => tone('triangle', f, f, t + i * 0.09, 0.14, 0.1));
+    for (const f of [523, 659, 784, 1047]) tone('sine', f, f, t + 0.3, 0.5, 0.06, { attack: 0.03 });
+  },
+
+  /** An achievement: a bright bell struck twice, the second higher. */
+  achievement(): void {
+    if (!gate('achievement')) return;
+    const t = now();
+    tone('sine', 1319, 1319, t, 0.4, 0.14, { attack: 0.005 });
+    tone('sine', 2637, 2637, t, 0.25, 0.05, { attack: 0.005 });
+    tone('sine', 1760, 1760, t + 0.18, 0.6, 0.14, { attack: 0.005 });
+    tone('sine', 3520, 3520, t + 0.18, 0.3, 0.05, { attack: 0.005 });
+  },
+
+  /** A story card: a page turning and a low, held note under it. */
+  page(): void {
+    if (!gate('page')) return;
+    const t = now();
+    hiss('bandpass', 2800, t, 0.16, 0.08, 0.6);
+    hiss('bandpass', 1800, t + 0.12, 0.12, 0.05, 0.6);
+    tone('sine', 196, 196, t + 0.05, 0.9, 0.06, { attack: 0.2 });
+  },
+
+  /** A key picked up: a small iron ring of notes. */
+  key(): void {
+    if (!gate('key')) return;
+    const t = now();
+    for (let i = 0; i < 3; i++) {
+      tone('square', 2200 - i * 300, 2200 - i * 300, t + i * 0.05, 0.05, 0.05, { lowpass: 4000 });
+      hiss('highpass', 6000, t + i * 0.05, 0.03, 0.04);
+    }
+  },
+
+  /** A riddle answered: a rising three-note question resolved on a fourth. */
+  riddle(): void {
+    if (!gate('riddle')) return;
+    const t = now();
+    [440, 554, 659].forEach((f, i) => tone('triangle', f, f, t + i * 0.1, 0.12, 0.09));
+    tone('triangle', 880, 880, t + 0.34, 0.4, 0.12);
+    tone('sine', 220, 220, t + 0.34, 0.4, 0.06);
+  },
+
+  /** A waypoint set: a soft tap on the map. */
+  waypoint(): void {
+    if (!gate('waypoint')) return;
+    const t = now();
+    tone('sine', 700, 500, t, 0.06, 0.08);
+  },
+
+  // ── Furniture of the dungeon ──
+
+  /** An altar or a fountain: a bell, and its overtone lingering. */
+  bell(): void {
+    if (!gate('bell')) return;
+    const t = now();
+    tone('sine', 1047, 1047, t, 1.2, 0.12, { attack: 0.004 });
+    tone('sine', 2637, 2637, t, 0.5, 0.04, { attack: 0.004 });
+    tone('sine', 1568, 1568, t + 0.02, 0.9, 0.03, { attack: 0.004 });
+  },
+
+  /** A forge: hammer on anvil, twice, and the hiss of the quench. */
+  anvil(): void {
+    if (!gate('anvil')) return;
+    const t = now();
+    for (let i = 0; i < 2; i++) {
+      tone('square', 1800, 1500, t + i * 0.28, 0.08, 0.1, { lowpass: 5000 });
+      tone('sine', 900, 700, t + i * 0.28, 0.12, 0.12);
+      hiss('highpass', 5000, t + i * 0.28, 0.05, 0.08);
+    }
+    hiss('bandpass', 2000, t + 0.62, 0.4, 0.08, 0.5);
+  },
+
+  /** A library: pages riffled, and dust. */
+  pages(): void {
+    if (!gate('pages')) return;
+    const t = now();
+    for (let i = 0; i < 5; i++) hiss('bandpass', 3000 + i * 200, t + i * 0.06, 0.05, 0.05, 0.8);
+    hiss('lowpass', 900, t + 0.3, 0.3, 0.03);
+  },
+
+  /** Stone moved: a sarcophagus lid, a throne's seat. Grinding, then a settle. */
+  stone(): void {
+    if (!gate('stone')) return;
+    const t = now();
+    hiss('lowpass', 400, t, 0.5, 0.14);
+    tone('sawtooth', 60, 48, t, 0.5, 0.08, { lowpass: 250 });
+    tone('sine', 90, 70, t + 0.5, 0.15, 0.2);
+  },
+
+  /** A vault: coin on coin, cascading. */
+  vault(): void {
+    if (!gate('vault')) return;
+    const t = now();
+    for (let i = 0; i < 7; i++) {
+      const f = 1500 + ((i * 731) % 900);
+      tone('sine', f, f, t + i * 0.045, 0.08, 0.07);
+      hiss('highpass', 7000, t + i * 0.045, 0.03, 0.03);
+    }
+  },
+
+  /** A horn on the road or at the quay: a ship's or a caravan's, two notes held. */
+  horn(): void {
+    if (!gate('horn')) return;
+    const t = now();
+    tone('sawtooth', 196, 196, t, 0.5, 0.08, { attack: 0.05, lowpass: 900 });
+    tone('sawtooth', 262, 262, t + 0.45, 0.8, 0.09, { attack: 0.05, lowpass: 900 });
+    tone('sine', 98, 98, t, 1.2, 0.05, { attack: 0.1 });
+  },
+
+  /** A parley opened: a held breath of a chord, neither friendly nor not. */
+  parley(): void {
+    if (!gate('parley')) return;
+    const t = now();
+    for (const f of [330, 415, 494]) tone('triangle', f, f, t, 0.8, 0.05, { attack: 0.12 });
+  },
+
+  /** The victory fanfare's short cousin: the fight is won, before the music turns. */
+  triumph(): void {
+    if (!gate('triumph')) return;
+    const t = now();
+    [523, 659, 784, 1047].forEach((f, i) => tone('square', f, f, t + i * 0.08, 0.16, 0.07, { lowpass: 2600 }));
+    tone('triangle', 1047, 1047, t + 0.34, 0.6, 0.1);
+  },
+
   /** A menu or button: a tiny blip. */
   click(): void {
     if (!gate('click')) return;

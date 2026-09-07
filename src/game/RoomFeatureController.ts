@@ -11,6 +11,7 @@
  */
 
 import { MAGIC_ITEMS } from '../ai/DnDKnowledge';
+import { sfx } from '../audio/Sfx';
 import type { GameCharacter } from '../entities/Character';
 import type { MonsterTemplate } from '../entities/Monster';
 import type { Party } from '../entities/Party';
@@ -388,6 +389,7 @@ export class RoomFeatureController {
 
   private featureAltar(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say(`The ${f.name} is spent \u2014 the candle gutters out.`, '#888'); return true; }
+    sfx.bell();
     f.used = true;
     const deity = this.game.party.leader.deity;
     const heal = rollDice(1, 4) + 2;
@@ -403,6 +405,7 @@ export class RoomFeatureController {
 
   private featureVault(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The vault has been picked clean.', '#888'); return true; }
+    sfx.vault();
     // The great lock: three keys from three floors, and what is behind it is worth them.
     if (this.game.vaultKeysHeld() >= 3) {
       f.used = true;
@@ -486,6 +489,7 @@ export class RoomFeatureController {
 
   private featureForge(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The forge is cold \u2014 nothing left to work here.', '#888'); return true; }
+    sfx.anvil();
     f.used = true;
     const leader = this.game.party.leader;
     leader.bonusAttackBonus += 1;
@@ -495,6 +499,7 @@ export class RoomFeatureController {
 
   private featureLibrary(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The tomes have been read \u2014 the shelves hold only rot now.', '#888'); return true; }
+    sfx.pages();
     f.used = true;
     const scholar = this.game.bestScout();
     if (rollD20() + scholar.intMod >= 14) {
@@ -516,6 +521,7 @@ export class RoomFeatureController {
 
   private featureFountain(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The fountain is dry \u2014 its basin holds only a film of dust.', '#888'); return true; }
+    sfx.bell();
     f.used = true;
     const drinker = this.game.party.members.find(m => !m.isDead && m.hp < m.maxHp) ?? this.game.party.leader;
     if (Math.random() < 0.5) {
@@ -537,6 +543,7 @@ export class RoomFeatureController {
 
   private featureSarcophagus(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The lid lies askew \u2014 nothing left to disturb.', '#888'); return true; }
+    sfx.stone();
     f.used = true;
     const roll = rollD20();
     const opener = this.game.bestScout();
@@ -562,6 +569,7 @@ export class RoomFeatureController {
 
   private featureThrone(f: RoomFeature, say: (l: string, c?: string) => void): boolean {
     if (f.used) { say('The throne holds nothing new \u2014 the crown is long gone.', '#888'); return true; }
+    sfx.stone();
     f.used = true;
     const gp = rollDice(1, 6) * this.game.dungeonLevel;
     this.game.party.leader.gold += gp;

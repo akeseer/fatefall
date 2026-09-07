@@ -305,3 +305,14 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
 - **Dungeon saves** (`SaveSerializer.apply`): a save carries both the surface (`overworld`) and the
   current `map`; below ground the floor must win, and a save written in the old broken state (dungeon
   mode with the surface as its map, `looksLikeSurface`) is set down above ground instead.
+- **The score has eighteen moods** (`audio/Music.ts`): the road by day, night and storm; the town by
+  day, night and in festival; the dungeon plain, deep (floor four and below), clockwork, haunted,
+  wild, water, sky and sand, chosen by regexes over the theme id in `Game.musicMood`; battle, boss,
+  and `victory` while the spoils are up (the battle window visible out of combat). Most are derived
+  from a parent piece by spread; `tests/music-pieces.test.ts` insists every piece keeps its steps
+  inside the bar, its degrees inside its seven-note scale, sixteen bars, and its own seed. New
+  scales: `DORIAN`, `LYDIAN`, `MIXOLYDIAN`, `HARMONIC_MINOR`. The effect bank (`audio/Sfx.ts`) has
+  doors, locks, secret doors, traps springing and disarmed, torches and the dark, camp, postings
+  taken and turned in, achievements, story cards (`page`, played in `HUD.showStoryCard`), keys,
+  riddles, waypoints, the altar's bell, the forge, the library, moved stone, the vault, horns for
+  caravans and ships, a parley chord and a short triumph; each is wired at the event's own line.

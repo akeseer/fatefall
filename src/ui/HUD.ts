@@ -79,6 +79,7 @@ export class HUD {
    */
   showStoryCard(card: { kicker: string; title: string; body: string }, onClose: () => void, auto?: { seconds: number }): void {
     this.overlay.querySelector('#story-card')?.remove();
+    sfx.page();
     const screen = document.createElement('div');
     screen.id = 'story-card';
     screen.style.cssText = `position:absolute; inset:0; z-index:105; background:rgba(5,4,5,0.78); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;

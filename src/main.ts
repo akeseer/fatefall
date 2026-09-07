@@ -995,6 +995,7 @@ class Game {
       for (const restMsg of this.party.longRest()) {
         this.hud.addCombatMessage(restMsg, '#7c7');
       }
+      sfx.camp();
       this.ritualsAtCamp();
       this.patronDream();
       this.storyController.onLongRest();
@@ -2189,6 +2190,7 @@ class Game {
       truce: `\ud83d\udde3 The ${band} stop short. Neither side is sure of the other. Someone has to speak first.`,
     };
     this.hud.addCombatMessage(opening[offer], '#d8c88a');
+    sfx.parley();
     let response = chooseParleyResponse(offer, party);
     if (offer === 'toll' && this.dmPolicies.tolls === 'refuse') response = 'refuse';
     if (offer === 'toll' && this.dmPolicies.tolls === 'pay' && this.partyGold() >= tollFor(foes, party)) response = 'accept';
@@ -2261,6 +2263,7 @@ class Game {
     });
     if (!event) return;
     this.roadEventCooldownUntil = Date.now() + 90000;
+    if (event.kind === 'caravan') sfx.horn();
     for (const line of event.lines) this.hud.addCombatMessage(line, '#d8c88a');
     this.applyRoadEvent(event);
   }
@@ -2585,6 +2588,7 @@ class Game {
     this.pendingRiddle = null;
     p.feature.used = true;
     this.tally('riddles');
+    sfx.riddle();
     const base = 30 + Math.floor(Math.random() * 50);
     const gold = by === 'dm' ? base * 2 : base;
     const xp = by === 'dm' ? 60 : 30;
@@ -2815,7 +2819,7 @@ class Game {
       this.achievementQueue.push(a.id);
       this.hud.addCombatMessage(`\ud83c\udfc5 ${a.title}: ${a.text} The party may be called ${a.epithet}.`, '#ffd700');
       this.expeditionJournal.push(`Earned: ${a.title}`);
-      sfx.levelUp();
+      sfx.achievement();
     }
     this.showNextAchievement();
   }
@@ -2927,7 +2931,7 @@ class Game {
       }
       this.floorLocked = false;
       this.hud.addCombatMessage(this.floorKeyHeld ? '\ud83d\udd13 The iron key turns. The hall is open.' : '\ud83d\udd13 The lock is old and the key lies in the dust before it. The hall is open.', '#ffd700');
-      sfx.chest();
+      sfx.unlock();
       this.noteProgress();
       this.dungeonRoute = [];
       return;
@@ -2936,6 +2940,7 @@ class Game {
       this.lockedNoticeGiven = true;
       const keeper = this.monsters.find(m => m.isAlive && m.hasKey);
       this.hud.addCombatMessage(`\ud83d\udd12 The hall is locked, and the lock is not for picking. Somewhere on this floor, ${keeper?.template.name ?? 'something'} carries the key.`, '#e8b45a');
+      sfx.doorLocked();
       this.dungeonRoute = [];
     }
   }
@@ -2952,6 +2957,7 @@ class Game {
       const { result, event } = this.rollHeld(() => abilityCheck(scout.intMod + (scout.charClass.id === 'rogue' ? scout.profBonus : 0), dc, `${scout.name} \u2014 Investigation (a draught from the wall)`));
       if (result.success) {
         sd.found = true;
+        sfx.secret();
         this.map.setTile(sd.x, sd.y, TileType.Door);
         this.rooms.push(sd.room);
         assignFeature(sd.room, this.dungeonLevel, { force: true });
@@ -2989,10 +2995,12 @@ class Game {
       this.darkness = false;
       this.combatEngine.darkness = false;
       this.hud.addCombatMessage(`\ud83d\udd25 ${this.party.leader.name} lights a fresh torch. ${this.torches} left in the pack.`, '#e8b45a');
+      sfx.torch();
     } else if (!this.darkness) {
       this.darkness = true;
       this.combatEngine.darkness = true;
       this.hud.addCombatMessage('\ud83c\udf11 The last torch dies. The dark comes in close, and everything in it can see the party better than the party can see it. Torches are sold in any town.', '#c84');
+      sfx.dark();
     }
   }
 
@@ -3008,6 +3016,7 @@ class Game {
     if (!this.map.isWalkable(tile.x, tile.y)) return;
     if (this.mode === GameMode.Dungeon && !this.map.explored[tile.y]?.[tile.x]) return;
     this.waypoint = tile;
+    sfx.waypoint();
     this.dungeonRoute = [];
     this.overworldPath = [];
     this.hud.addCombatMessage(`\ud83d\udccd You point. The party heads for the spot (${tile.x}, ${tile.y}).`, '#8cf');
@@ -3960,6 +3969,7 @@ class Game {
           if (slainMonsters.some(m => m.hasKey && !m.fled)) {
             this.floorKeyHeld = true;
             this.hud.addCombatMessage('\ud83d\udd11 An iron key, warm from the body. The locked hall will open now.', '#ffd700');
+            sfx.key();
           }
           const numbers = summarizeFight(this.combatEngine.log.messages, this.party.members.map(m => m.name), this.combatEngine.log.round);
           this.hud.addCombatMessage(numbers.line, '#9aa');
@@ -4415,13 +4425,25 @@ class Game {
     if (this.phase === GamePhase.Combat) {
       return this.combatEngine.getBosses().length > 0 ? 'boss' : 'battle';
     }
-    if (this.mode === GameMode.Town) return 'town';
+    // The spoils are being read: the fight is over but its window is up.
+    if (this.hud.battleView.isVisible()) return 'victory';
+    if (this.mode === GameMode.Town) {
+      const tl = this.townLife?.byTown[this.currentTown?.id ?? ''];
+      if (tl?.festival) return 'festival';
+      return this.clock.light < 0.34 ? 'town_night' : 'town';
+    }
     if (this.mode === GameMode.Dungeon) {
       const t = this.dungeonTheme?.id ?? '';
-      if (/clockwork_foundry|astral_wreck|ancient_dwarven_hall|salt_mine_deeps/.test(t)) return 'dungeon_clockwork';
-      if (/haunted_theatre|vampire_castle|plague_hospice|frozen_necropolis|shadowfell_crossing|royal_crypt/.test(t)) return 'dungeon_haunted';
-      return 'dungeon';
+      if (/clockwork_foundry|astral_wreck|ancient_dwarven_hall|salt_mine_deeps|forge/.test(t)) return 'dungeon_clockwork';
+      if (/haunted_theatre|vampire_castle|plague_hospice|frozen_necropolis|shadowfell_crossing|royal_crypt|crypt|necropolis|catacomb/.test(t)) return 'dungeon_haunted';
+      if (/drowned|pirate_cove|sewer|grotto|flooded|cistern|sunken|lighthouse/.test(t)) return 'dungeon_water';
+      if (/jungle|fungal|fey_glade|forest|overgrown|thorn|swamp|hive/.test(t)) return 'dungeon_wild';
+      if (/sky_citadel|giants_causeway|mountain|peak|aerie|cloud/.test(t)) return 'dungeon_sky';
+      if (/desert|tomb|volcanic|pyramid|sand|ziggurat/.test(t)) return 'dungeon_sand';
+      return this.dungeonLevel >= 4 ? 'dungeon_deep' : 'dungeon';
     }
+    const w = this.weather?.type ?? '';
+    if (/heavy_rain|thunderstorm|blizzard|sandstorm|storm/.test(w)) return 'overworld_storm';
     return this.clock.light < 0.34 ? 'overworld_night' : 'overworld';
   }
 
@@ -4831,6 +4853,7 @@ class Game {
     const result = rollDisarm(disarmer, target.t, kind);
     if (result.success) {
       target.t.disarmed = true;
+      sfx.disarm();
       this.hud.addCombatMessage(`${disarmer.name} disarms the ${kind.name} with steady hands (${result.total} vs DC ${kind.disarmDc}).`, '#6c6');
     } else if (result.criticalFailure) {
       this.hud.addCombatMessage(`${disarmer.name} fumbles the ${kind.name}...`, '#c44');
@@ -4849,6 +4872,7 @@ class Game {
       for (const member of this.party.members) {
         if (!member.isAlive) continue;
         if (member.tile.x === trap.tile.x && member.tile.y === trap.tile.y) {
+          sfx.trapSpring();
           for (const msg of triggerTrap(trap, member).messages) this.hud.addCombatMessage(msg, '#c66');
           break;
         }
@@ -7492,6 +7516,7 @@ class Game {
         if (!this.overworld || !this.currentTown) return;
         const far = this.overworld.towns.filter(t => t.id !== this.currentTown!.id && manhattan(t.tile, this.currentTown!.tile) >= 30);
         if (far.length === 0) { this.hud.addCombatMessage('No boat sails from here to anywhere worth the fare.', '#886'); return; }
+        sfx.horn();
         if (this.partyGold() < cost) { this.hud.addCombatMessage('Not enough gold for passage.', '#c66'); return; }
         this.addGold(-cost);
         const dest = far[Math.floor(Math.random() * far.length)];
@@ -7693,6 +7718,7 @@ class Game {
     if (q.kind === 'collect_item') q.baselineTreasures = this.treasuresFound;
     this.activeQuestId = q.id;
     this.hud.addCombatMessage(`📜 The party accepts the posting: ${q.title}`, '#ffd700');
+    sfx.questTake();
     this.hud.townPanel.refresh();
     // A quest is a reason to leave — the party sets out at once.
     this.departTown();
@@ -7705,6 +7731,7 @@ class Game {
     // The act ends after the reward, so the card comes over a settled ledger.
     queueMicrotask(() => this.storyController.onQuestTurnedIn(q));
     this.hud.addCombatMessage(`💰 ${q.title} — complete! ${q.rewardGold} gp and ${q.rewardXp} XP per member.`, '#ffd700');
+    sfx.questDone();
     this.addGold(q.rewardGold);
     for (const m of this.party.members) {
       if (m.isDead) continue;
