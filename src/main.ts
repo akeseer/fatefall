@@ -1123,6 +1123,8 @@ class Game {
   private watchdogId: ReturnType<typeof setTimeout> | null = null;
   private static readonly WATCHDOG_MS = 100;
   private accumulator: number = 0;
+  /** The doorway the leader last stood in, so a door sounds once as it is passed. */
+  private doorStepKey = '';
   private consecutiveErrors: number = 0;
   /** Set when repeated errors halted the sim; cleared by the pause toggle / resume order. */
   private errorHalt: boolean = false;
@@ -1620,6 +1622,13 @@ class Game {
 
     // Reveal FOW
     this.map.reveal(leader.tile.x, leader.tile.y, 7);
+
+    // A door swings as the leader passes through it, once per doorway.
+    const doorKey = `${leader.tile.x},${leader.tile.y}`;
+    if (this.map.getTile(leader.tile.x, leader.tile.y) === TileType.Door && doorKey !== this.doorStepKey) {
+      this.doorStepKey = doorKey;
+      sfx.doorOpen();
+    }
 
     // Update HUD
     this.hud.setParty(this.party);
@@ -2365,6 +2374,7 @@ class Game {
     if (q.done) return;
     q.done = true;
     this.tally('roads_done');
+    sfx.triumph();
     const m = this.party.members.find(x => x.id === q.memberId);
     if (m) {
       m.abilities[q.perk.ability] = Math.min(20, m.abilities[q.perk.ability] + 1);
