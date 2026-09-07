@@ -289,3 +289,19 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   fight; Enter or `/` opens the order bar; F1 or `?` opens `showHelp`. The order bar suggests from
   `HUD.ORDERS` (a static list of phrasings the parser reads; keep it in step with the `help` text)
   and Tab fills. Both logs keep a reader's scroll place and offer a newest button.
+- **The story, told as it is played** (`story/Story.ts`): every antagonist carries `threshold`,
+  `taunt`, `bloodied` and `herald` lines beside its intro and fall; `ACT_ONE.antagonist` and `FINALE`
+  carry their own (the finale's `confrontation` is chosen by flags, most specific first, like the
+  endings). `thresholdLine` is shown once per act by `StoryController.onFloorReached` (called at the
+  end of `generateNewDungeon`; `StoryState.thresholdAct` remembers it), `storyBossLine` replaces the
+  generic boss voice in `startCombat` and the bloodied check when the boss is the act's (`isActBoss`
+  matches the decorated name), `heraldLine` speaks in the giver town, `shardBoon` banks a fated die
+  at each stairwell camp that rises with the shards held (`SHARD_BOONS`), and `storyRoadEvent` sends
+  hunters after a `hunted`/`bounty` party and help to one with an `ally_network` (hooked ahead of
+  `rollRoadEvent`). Twists leave marks in `completeAct` (`dreamed`, `seen_map`, `survivor_spared`,
+  `bounty`, `knight_lost`) that later choices `require`; `tests/story-expansion.test.ts` insists every
+  required flag is producible. Each choice's first option is the plain one: `autoPick` returns it
+  and the story tests play with it, so it must carry no `difficulty` shift.
+- **Dungeon saves** (`SaveSerializer.apply`): a save carries both the surface (`overworld`) and the
+  current `map`; below ground the floor must win, and a save written in the old broken state (dungeon
+  mode with the surface as its map, `looksLikeSurface`) is set down above ground instead.

@@ -53,7 +53,7 @@ import { rollD20, savingThrow, abilityCheck } from './rules/Rules';
 import { hazardByKind, hazardDc, readHazard, type HazardRoll } from './events/Hazards';
 import { pickCampScene, readWatch, type CampMember } from './events/CampScenes';
 import { parleyOffer, chooseParleyResponse, parleyDc, resolveParley, canParley, tollFor, type ParleyFoe, type ParleyOffer, type ParleyParty } from './events/Parley';
-import { rollRoadEvent, type RoadEvent } from './events/RoadEvents';
+import { ROAD_EVENT_CHANCE, rollRoadEvent, type RoadEvent } from './events/RoadEvents';
 import { banditGang } from './world/Ambushes';
 import { banterFor } from './events/Banter';
 import { randomPartyName } from './entities/PartyNames';
@@ -997,8 +997,11 @@ class Game {
       }
       this.ritualsAtCamp();
       this.patronDream();
+      this.storyController.onLongRest();
       this.campScene();
     }
+    // The act's floor is announced on arrival, before the boss is met.
+    this.storyController.onFloorReached(this.dungeonEntranceId, this.dungeonLevel);
 
     this.phase = GamePhase.Exploration;
     this.descending = false; // The new floor is ready — descents may queue again.
@@ -1853,7 +1856,7 @@ class Game {
     this.hud.battleView.onCommand = this.guard(this.handleBattleCommand);
     this.bossBloodiedSaid.clear();
     for (const b of monsters.filter(m => m.isBoss || /\(Boss\)/.test(m.template.name))) {
-      this.hud.addCombatMessage(bossOpening(b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, ''), b.template.type, b.id), '#e0705f');
+      this.hud.addCombatMessage(this.storyController.bossVoice(b.template.name, 'opening') ?? bossOpening(b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, ''), b.template.type, b.id), '#e0705f');
     }
     this.phase = GamePhase.Combat;
     this.combatTickTimer = 0;
@@ -2225,6 +2228,29 @@ class Game {
     if (Date.now() < this.roadEventCooldownUntil || Date.now() < this.ambushCooldownUntil) return;
     const leader = this.party.leader;
     const nearTown = (this.overworld?.towns ?? []).some(tn => manhattan(tn.tile, leader.tile) <= 12);
+    // The story's road first: a bounty brings hunters, a network brings help.
+    if (Math.random() < ROAD_EVENT_CHANCE) {
+      const story = this.storyController.roadEvent();
+      if (story) {
+        this.roadEventCooldownUntil = Date.now() + 90000;
+        for (const line of story.lines) this.hud.addCombatMessage(line, '#d8c88a');
+        if (story.kind === 'ally') {
+          this.addGold(story.gold);
+          this.hud.addCombatMessage(`\ud83d\udcb0 ${story.gold} gold, and a road that knows them.`, '#e8b45a');
+        } else {
+          const spots = findAmbushTiles(this.map, leader.tile, 3);
+          const gang = banditGang(leader.level + 1);
+          const spawned: Monster[] = [];
+          for (let i = 0; i < gang.length && i < spots.length; i++) {
+            const m = this.spawnMonster(gang[i], spots[i]);
+            m.alertLevel = 2;
+            spawned.push(m);
+          }
+          if (spawned.length > 0) this.startCombat(spawned);
+        }
+        return;
+      }
+    }
     const event = rollRoadEvent({
       gold: this.partyGold(),
       partyLevel: leader.level,
@@ -3872,7 +3898,7 @@ class Game {
         if (!b.isAlive || this.bossBloodiedSaid.has(b.id) || b.hp > b.maxHp / 2) continue;
         if (!(b.isBoss || /\(Boss\)/.test(b.template.name))) continue;
         this.bossBloodiedSaid.add(b.id);
-        fresh.push(bossBloodied(b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, ''), b.template.type, b.id));
+        fresh.push(this.storyController.bossVoice(b.template.name, 'bloodied') ?? bossBloodied(b.template.name.replace(/^\ud83d\udc80 /, '').replace(/ \(Boss\)$/, ''), b.template.type, b.id));
       }
       const rolls = getDiceHistory().slice(rollsBefore).filter(e => e.kind === 'attack' || e.kind === 'save' || e.kind === 'death-save');
       this.presenting = true;

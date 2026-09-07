@@ -38,7 +38,7 @@ import type { MonsterTemplate } from '../entities/Monster';
 import type { Quest } from '../quests/Quests';
 import { hashSeed, mulberry32 } from '../world/DungeonGenerator';
 import {
-  ACT_ONE, ANTAGONISTS, CHOICES, EPILOGUE_TITLES, FINALE, MOTIVES, SHARD_NAMES, TWISTS,
+  ACT_ONE, ANTAGONISTS, CHOICES, EPILOGUE_TITLES, FINALE, MOTIVES, SHARD_BOONS, SHARD_NAMES, TWISTS,
   type Antagonist, type Choice, type ChoiceOption, type MonsterType,
 } from './StoryContent';
 
@@ -106,6 +106,8 @@ export interface StoryState {
   difficultyShift: number;
   /** Act index the not-ready hint was last given for, so it is said once per act. */
   hintedAct: number;
+  /** Act index whose threshold card has been shown, so the arrival is told once. Absent in older saves. */
+  thresholdAct?: number;
 }
 
 /** What the planner needs to know about the world. */
@@ -372,7 +374,116 @@ export function completeAct(state: StoryState): void {
   // The twist's knight is the flag the prisoner choice needs.
   if (act.twistId === 'old_friend' && !state.flags.includes('knight_found')) state.flags.push('knight_found');
   if (act.twistId === 'false_shard' && !state.flags.includes('seen_forgery')) state.flags.push('seen_forgery');
+  // Other twists leave a mark the later choices can ask about.
+  const marks: Record<string, string> = { survivor: 'survivor_spared', dream: 'dreamed', map: 'seen_map', bounty: 'bounty', the_knight_falls: 'knight_lost' };
+  const mark = act.twistId ? marks[act.twistId] : undefined;
+  if (mark && !state.flags.includes(mark)) state.flags.push(mark);
   state.stage = 'seek';
+}
+
+// ── The act, told as it is played ──
+
+function antagonistOf(act: ActRecord): Antagonist | undefined {
+  return ANTAGONISTS.find(a => a.id === act.antagonistId);
+}
+
+/** The words that fit an act's lines: its boss, its shard, its lair. */
+function actVars(act: ActRecord): Record<string, string> {
+  return { name: act.bossName, shard: act.shard, place: act.entranceName };
+}
+
+/**
+ * What the party sees when it reaches the boss's floor. The opening and the
+ * finale have their own; a shard act draws from its antagonist; the finale's
+ * confrontation is chosen by the party's flags, most specific first.
+ */
+export function thresholdLine(state: StoryState, act: ActRecord): string {
+  const rng = rngFor(state, act.index, 'threshold');
+  if (act.kind === 'opening') return ACT_ONE.antagonist.threshold;
+  if (act.kind === 'finale') {
+    for (const c of FINALE.confrontation) if (c.requires.every(f => has(state, f))) return c.text;
+    return FINALE.confrontation[FINALE.confrontation.length - 1].text;
+  }
+  const a = antagonistOf(act);
+  if (!a) return `${act.bossName} waits on this floor with ${act.shard}.`;
+  return fill(pick(rng, a.threshold), actVars(act));
+}
+
+/** Whether a fight's boss is the act's antagonist, whatever decorations its name carries. */
+export function isActBoss(state: StoryState, monsterName: string): boolean {
+  const act = state.act;
+  if (!act || state.stage !== 'seek') return false;
+  const plain = monsterName.replace(/^\S+ /u, m => (/[A-Za-z]/.test(m) ? m : '')).replace(/ \(Boss\)$/, '').trim();
+  return plain === act.bossName || monsterName.includes(act.bossName);
+}
+
+/**
+ * The story boss's own voice: what it says when the fight opens and when it
+ * is bloodied. Null for any monster that is not the act's antagonist, so the
+ * generic boss voice speaks for those.
+ */
+export function storyBossLine(state: StoryState, monsterName: string, phase: 'opening' | 'bloodied'): string | null {
+  const act = state.act;
+  if (!act || !isActBoss(state, monsterName)) return null;
+  const rng = rngFor(state, act.index, `voice:${phase}`);
+  if (act.kind === 'opening') return pick(rng, phase === 'opening' ? ACT_ONE.antagonist.taunt : ACT_ONE.antagonist.bloodied);
+  if (act.kind === 'finale') return pick(rng, phase === 'opening' ? FINALE.taunt : FINALE.bloodied);
+  const a = antagonistOf(act);
+  if (!a) return null;
+  return fill(pick(rng, phase === 'opening' ? a.taunt : a.bloodied), actVars(act));
+}
+
+/** What the giver town says of the antagonist while the act is on, or null for the opening and the finale. */
+export function heraldLine(state: StoryState, act: ActRecord, townName: string, rng: () => number): string | null {
+  const a = antagonistOf(act);
+  if (!a || act.kind === 'opening' || act.kind === 'finale') return null;
+  return fill(pick(rng, a.herald), { ...actVars(act), town: townName });
+}
+
+/** The fated die the held shards grant at a camp, or null before the first shard is won. */
+export function shardBoon(state: StoryState): { value: number; line: string; shards: number } | null {
+  const shards = Math.min(SHARD_BOONS.length, state.complete ? SHARD_BOONS.length : state.actsDone);
+  if (shards <= 0) return null;
+  const boon = SHARD_BOONS[shards - 1];
+  return { value: boon.value, line: boon.line, shards };
+}
+
+/** What the party's reputation brings to the road: hunters after a bounty, help from a network. */
+export type StoryRoadEvent =
+  | { kind: 'hunters'; lines: string[] }
+  | { kind: 'ally'; lines: string[]; gold: number };
+
+export function storyRoadEvent(state: StoryState, rng: () => number): StoryRoadEvent | null {
+  const hunted = has(state, 'hunted') || has(state, 'bounty');
+  const network = has(state, 'ally_network');
+  if (!hunted && !network) return null;
+  const roll = rng();
+  if (hunted && roll < 0.5) {
+    return {
+      kind: 'hunters',
+      lines: [
+        pick(rng, [
+          'Riders on the road behind, keeping pace and not closing. Then closing. They have the party’s faces on a paper.',
+          'The next bend holds three hunters with a writ and no interest in reading it aloud.',
+          'A whistle from the trees, answered from the rocks. The bounty has found the party before the party found the town.',
+        ]),
+      ],
+    };
+  }
+  if (network && roll >= 0.5) {
+    const gold = 15 + 5 * state.actsDone;
+    return {
+      kind: 'ally',
+      lines: [
+        pick(rng, [
+          'A thin runner waits at the milestone with a purse and a word: the road ahead is clear, and the town past it knows the party is coming.',
+          'A child from a village the party once spared hands over a folded note and a few coins collected door to door. The note says only: we are watching for you.',
+        ]),
+      ],
+      gold,
+    };
+  }
+  return null;
 }
 
 /** The ending the party has earned, most specific first. */

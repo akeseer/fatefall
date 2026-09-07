@@ -16,11 +16,12 @@ import type { MonsterTemplate } from '../entities/Monster';
 import { MONSTER_TEMPLATES, isUnseeableMonster } from '../entities/Monster';
 import type { ChoiceOption } from '../story/StoryContent';
 import {
-  applyChoice, autoPick, beginStory, bossOverride, choiceForAct, completeAct, endingText, isStoryQuest,
-  journalLines, notReadyLine, planNextAct, questForAct, readiness, readyLine, roman, storyChip,
-  type StoryState, type StoryWorld,
+  applyChoice, autoPick, beginStory, bossOverride, choiceForAct, completeAct, endingText, heraldLine, isStoryQuest,
+  journalLines, notReadyLine, planNextAct, questForAct, readiness, readyLine, roman, shardBoon, storyBossLine, storyChip,
+  storyRoadEvent, thresholdLine, type StoryRoadEvent, type StoryState, type StoryWorld,
 } from '../story/Story';
 import { sfx } from '../audio/Sfx';
+import { getLuckDie, grantLuckDie } from '../rules/LuckDie';
 
 /** How long an unattended party mulls a choice before its temperament decides. */
 const AUTO_CHOICE_MS = 25_000;
@@ -117,10 +118,50 @@ export class StoryController {
       s.hintedAct = act.index;
       this.game.hud.addCombatMessage(`📖 ${notReadyLine(act, level)}`, '#c9b8ff');
     }
-    // Taverns talk about the act wherever the party goes.
+    // Taverns talk about the act wherever the party goes; the giver town has
+    // seen the antagonist's work up close and says so.
     if (Math.random() < 0.35) {
-      this.game.hud.addCombatMessage(`Someone at the bar says ${act.rumor}. (${town.name} has heard it too.)`, '#a89');
+      const herald = town.id === act.giverTownId ? heraldLine(s, act, town.name, Math.random) : null;
+      if (herald) this.game.hud.addCombatMessage(`The talk in ${town.name} is that ${herald}.`, '#c9a');
+      else this.game.hud.addCombatMessage(`Someone at the bar says ${act.rumor}. (${town.name} has heard it too.)`, '#a89');
     }
+  }
+
+  /**
+   * The party has reached a floor of a lair. If it is the act's floor, the
+   * arrival is told once: the threshold card, before the boss is met.
+   */
+  onFloorReached(entranceId: string | null, floor: number): void {
+    const s = this.game.story;
+    if (!s || !s.act || s.stage !== 'seek' || !entranceId) return;
+    const act = s.act;
+    if (act.entranceId !== entranceId || act.targetFloor !== floor) return;
+    if ((s.thresholdAct ?? 0) === act.index) return;
+    s.thresholdAct = act.index;
+    const kicker = act.kind === 'finale' ? 'The last threshold' : 'The threshold';
+    this.showCard(kicker, act.kind === 'opening' ? 'The Ashen Warden' : act.bossName, thresholdLine(s, act));
+  }
+
+  /** The act's boss speaks in its own voice; null lets the generic boss voice speak. */
+  bossVoice(monsterName: string, phase: 'opening' | 'bloodied'): string | null {
+    const s = this.game.story;
+    return s ? storyBossLine(s, monsterName, phase) : null;
+  }
+
+  /** At a camp, the held shards lend a fated die, unless one is already banked. */
+  onLongRest(): void {
+    const s = this.game.story;
+    if (!s) return;
+    const boon = shardBoon(s);
+    if (!boon || getLuckDie()) return;
+    grantLuckDie({ value: boon.value, source: boon.shards === 1 ? 'the First Shard' : `${boon.shards} shards of the die` });
+    this.game.hud.addCombatMessage(`\u2728 ${boon.line} (A fated ${boon.value} is banked.)`, '#e8c56a');
+  }
+
+  /** What the party's road has earned it on the overworld, if anything this step. */
+  roadEvent(): StoryRoadEvent | null {
+    const s = this.game.story;
+    return s ? storyRoadEvent(s, Math.random) : null;
   }
 
   /** The boss the story puts on a floor, if this is the floor. */

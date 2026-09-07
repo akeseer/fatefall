@@ -368,6 +368,38 @@ describe('SaveSerializer round trip', () => {
     expect(target.battleViewOpened).toBe(false);
   });
 
+  it('keeps a delve on its own floor when the surface is in the save too', () => {
+    const surface = new TileMap(40, 40);
+    for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) surface.tiles[y][x] = TileType.Grass;
+    const world = { map: surface, towns: [], entrances: [], spawnTownId: 'spawn', pois: [], regions: [] };
+
+    // Below ground: the floor is the map, the surface waits in `overworld`.
+    const below = populatedHost();
+    Object.assign(below, { overworld: world, mode: 2 });
+    const target = new TestHost();
+    new SaveSerializer(target).apply(new SaveSerializer(below).capture());
+    expect(target.mode).toBe(2);
+    expect(target.map.tiles).toEqual(below.map.tiles);
+    expect((target as unknown as { overworld: { map: TileMap } }).overworld.map.tiles[20][20]).toBe(TileType.Grass);
+
+    // On the surface: the surface is the map.
+    const above = populatedHost();
+    Object.assign(above, { overworld: world, mode: 0 });
+    const target2 = new TestHost();
+    new SaveSerializer(target2).apply(new SaveSerializer(above).capture());
+    expect(target2.mode).toBe(0);
+    expect(target2.map.tiles[20][20]).toBe(TileType.Grass);
+
+    // A save the older code wrote in its broken state: dungeon mode, but the
+    // surface where the floor should be. The party is set down above ground.
+    const broken = populatedHost();
+    Object.assign(broken, { overworld: world, mode: 2, map: surface });
+    const target3 = new TestHost();
+    new SaveSerializer(target3).apply(new SaveSerializer(broken).capture());
+    expect(target3.mode).toBe(0);
+    expect(target3.map.tiles[20][20]).toBe(TileType.Grass);
+  });
+
   it('defaults an older save that carries none of the newer fields', () => {
     const source = populatedHost();
     const saved: any = new SaveSerializer(source).capture();

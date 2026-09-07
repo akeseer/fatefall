@@ -50,7 +50,7 @@ import type { PartyHistory } from '../ai/LoreGenerator';
 import type { SaveData } from '../save/SaveManager';
 
 import { SAVE_VERSION } from '../save/SaveManager';
-import { TileMap } from '../world/TileMap';
+import { TileMap, TileType } from '../world/TileMap';
 import { GameCharacter } from '../entities/Character';
 import { Monster, getMonsterTemplate } from '../entities/Monster';
 import { CLASSES, RACES } from '../data/gameData';
@@ -177,6 +177,16 @@ export interface SaveHost {
   markRestoredRoomVisited(): void;
   /** Forget where the party was walking to; a restored run stands still. */
   clearTravelPlans(): void;
+}
+
+/** `GameMode.Dungeon` and `GameMode.Overworld`, which live in main.ts. */
+const DUNGEON_MODE = 2;
+const OVERWORLD_MODE = 0;
+
+/** Whether a saved map is the surface: dungeon floors never carry grass, forest or road. */
+function looksLikeSurface(tiles: number[][]): boolean {
+  const surface = new Set<number>([TileType.Grass, TileType.Forest, TileType.Road, TileType.Town, TileType.DungeonEntrance]);
+  return tiles.some(row => row.some(t => surface.has(t)));
 }
 
 export class SaveSerializer {
@@ -391,6 +401,21 @@ export class SaveSerializer {
       // Old saves predate the mountain ring at the world's edge — apply it so
       // a restored party can't march into the void.
       ringOverworld(this.game.map);
+      // Below ground the party's map is the floor it was saved on; the surface
+      // stays in `overworld` until they climb out. Letting the surface win here
+      // regardless put every restored delve on grass, in dungeon mode.
+      const floorSaved = save.mode === DUNGEON_MODE && !!save.map && !!save.map.tiles && save.map.tiles.length > 0;
+      if (floorSaved && !looksLikeSurface(save.map.tiles)) {
+        const floor = new TileMap(save.map.width, save.map.height);
+        floor.tiles = save.map.tiles;
+        floor.explored = save.map.explored;
+        this.game.map = floor;
+      } else if (floorSaved) {
+        // A save written by the older code while it was in that state carries
+        // the surface as its floor. There is no floor to put the party on, so
+        // they are set down above ground where they stood.
+        save.mode = OVERWORLD_MODE;
+      }
       this.game.camera.setBounds(this.game.map.width, this.game.map.height);
       // In-flight caravans don't survive a save (their wanderers would linger
       // as ghosts) — town rumors and festival clocks do.
