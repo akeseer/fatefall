@@ -251,3 +251,21 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   `dressFloor`/`dressFloorMore` and deliberately not saved. `MusicMood` now branches on the
   dungeon theme; a new mood needs a `Piece` in `PIECES`. The world map screen reads a provider
   the game sets at start (`worldMapProvider`), as the chronicle and statistics do.
+- **Settings** (`src/settings/Settings.ts`, pure, tested in `tests/settings.test.ts`): one JSON blob under
+  `fatefall.settings` (display, graphics, renderer; `fatefall.renderer` is kept in step for older
+  readers). `Game.settings` is loaded at construction and `applySettings` puts a new set into
+  effect: `Renderer.setLayout` for the scale mode (`computeLayout`: fit, integer, stretch, 1:1) and
+  UI scale, `Camera.shakeEnabled`, the frame rate cap in `gameStep`, and a backend restart when the
+  renderer or the pixel ratio changes. **Sharp rendering** makes `pixelRatio()` follow the picture's
+  size times `devicePixelRatio` (quantised to halves), passed to `RenderBackend.init` as
+  `BackendOptions.pixelRatio`; Pixi takes it as `resolution`, Canvas scales its context, and a
+  resize in that mode restarts the backend after a 350 ms debounce. `Renderer.resize` no longer
+  touches the canvas' backing size, which belongs to the backend. Effect switches travel on the
+  frame as `SceneMood.fx` (`renderFx`); every backend must honour the flags it has an effect for
+  (Pixi gates the lighting, weather, ambience layers and the Atmosphere filters' `enabled`; Canvas
+  and Phaser gate the lighting and the tint). Fullscreen and window sizes go through the shell's
+  `fatefall.window` bridge (`electron/preload.cjs`, `ipcMain.handle('fatefall:window')`), falling
+  back to the Fullscreen API in a browser; the shell remembers bounds in `window.json` and reports
+  every change so `noteFullscreen` keeps the setting truthful. F11 and Alt+Enter toggle. The panel
+  is `ui/SettingsPanel.ts`, opened from the title screen, the ⚙ button and the Sound drawer; it
+  never holds state, it redraws from `Game.settings` after every change.

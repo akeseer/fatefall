@@ -9,6 +9,7 @@ import { RecordingContext } from './rendering/RecordingContext';
 import { CanvasBackend } from './rendering/backends/CanvasBackend';
 import { createBackend, type RenderBackendId } from './rendering/backends';
 import type { RenderBackend, SceneMood } from './rendering/DrawCommand';
+import { loadSettings, saveSettings, renderFx, cloneSettings, parseWindowSize, type GameSettings } from './settings/Settings';
 import { BulletinBoardController } from './game/BulletinBoardController';
 import { MarketController } from './game/MarketController';
 import { SaveSerializer } from './game/SaveSerializer';
@@ -202,6 +203,14 @@ class Game {
   public backend: RenderBackend = new CanvasBackend();
   /** True once a backend has finished starting; frames are dropped until then. */
   private backendReady = false;
+  /** The player's display and graphics settings; `applySettings` puts them into effect. */
+  public settings: GameSettings = loadSettings();
+  /** Device pixels per logical pixel the current backend was started with. */
+  private backendRatio = 1;
+  /** When the last frame was drawn, for the frame rate cap. */
+  private lastRenderAt = 0;
+  /** A pending backend restart after a resize in sharp mode. */
+  private relayoutTimer: number | null = null;
   public combatEngine: CombatEngine;
   public aiDirector: AIDirector;
   /** Adaptive difficulty: consecutive dominant wins (positive) or battered fights (negative). */
@@ -450,6 +459,9 @@ class Game {
   constructor() {
     this.renderer = new Renderer();
     this.camera = new Camera();
+    this.renderer.setLayout(this.settings.display.scaleMode, this.settings.display.uiScale);
+    this.camera.shakeEnabled = this.settings.graphics.shake;
+    this.renderer.onLayout = () => this.onRelayout();
     this.map = new TileMap();
     this.camera.setBounds(this.map.width, this.map.height);
     this.sprites = new SpriteRenderer();
@@ -1172,7 +1184,12 @@ class Game {
         }
         // Drop any backlog we could not catch up on rather than spiralling.
         if (steps >= Game.MAX_STEPS_PER_FRAME) this.accumulator = 0;
-        this.render();
+        // The frame rate cap draws less often; the world above still stepped.
+        const cap = this.settings.graphics.fpsCap;
+        if (cap === 0 || now - this.lastRenderAt >= 1000 / cap - 1.5) {
+          this.lastRenderAt = now;
+          this.render();
+        }
         this.consecutiveErrors = 0;
       } catch (err) {
         this.handleStepError(err);
@@ -4117,29 +4134,130 @@ class Game {
    * Switch graphics library. The heavy ones are imported only when asked for,
    * so a player on the default canvas never downloads them.
    */
-  async useBackend(id: RenderBackendId): Promise<void> {
+  async useBackend(id: RenderBackendId, quiet = false): Promise<void> {
     const next = await createBackend(id);
+    const ratio = this.pixelRatio();
     // A canvas element can only ever hold one kind of context, so a canvas
     // that has carried WebGL will never give back a 2D one. Each switch gets a
     // fresh element, and the old backend is torn down only once the new one
     // has started, so a failure leaves the current renderer untouched.
     const canvas = this.renderer.replaceCanvas();
     try {
-      await next.init(canvas, GAME_WIDTH, GAME_HEIGHT);
+      await next.init(canvas, GAME_WIDTH, GAME_HEIGHT, { pixelRatio: ratio });
     } catch (err) {
       this.renderer.replaceCanvas();
-      await this.backend.init(this.renderer.canvas, GAME_WIDTH, GAME_HEIGHT);
+      await this.backend.init(this.renderer.canvas, GAME_WIDTH, GAME_HEIGHT, { pixelRatio: this.backendRatio });
       throw err;
     }
     this.backend.destroy();
     this.backend = next;
     this.backendReady = true;
-    try {
-      localStorage.setItem('fatefall.renderer', id);
-    } catch {
-      /* private mode: the choice just will not stick */
+    this.backendRatio = ratio;
+    this.settings.renderer = id;
+    saveSettings(this.settings);
+    if (!quiet) this.hud.addCombatMessage(`Renderer: ${next.name}.`, '#8cf');
+  }
+
+  /**
+   * Device pixels per logical pixel the backend should draw at. One unless the
+   * player asked for sharp rendering, in which case it follows the picture's
+   * size on the display, quantised to halves so a window dragged a few pixels
+   * does not restart the renderer.
+   */
+  pixelRatio(): number {
+    if (!this.settings.display.sharp) return 1;
+    const dpr = window.devicePixelRatio || 1;
+    return Math.max(1, Math.min(3, Math.round(this.renderer.layout.scale * dpr * 2) / 2));
+  }
+
+  /** A relayout in sharp mode may want a denser backing store; the restart waits for the drag to end. */
+  private onRelayout(): void {
+    if (!this.backendReady || this.pixelRatio() === this.backendRatio) return;
+    if (this.relayoutTimer !== null) clearTimeout(this.relayoutTimer);
+    this.relayoutTimer = window.setTimeout(() => {
+      this.relayoutTimer = null;
+      if (this.backendReady && this.pixelRatio() !== this.backendRatio) {
+        void this.useBackend(this.settings.renderer, true).catch(() => { /* the old density stands */ });
+      }
+    }, 350);
+  }
+
+  /**
+   * Put a new set of settings into effect: the layout at once, the effects on
+   * the next frame, the renderer and the window through their own paths.
+   */
+  applySettings(next: GameSettings): void {
+    const prev = this.settings;
+    this.settings = cloneSettings(next);
+    saveSettings(this.settings);
+    this.renderer.setLayout(next.display.scaleMode, next.display.uiScale);
+    this.camera.shakeEnabled = next.graphics.shake;
+    if (next.renderer !== prev.renderer || (this.backendReady && this.pixelRatio() !== this.backendRatio)) {
+      void this.useBackend(next.renderer, next.renderer === prev.renderer).catch(err => {
+        console.warn('[render] backend switch failed, staying put.', err);
+        this.settings.renderer = prev.renderer;
+        saveSettings(this.settings);
+        this.hud.addCombatMessage('That renderer could not start here; staying on the current one.', '#c66');
+        this.hud.settingsPanel.refresh();
+      });
     }
-    this.hud.addCombatMessage(`Renderer: ${next.name}.`, '#8cf');
+    if (next.display.windowMode !== prev.display.windowMode) void this.setFullscreen(next.display.windowMode === 'fullscreen');
+    if (next.display.windowSize !== prev.display.windowSize) void this.applyWindowSize(next.display.windowSize);
+  }
+
+  /** Go to or leave fullscreen: through the shell when there is one, else the browser's own API. */
+  async setFullscreen(on: boolean): Promise<void> {
+    const w = shell()?.window;
+    try {
+      if (w) {
+        await w.set({ op: 'fullscreen', on });
+        return;
+      }
+      if (on) {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      // A browser refuses fullscreen without a gesture; the setting follows the truth.
+      console.warn('[display] fullscreen change refused', err);
+      if (!w) this.noteFullscreen(document.fullscreenElement !== null);
+    }
+  }
+
+  toggleFullscreen(): void {
+    const next = cloneSettings(this.settings);
+    next.display.windowMode = next.display.windowMode === 'fullscreen' ? 'windowed' : 'fullscreen';
+    this.applySettings(next);
+    this.hud.settingsPanel.refresh();
+  }
+
+  /** The window or the browser changed fullscreen on its own; keep the setting truthful. */
+  noteFullscreen(on: boolean): void {
+    const mode = on ? 'fullscreen' : 'windowed';
+    if (this.settings.display.windowMode === mode) return;
+    this.settings.display.windowMode = mode;
+    saveSettings(this.settings);
+    this.hud.settingsPanel.refresh();
+  }
+
+  private async applyWindowSize(id: string): Promise<void> {
+    const w = shell()?.window;
+    if (!w) return;
+    const size = parseWindowSize(id);
+    try {
+      await w.set(size ? { op: 'size', width: size.width, height: size.height } : { op: 'maximize' });
+    } catch (err) {
+      console.warn('[display] window resize refused', err);
+    }
+  }
+
+  /** One line for the settings screen: the window, the picture and the renderer. */
+  displayReadout(): string {
+    const l = this.renderer.layout;
+    const dpr = window.devicePixelRatio || 1;
+    const fs = document.fullscreenElement ? ', fullscreen' : '';
+    return `Window ${window.innerWidth}\u00d7${window.innerHeight}${fs} \u00b7 picture ${Math.round(l.canvasW)}\u00d7${Math.round(l.canvasH)} (\u00d7${l.scale.toFixed(2)}) \u00b7 drawn at ${Math.round(GAME_WIDTH * this.backendRatio)}\u00d7${Math.round(GAME_HEIGHT * this.backendRatio)} \u00b7 display \u00d7${dpr.toFixed(2)} \u00b7 ${this.backend.name}`;
   }
 
   /**
@@ -4296,7 +4414,8 @@ class Game {
       daylight: this.clock.light,
       underground: this.mode === GameMode.Dungeon,
       themeId: this.mode === GameMode.Dungeon ? (this.dungeonTheme?.id ?? null) : null,
-      flash: this.flash,
+      flash: this.settings.graphics.flash ? this.flash : 0,
+      fx: renderFx(this.settings.graphics),
       weather: this.weather?.type ?? null,
       focus,
       lightScale: this.mode === GameMode.Dungeon ? (this.darkness ? 0.42 : this.torchLeft > 0 && this.torchLeft < 120 ? 0.7 : 1) : 1,
@@ -8189,12 +8308,21 @@ function pick<T>(arr: T[]): T {
  * runs (see electron/preload.cjs). Its absence is how a plain browser is told
  * apart from the app.
  */
+interface WindowState { fullscreen: boolean; maximized: boolean; width: number; height: number }
+type WindowRequest =
+  | { op: 'fullscreen'; on: boolean }
+  | { op: 'size'; width: number; height: number }
+  | { op: 'maximize' }
+  | { op: 'state' };
+
 interface FatefallShell {
   app: boolean;
   version: string;
   platform: string;
   update: { status: 'current' | 'available' | 'unknown'; latest?: string; url?: string | null; notes?: string; reason?: string };
   openUpdate: () => void;
+  /** The shell's window, when the build carries the bridge for it (older shells do not). */
+  window?: { set(req: WindowRequest): Promise<WindowState | null>; onState(cb: (s: WindowState) => void): void };
 }
 
 function shell(): FatefallShell | null {
@@ -8293,12 +8421,24 @@ function startGame() {
     orders: describePolicies(game.dmPolicies),
     deeds: game.expeditionJournal.slice(-12).reverse(),
   });
-  game.hud.onRendererChange = (id) => {
-    void game.useBackend(id).catch(err => {
-      console.warn('[render] backend switch failed, staying put.', err);
-      game.hud.addCombatMessage('That renderer could not start here; staying on the current one.', '#c66');
-    });
+  game.hud.settingsHost = {
+    get: () => game.settings,
+    apply: next => game.applySettings(next),
+    shell: () => shell()?.window !== undefined,
+    readout: () => game.displayReadout(),
   };
+  // Fullscreen by key, and the setting kept truthful when the window changes on its own.
+  window.addEventListener('keydown', e => {
+    if (e.code === 'F11' || (e.code === 'Enter' && e.altKey)) {
+      e.preventDefault();
+      game.toggleFullscreen();
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (!shell()?.window) game.noteFullscreen(document.fullscreenElement !== null);
+  });
+  shell()?.window?.onState(s => game.noteFullscreen(s.fullscreen));
+  if (game.settings.display.windowMode === 'fullscreen' && shell()?.window) void game.setFullscreen(true);
   game.hud.showStartScreen(saves);
 
   const app = shell();
@@ -8324,7 +8464,7 @@ function startGame() {
 
   // Bring the renderer up before the first frame. A backend that fails to
   // start is not fatal: the game falls back to the canvas it has always used.
-  void game.useBackend(pickBackend()).catch(err => {
+  void game.useBackend(game.settings.renderer).catch(err => {
     console.warn('[render] backend failed to start, staying on canvas.', err);
   });
 
@@ -8346,25 +8486,6 @@ function startGame() {
     // it, so the loop is nudged explicitly rather than left waiting.
     game.resumeLoop();
   });
-}
-
-/**
- * Which renderer to use.
- *
- * Pixi is the default because it is the only one that lights the scene: the
- * map renderer paints the same tiles at noon and at midnight, and everything
- * that makes a dungeon feel like a dungeon is composited on top of it there.
- * Canvas 2D remains the fallback, taken automatically whenever WebGL is
- * missing or Pixi fails to start, and choosable outright for a comparison.
- */
-function pickBackend(): RenderBackendId {
-  try {
-    const stored = localStorage.getItem('fatefall.renderer');
-    if (stored === 'pixi' || stored === 'phaser' || stored === 'canvas') return stored;
-  } catch {
-    /* private mode: fall through to the default */
-  }
-  return 'pixi';
 }
 
 /**

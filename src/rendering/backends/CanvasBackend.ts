@@ -7,7 +7,7 @@
  * the recording trustworthy enough for the other backends to build on.
  */
 
-import type { BakedImage, Frame, RenderBackend, SceneMood } from '../DrawCommand';
+import type { BakedImage, Frame, RenderBackend, SceneMood, BackendOptions } from '../DrawCommand';
 import { transitionShape } from '../DrawCommand';
 import { themeLight } from '../ThemeLight';
 
@@ -44,11 +44,15 @@ export class CanvasBackend implements RenderBackend {
   /** Sprites as small canvases, so they can be composited rather than written. */
   private images = new Map<string, HTMLCanvasElement>();
 
-  async init(canvas: HTMLCanvasElement, width: number, height: number): Promise<void> {
-    canvas.width = width;
-    canvas.height = height;
+  async init(canvas: HTMLCanvasElement, width: number, height: number, options?: BackendOptions): Promise<void> {
+    // The backing store may be denser than the logical picture; the context is
+    // scaled once so every command still draws in logical pixels.
+    const ratio = Math.max(1, Math.min(4, options?.pixelRatio ?? 1));
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('CanvasBackend: this browser gave no 2D context');
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.imageSmoothingEnabled = false;
     this.ctx = ctx;
     this.width = width;
@@ -138,7 +142,8 @@ export class CanvasBackend implements RenderBackend {
    * and a blend mode rather than being limited to flat rectangles.
    */
   private applyMood(ctx: CanvasRenderingContext2D, mood: SceneMood): void {
-    const tint = mood.weather ? WEATHER_TINTS[mood.weather] : undefined;
+    const flags = mood.fx;
+    const tint = mood.weather && (flags?.grade ?? true) ? WEATHER_TINTS[mood.weather] : undefined;
     if (tint) {
       ctx.globalAlpha = tint.a;
       ctx.fillStyle = tint.c;
@@ -148,7 +153,7 @@ export class CanvasBackend implements RenderBackend {
 
     const night = mood.underground ? UNDERGROUND_DARKNESS : OUTDOOR_NIGHT_DARKNESS * Math.max(0, 1 - mood.daylight);
     const darkness = mood.inCombat ? night * COMBAT_RELIEF : night;
-    if (darkness <= 0.01) return;
+    if (darkness <= 0.01 || !(flags?.lighting ?? true)) return;
 
     // Multiply, so the layer can only ever scale the world down — the party's
     // light then reveals the map's own pixels instead of laying a pool of

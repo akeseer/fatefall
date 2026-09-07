@@ -352,6 +352,7 @@ export class Weather {
   private readonly height: number;
 
   private readonly particles: Particle[] = [];
+  private density = 1;
   private readonly ticks: Impact[] = [];
   private readonly banks: Bank[] = [];
   private readonly pulseSprite: Sprite;
@@ -463,10 +464,13 @@ export class Weather {
   update(mood: SceneMood, elapsedMs: number): void {
     const dt = clamp(elapsedMs, 0, MAX_STEP_MS);
     this.clockMs += dt;
+    // The player's share of the particles, applied to the count rather than
+    // to the alpha, so a lighter setting is fewer streaks and not fainter ones.
+    this.density = clamp(mood.fx?.weather ?? 1, 0, 1);
 
     // Weather belongs to the sky, so a sealed corridor has none of it whatever
     // the overworld is doing.
-    const id = mood.underground ? null : mood.weather;
+    const id = mood.underground || this.density <= 0 ? null : mood.weather;
     this.target = (id !== null ? PROFILES[id] : undefined) ?? PROFILE_CLEAR;
 
     this.trackProfile(dt);
@@ -550,7 +554,7 @@ export class Weather {
 
   private updateParticles(dt: number, gust: number): void {
     const p = this.current;
-    const want = Math.round(p.count * this.fade);
+    const want = Math.round(p.count * this.fade * this.density);
     if (want <= 0) {
       for (const particle of this.particles) {
         if (!particle.active) continue;

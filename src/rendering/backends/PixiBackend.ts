@@ -42,7 +42,7 @@ import {
   Texture,
   Color,
 } from 'pixi.js';
-import type { BakedImage, DrawCommand, Frame, RenderBackend } from '../DrawCommand';
+import type { BackendOptions, BakedImage, DrawCommand, Frame, RenderBackend } from '../DrawCommand';
 import { Atmosphere } from './pixi/Atmosphere';
 import { Lighting } from './pixi/Lighting';
 import { Weather } from './pixi/Weather';
@@ -131,8 +131,9 @@ export class PixiBackend implements RenderBackend {
   private runFill: string | null = null;
   private runAlpha = 1;
 
-  async init(canvas: HTMLCanvasElement, width: number, height: number): Promise<void> {
+  async init(canvas: HTMLCanvasElement, width: number, height: number, options?: BackendOptions): Promise<void> {
     const app = new Application();
+    const ratio = Math.max(1, Math.min(4, options?.pixelRatio ?? 1));
     await app.init({
       canvas,
       width,
@@ -140,8 +141,10 @@ export class PixiBackend implements RenderBackend {
       // The game drives its own loop and calls `submit`, so Pixi's ticker must
       // not render behind its back and show a half-built frame.
       autoStart: false,
-      // Pixel art: one device pixel per logical pixel, and no edge smoothing.
-      resolution: 1,
+      // Pixel art: the scene is laid out in logical pixels and no edge is
+      // smoothed; the resolution only decides how many device pixels each one
+      // gets, which is what keeps text and the glow crisp on a dense display.
+      resolution: ratio,
       autoDensity: false,
       antialias: false,
       powerPreference: 'high-performance',
@@ -212,10 +215,11 @@ export class PixiBackend implements RenderBackend {
     // drawn world and below the lighting that darkens both. Like the lighting it
     // has to be re-added, because the display list was torn down at the top of
     // this frame; unlike it, a clear sky is left out of the list entirely.
+    const fx = frame.mood.fx;
     const weather = this.weather;
     if (weather) {
       weather.update(frame.mood, dt);
-      if (weather.active) world.addChild(weather.layer);
+      if (weather.active && (fx?.weather ?? 1) > 0) world.addChild(weather.layer);
     }
 
     // Ambience goes under the lighting for the same reason the weather does,
@@ -224,7 +228,7 @@ export class PixiBackend implements RenderBackend {
     // and the ones out in the dark do not — without this file knowing where
     // the torch is.
     const ambience = this.ambience;
-    if (ambience) {
+    if (ambience && (fx?.ambience ?? true)) {
       ambience.update(frame.mood, dt);
       if (ambience.active) world.addChild(ambience.layer);
     }
@@ -232,7 +236,7 @@ export class PixiBackend implements RenderBackend {
     // The lighting layer multiplies down everything drawn above, so it goes on
     // last.
     const lighting = this.lighting;
-    if (lighting) {
+    if (lighting && (fx?.lighting ?? true)) {
       lighting.update(frame.mood, dt);
       world.addChild(lighting.layer);
     }

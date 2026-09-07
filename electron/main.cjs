@@ -205,6 +205,62 @@ ipcMain.on('fatefall:open-update', () => {
   if (updateResult.url && /^https?:/.test(updateResult.url)) shell.openExternal(updateResult.url);
 });
 
+// ── The window, as the game's settings screen sees it ──
+//
+// Size, placement, maximised and fullscreen are remembered in the profile so
+// the window opens as it was closed; the game asks for changes over IPC and is
+// told about every change, whoever made it, so its setting stays truthful.
+
+function windowStateFile() {
+  return path.join(app.getPath('userData'), 'window.json');
+}
+
+function readWindowState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(windowStateFile(), 'utf8'));
+    return s && typeof s === 'object' ? s : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeWindowState(win) {
+  try {
+    const b = win.getNormalBounds();
+    fs.writeFileSync(windowStateFile(), JSON.stringify({
+      width: b.width, height: b.height, x: b.x, y: b.y,
+      maximized: win.isMaximized(), fullscreen: win.isFullScreen(),
+    }));
+  } catch {
+    /* a profile that cannot be written just forgets the window */
+  }
+}
+
+function windowState(win) {
+  const b = win.getBounds();
+  return { fullscreen: win.isFullScreen(), maximized: win.isMaximized(), width: b.width, height: b.height };
+}
+
+ipcMain.handle('fatefall:window', (event, req) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  const op = req && typeof req === 'object' ? req.op : 'state';
+  if (op === 'fullscreen') {
+    win.setFullScreen(!!req.on);
+  } else if (op === 'size') {
+    const width = Math.max(900, Math.min(7680, Math.round(Number(req.width) || 1280)));
+    const height = Math.max(680, Math.min(4320, Math.round(Number(req.height) || 880)));
+    if (win.isFullScreen()) win.setFullScreen(false);
+    if (win.isMaximized()) win.unmaximize();
+    win.setSize(width, height);
+    win.center();
+  } else if (op === 'maximize') {
+    if (win.isFullScreen()) win.setFullScreen(false);
+    win.maximize();
+  }
+  return windowState(win);
+});
+
 async function start() {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     console.error('Fatefall: no build found in dist/. Run `npm run build` first.');
@@ -231,9 +287,12 @@ async function start() {
     })(),
   ]);
 
+  const remembered = readWindowState();
   const win = new BrowserWindow({
-    width: 1280,
-    height: 880,
+    width: Number(remembered.width) >= 900 ? Math.round(remembered.width) : 1280,
+    height: Number(remembered.height) >= 680 ? Math.round(remembered.height) : 880,
+    ...(Number.isFinite(remembered.x) && Number.isFinite(remembered.y) ? { x: Math.round(remembered.x), y: Math.round(remembered.y) } : {}),
+    fullscreen: !!remembered.fullscreen,
     minWidth: 900,
     minHeight: 680,
     backgroundColor: '#0a0a0a',
@@ -250,6 +309,18 @@ async function start() {
     },
   });
   win.removeMenu();
+  if (remembered.maximized && !remembered.fullscreen) win.maximize();
+
+  // Every change to the window is remembered and reported to the game.
+  let stateTimer = null;
+  const noteState = () => {
+    if (win.isDestroyed()) return;
+    if (stateTimer) clearTimeout(stateTimer);
+    stateTimer = setTimeout(() => { stateTimer = null; if (!win.isDestroyed()) writeWindowState(win); }, 400);
+    try { win.webContents.send('fatefall:window-state', windowState(win)); } catch { /* closing */ }
+  };
+  for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, noteState);
+  win.on('close', () => { if (stateTimer) clearTimeout(stateTimer); writeWindowState(win); });
 
   // Anything that tries to open a new window goes to the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {

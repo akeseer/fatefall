@@ -64,6 +64,27 @@ export interface SceneMood {
   flash?: number;
   /** How much of the carried light is left: 1 with a fresh torch, less as it gutters, small in the dark. */
   lightScale?: number;
+  /**
+   * Which effects the player has left on. Absent means all of them. A backend
+   * that lacks an effect ignores its flag; one that has it must honour it.
+   */
+  fx?: RenderFx | null;
+}
+
+/** The effect switches a frame carries. `weather` is a share of the full particle count. */
+export interface RenderFx {
+  lighting: boolean;
+  weather: number;
+  ambience: boolean;
+  bloom: boolean;
+  vignette: boolean;
+  grade: boolean;
+}
+
+/** What a backend is told when it starts. */
+export interface BackendOptions {
+  /** Device pixels per logical pixel. 1 keeps one texel per logical pixel. */
+  pixelRatio?: number;
 }
 
 /** A cut to black that fades up, or blinds that close over the map for a fight. */
@@ -103,7 +124,7 @@ export interface RenderBackend {
   /** Human name for the settings readout and the console. */
   readonly name: string;
   /** Prepare to draw into this canvas at the game's logical size. */
-  init(canvas: HTMLCanvasElement, width: number, height: number): Promise<void>;
+  init(canvas: HTMLCanvasElement, width: number, height: number, options?: BackendOptions): Promise<void>;
   submit(frame: Frame): void;
   /** Release GPU resources. Called when switching backends. */
   destroy(): void;

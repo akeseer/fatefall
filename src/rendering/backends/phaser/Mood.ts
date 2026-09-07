@@ -226,7 +226,7 @@ export class Mood {
       return;
     }
     g.setVisible(true);
-    const a = this.weatherAlpha * (mood.inCombat ? 0.6 : 1);
+    const a = this.weatherAlpha * (mood.inCombat ? 0.6 : 1) * Math.max(0, Math.min(1, mood.fx?.weather ?? 1));
     const s = dt / 1000;
     const w = this.width;
     const h = this.height;
@@ -290,7 +290,7 @@ export class Mood {
   // ── Tint ──
 
   private updateTint(mood: SceneMood): void {
-    const tint = mood.weather ? WEATHER_TINTS[mood.weather] : undefined;
+    const tint = mood.weather && (mood.fx?.grade ?? true) ? WEATHER_TINTS[mood.weather] : undefined;
     if (!tint) {
       this.tint.setVisible(false);
       return;
@@ -303,7 +303,8 @@ export class Mood {
 
   private updateLight(mood: SceneMood): void {
     const night = mood.underground ? UNDERGROUND_DARKNESS : OUTDOOR_NIGHT_DARKNESS * Math.max(0, 1 - mood.daylight);
-    const darkness = mood.inCombat ? night * COMBAT_RELIEF : night;
+    const darkness = (mood.fx?.lighting ?? true) ? (mood.inCombat ? night * COMBAT_RELIEF : night) : 0;
+    if (this.lens) this.lens.strength = (mood.fx?.vignette ?? true) ? LENS_STRENGTH : 0;
     const fx = mood.focus ? mood.focus.x : this.width / 2;
     const fy = mood.focus ? mood.focus.y : this.height / 2;
 

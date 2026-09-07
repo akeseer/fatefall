@@ -18,6 +18,7 @@ import { sfx } from '../audio/Sfx';
 import { buildDieScene, buildDiceModel, normalize3, quatFromAxisAngle, quatToMatrix3d } from './Dice3D';
 import { TownPanel } from './TownPanel';
 import { BattleView } from './BattleView';
+import { SettingsPanel, type SettingsHost } from './SettingsPanel';
 import { installTheme, T, classColor, hpColor, toneForColor, LogTone } from './Theme';
 
 export type GameSpeed = 0.25 | 0.5 | 1 | 2 | 4;
@@ -242,6 +243,11 @@ export class HUD {
   public statisticsProvider: () => { kills: number; victories: number; defeats: number; rooms: number; deepest: number; gold: number; days: number; ledger: Record<string, number>; levels: string[] } = () => ({ kills: 0, victories: 0, defeats: 0, rooms: 0, deepest: 1, gold: 0, days: 1, ledger: {}, levels: [] });
 
   /** The run in numbers: dice, fights, kills by kind, the party's growth. */
+  /** Open the settings screen (display, graphics, sound). */
+  showSettings(): void {
+    this.settingsPanel.open();
+  }
+
   showStatistics(): void {
     this.overlay.querySelector('#statistics')?.remove();
     const st = this.statisticsProvider();
@@ -356,8 +362,10 @@ export class HUD {
 
   /** An update the desktop shell found at launch; the drawer shows a line for it. */
   public updateAvailable: { version: string; open: () => void } | null = null;
-  /** The player picked a renderer in the sound drawer; the game switches and remembers it. */
-  public onRendererChange?: (id: 'pixi' | 'phaser' | 'canvas') => void;
+  /** The game, as the settings screen sees it: current values, apply, and a readout. */
+  public settingsHost: SettingsHost | null = null;
+  /** The settings screen. Built once; opens over anything, the title included. */
+  public settingsPanel: SettingsPanel;
   /** Open the town panel when in town; otherwise narrates that you're not in town. */
   public onTownOpen?: () => void;
   /** Save the run and return to the main menu. */
@@ -439,6 +447,12 @@ export class HUD {
     this.speedBtns = this.overlay.querySelector('#speed-controls')!;
     this.charSheetEl = this.overlay.querySelector('#char-sheet')!;
     this.compendium = new DnDCompendium(this.overlay);
+    this.settingsPanel = new SettingsPanel(this.overlay, {
+      get: () => this.settingsHost!.get(),
+      apply: next => this.settingsHost?.apply(next),
+      shell: () => this.settingsHost?.shell() ?? false,
+      readout: () => this.settingsHost?.readout() ?? '',
+    });
     this.compendium.onAction = (entry, mode) => this.onCompendiumAction?.(entry, mode);
     this.compendium.partyProvider = () => this.liveParty;
     this.compendium.killLedgerProvider = () => this.liveKillLedger;
@@ -588,6 +602,7 @@ export class HUD {
         <button id="btn-new-dungeon" title="Generate a fresh dungeon"><span class="ic">↻</span>New Dungeon</button>
         <button id="btn-compendium" title="Open the D&D compendium"><span class="ic" style="color:${T.arcane};">📖</span>Grimoire</button>
         <button id="btn-save" title="Save the run to this browser"><span class="ic" style="color:${T.coin};">💾</span>Save</button>
+        <button id="btn-settings" title="Settings: display, graphics and sound"><span class="ic" style="margin-right:0;">⚙</span></button>
         <button id="btn-audio" title="Sound settings (M mutes)"><span class="ic">🔊</span>Sound</button>
         <button id="btn-dm-panel" title="Issue orders to the party"><span class="ic" style="color:${T.good};">\u2328</span>DM</button>
         <button id="btn-town" title="Open the town (quests & market)"><span class="ic" style="color:${T.gold};">🏪</span>Town</button>
@@ -600,12 +615,7 @@ export class HUD {
         <div class="ap-row"><label for="vol-sfx">Effects</label><input id="vol-sfx" type="range" min="0" max="100" data-bus="sfx"><span class="ap-val"></span></div>
         <div class="ap-row"><label for="vol-music">Music</label><input id="vol-music" type="range" min="0" max="100" data-bus="music"><span class="ap-val"></span></div>
         <div class="ap-rule"></div>
-        <div class="ap-row"><label>Renderer</label><div class="ap-seg" id="renderer-pick">
-          <button data-renderer="pixi" title="WebGL with lighting, weather and colour grading">Pixi</button>
-          <button data-renderer="phaser" title="WebGL through Phaser, with the same mood in broader strokes">Phaser</button>
-          <button data-renderer="canvas" title="Plain 2D canvas: the fallback that runs anywhere">Canvas</button>
-        </div></div>
-        <div class="ap-note">Switches at once; the choice is remembered.</div>
+        <div class="ap-row"><button id="btn-all-settings" class="dp-btn" style="flex:1; padding:4px 0; font-size:10.5px;">⚙ Display, graphics & renderer…</button></div>
         <div class="ap-row" id="update-row" style="display:none;"><label>Update</label><span id="update-text" style="flex:1; color:${T.warn};"></span><button id="btn-update" class="dp-btn dp-btn-gold" style="padding:2px 9px; font-size:10px;">Get it</button></div>
       </div>
 
@@ -735,26 +745,12 @@ export class HUD {
     audio.onChange(showAudio);
     showAudio();
 
-    // Renderer: three buttons, the current one lit. The game does the switch;
-    // the drawer only remembers which is meant to be lit until it reports.
-    const pick = audioPop.querySelector('#renderer-pick') as HTMLElement;
-    const showRenderer = () => {
-      let current = 'pixi';
-      try { current = localStorage.getItem('fatefall.renderer') ?? 'pixi'; } catch { /* default */ }
-      for (const b of Array.from(pick.querySelectorAll('button'))) b.classList.toggle('on', b.dataset.renderer === current);
-    };
-    for (const b of Array.from(pick.querySelectorAll('button'))) {
-      b.addEventListener('click', () => {
-        const id = b.dataset.renderer as 'pixi' | 'phaser' | 'canvas';
-        sfx.click();
-        this.onRendererChange?.(id);
-        // Optimistic: the game writes the preference once the switch succeeds,
-        // and the next open of the drawer reads it back.
-        for (const o of Array.from(pick.querySelectorAll('button'))) o.classList.toggle('on', o === b);
-      });
-    }
-    showRenderer();
-    audioBtn.addEventListener('click', showRenderer);
+    // The full settings screen, from the drawer and from its own button.
+    audioPop.querySelector('#btn-all-settings')!.addEventListener('click', () => {
+      audioPop.style.display = 'none';
+      this.showSettings();
+    });
+    this.overlay.querySelector('#btn-settings')!.addEventListener('click', () => this.showSettings());
 
     // The tale's chip opens the Chronicle.
     (this.overlay.querySelector('#story-chip') as HTMLElement).addEventListener('click', () => { sfx.click(); this.showChronicle(); });
@@ -778,7 +774,7 @@ export class HUD {
     });
     // Every toolbar button answers the hand.
     for (const b of Array.from(this.overlay.querySelectorAll('#hud-top button'))) {
-      if (b.id === 'btn-audio') continue;
+      if (b.id === 'btn-audio' || b.id === 'btn-settings') continue;
       b.addEventListener('click', () => sfx.click());
     }
 
@@ -1232,6 +1228,8 @@ export class HUD {
         this.confirmNewSlot = false;
         this.confirmErase = false;
         this.renderStartContent(screen, saves);
+      } else if (action === 'settings') {
+        this.showSettings();
       }
     });
   }
@@ -1394,11 +1392,13 @@ export class HUD {
           <button data-action="continue" class="dp-btn-gold dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2}; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u25b6 Continue Slot ${selected + 1}</button>
           <button data-action="new" class="dp-btn dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">\u2726 New Run</button>
           <button data-action="erase" class="dp-btn dp-btn-bad dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">\u2716 Erase</button>
+          <button data-action="settings" class="dp-btn dp-slot-btn dp-title" style="padding:10px 20px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">\u2699 Settings</button>
         </div>`;
     } else {
       buttons = `
         <div style="display:flex; gap:12px; justify-content:center; margin-top:26px;">
           <button data-action="new" class="dp-btn-gold dp-slot-btn dp-title" style="padding:10px 26px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2}; box-shadow:0 0 16px rgba(232,197,106,0.22);">\u2726 Start New Run in Slot ${selected + 1}</button>
+          <button data-action="settings" class="dp-btn dp-slot-btn dp-title" style="padding:10px 20px; font-size:14px; font-weight:bold; letter-spacing:1.5px; border-radius:${T.r2};">\u2699 Settings</button>
         </div>`;
     }
 

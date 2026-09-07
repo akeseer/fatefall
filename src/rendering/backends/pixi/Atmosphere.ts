@@ -615,6 +615,8 @@ export class Atmosphere {
   private world: Container | null = null;
   /** Whether the bloom is currently in the container's filter list, which is what makes turning it off actually save the passes. */
   private bloomAttached = false;
+  /** The player's switch. Off unhooks the bloom graph whatever the scene wants. */
+  private bloomAllowed = true;
 
   // Smoothed state. Each of these chases a target derived from the mood.
   private undergroundMix = 0;
@@ -695,6 +697,10 @@ export class Atmosphere {
    * backgrounded tab resumes at the right look instead of crawling to it.
    */
   update(mood: SceneMood, elapsedMs: number): void {
+    const fx = mood.fx;
+    this.grade.enabled = fx?.grade ?? true;
+    if (this.vignette) this.vignette.enabled = fx?.vignette ?? true;
+    this.bloomAllowed = fx?.bloom ?? true;
     this.wantTheme = mood.underground ? themeLight(mood.themeId) : [1, 1, 1];
     const dt = clamp(elapsedMs, 0, MAX_STEP_MS);
     const daylight = clamp(mood.daylight, 0, 1);
@@ -946,9 +952,9 @@ export class Atmosphere {
     // Five full-screen passes are not worth paying for a glow nobody can see, so
     // the bloom leaves the chain entirely when it fades out. The two thresholds
     // give it hysteresis, because relinking the filter list is what costs.
-    const wanted = this.bloomAttached
+    const wanted = this.bloomAllowed && (this.bloomAttached
       ? this.bloomIntensity > BLOOM_OFF_BELOW
-      : this.bloomIntensity > BLOOM_ON_ABOVE;
+      : this.bloomIntensity > BLOOM_ON_ABOVE);
     if (wanted !== this.bloomAttached) {
       this.bloomAttached = wanted;
       this.syncFilters();

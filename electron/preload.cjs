@@ -20,4 +20,13 @@ contextBridge.exposeInMainWorld('fatefall', {
   update: info.update,
   /** Open the download page for an available update in the system browser. */
   openUpdate: () => ipcRenderer.send('fatefall:open-update'),
+  /**
+   * The window, for the settings screen: `set` asks for fullscreen, a size or
+   * maximised and resolves to the resulting state; `onState` reports every
+   * change, including ones the player makes with the window's own controls.
+   */
+  window: {
+    set: (req) => ipcRenderer.invoke('fatefall:window', req),
+    onState: (cb) => { ipcRenderer.on('fatefall:window-state', (_event, state) => cb(state)); },
+  },
 });

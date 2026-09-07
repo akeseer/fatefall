@@ -45,6 +45,8 @@ export class Camera {
   private shakeAmplitude = 0;
   /** Advances only while a shake is running, so each one starts from rest. */
   private shakeClockMs = 0;
+  /** The player's switch. Off, a shake is asked for and nothing moves. */
+  public shakeEnabled = true;
 
   /** Constrain the view to the map so it never pans into the black void. */
   setBounds(mapWidth: number, mapHeight: number) {
@@ -68,6 +70,7 @@ export class Camera {
    * cannot cut off the crit that landed in the middle of it.
    */
   shake(amplitude: number, durationMs: number): void {
+    if (!this.shakeEnabled) return;
     if (this.shakeMs > 0 && this.shakeAmplitude > amplitude) return;
     this.shakeAmplitude = amplitude;
     this.shakeLifeMs = durationMs;
