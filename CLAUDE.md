@@ -281,3 +281,11 @@ the splash and the game; `FATEFALL_UPDATE_URL` points the check at a local manif
   (`pillsHtml`). Sprite thumbnails come from `thumb()` and are cleared per fight. The menu, its
   buttons, the presets and the spoils are class-styled (`.bv-menu-*`, `.bv-sp-*`) in the template's
   stylesheet, so restyling them is CSS, not code.
+- **Quality of life in the HUD**: `hud.toast(text, tone)` is the transient notice (saves, fullscreen,
+  the two-press New Dungeon guard in `handleNewWorldButton`). `hud.modalOpen()` names every screen
+  that should hold the world (map, statistics, chronicle, settings, help, compendium, town panel);
+  `watchModals` polls it and `onModalChange` lets `Game` pause for the screen and resume after, but
+  only if the pause was its own (`modalPaused`). `closeTopOverlay` is what Escape does outside a
+  fight; Enter or `/` opens the order bar; F1 or `?` opens `showHelp`. The order bar suggests from
+  `HUD.ORDERS` (a static list of phrasings the parser reads; keep it in step with the `help` text)
+  and Tab fills. Both logs keep a reader's scroll place and offer a newest button.

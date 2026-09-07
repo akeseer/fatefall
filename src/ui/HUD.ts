@@ -582,6 +582,7 @@ export class HUD {
             <button data-log-filter="order" class="dp-btn log-filter" style="padding:1px 8px;">Orders</button>
           </div>
           <div id="combat-log"></div>
+          <button id="log-newest" style="display:none; position:absolute; right:14px; bottom:8px; z-index:3; padding:3px 9px; font-size:9px; border-radius:999px; border:1px solid ${T.goldDim}; background:rgba(40,32,10,0.95); color:#f2dca0; cursor:pointer;">\u2193 newest</button>
         </div>
 
         <!-- Character Sheet (when selected) -->
@@ -615,7 +616,7 @@ export class HUD {
         <div class="ap-row"><label for="vol-sfx">Effects</label><input id="vol-sfx" type="range" min="0" max="100" data-bus="sfx"><span class="ap-val"></span></div>
         <div class="ap-row"><label for="vol-music">Music</label><input id="vol-music" type="range" min="0" max="100" data-bus="music"><span class="ap-val"></span></div>
         <div class="ap-rule"></div>
-        <div class="ap-row"><button id="btn-all-settings" class="dp-btn" style="flex:1; padding:4px 0; font-size:10.5px;">⚙ Display, graphics & renderer…</button></div>
+        <div class="ap-row"><button id="btn-all-settings" class="dp-btn" style="flex:1; padding:4px 0; font-size:10.5px;">⚙ Display, graphics & renderer…</button><button id="btn-keys" class="dp-btn" title="Keys and mouse (F1)" style="flex:0 0 auto; padding:4px 9px; font-size:10.5px;">Keys</button></div>
         <div class="ap-row" id="update-row" style="display:none;"><label>Update</label><span id="update-text" style="flex:1; color:${T.warn};"></span><button id="btn-update" class="dp-btn dp-btn-gold" style="padding:2px 9px; font-size:10px;">Get it</button></div>
       </div>
 
@@ -643,6 +644,7 @@ export class HUD {
 
       <!-- DM command bar -->
       <div id="dm-bar" style="display:none; position:absolute; left:0; right:0; bottom:200px; z-index:30;">
+        <div id="dm-suggest" style="display:none; position:absolute; left:10px; right:10px; bottom:100%; margin-bottom:2px; background:rgba(16,13,9,0.98); border:1px solid ${T.line}; border-radius:${T.r2}; box-shadow:0 -4px 16px rgba(0,0,0,0.5); font-size:11.5px; overflow:hidden;"></div>
         <div style="display:flex; gap:8px; padding:7px 10px; background:linear-gradient(180deg, rgba(30,25,17,0.97), rgba(16,13,9,0.97)); border-top:1px solid ${T.goldDim}; border-bottom:1px solid ${T.line}; box-shadow:0 -2px 14px rgba(0,0,0,0.45);">
           <span class="dp-title" style="align-self:center; color:${T.gold}; font-size:12px; letter-spacing:2px; text-shadow:0 0 10px rgba(232,197,106,0.4);">DM \u276f</span>
           <span id="dm-model-chip" class="dp-chip dp-chip-sm" title="How the party reads your orders. Click to switch between the trained model and the written orders."
@@ -651,6 +653,7 @@ export class HUD {
                  placeholder='Order the party\u2026 try "go north", "attack", "flee", "rest", "camp", "descend", "summon owlbear", "report", "help"'
                  style="flex:1; min-width:0; padding:6px 9px; font-size:12px;" />
           <button id="dm-send" class="dp-btn-gold" style="padding:6px 16px; font-size:12px;">Send</button>
+          <button id="dm-help" class="dp-btn" title="Every order the party understands" style="padding:6px 10px; font-size:12px;">?</button>
         </div>
       </div>
     `;
@@ -658,14 +661,48 @@ export class HUD {
 
   private bindEvents() {
     // Log filters: what the reader wants to see, the rest hidden by a class.
+    const applyLogFilter = (mode: string) => {
+      this.logEl.className = mode === 'all' ? '' : `log-only-${mode}`;
+      for (const o of Array.from(this.overlay.querySelectorAll<HTMLElement>('[data-log-filter]'))) o.classList.toggle('log-filter-on', o.dataset.logFilter === mode);
+      this.logEl.scrollTop = this.logEl.scrollHeight;
+      try { localStorage.setItem('fatefall.logFilter', mode); } catch { /* not remembered */ }
+    };
     for (const b of Array.from(this.overlay.querySelectorAll<HTMLElement>('[data-log-filter]'))) {
-      b.addEventListener('click', () => {
-        const mode = b.dataset.logFilter ?? 'all';
-        this.logEl.className = mode === 'all' ? '' : `log-only-${mode}`;
-        for (const o of Array.from(this.overlay.querySelectorAll('[data-log-filter]'))) o.classList.toggle('log-filter-on', o === b);
-        this.logEl.scrollTop = this.logEl.scrollHeight;
-      });
+      b.addEventListener('click', () => applyLogFilter(b.dataset.logFilter ?? 'all'));
     }
+    try {
+      const remembered = localStorage.getItem('fatefall.logFilter');
+      if (remembered && remembered !== 'all') applyLogFilter(remembered);
+    } catch { /* default */ }
+    // The log keeps a reader's place: scrolling up stops the auto-scroll and
+    // a newest button offers the way back.
+    const newest = this.overlay.querySelector('#log-newest') as HTMLElement;
+    if (this.logEl.parentElement) this.logEl.parentElement.style.position = 'relative';
+    this.logEl.addEventListener('scroll', () => {
+      this.logStuck = this.logEl.scrollTop + this.logEl.clientHeight >= this.logEl.scrollHeight - 6;
+      newest.style.display = this.logStuck ? 'none' : 'block';
+    });
+    newest.addEventListener('click', () => { this.logStuck = true; this.logEl.scrollTop = this.logEl.scrollHeight; newest.style.display = 'none'; sfx.click(); });
+    // Escape closes whatever is on top; Enter or / opens the order bar; F1 the keys.
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (e.code === 'F1') { e.preventDefault(); this.showHelp(); return; }
+      if (e.code === 'Escape') {
+        if (typing && t?.id === 'dm-input') { e.preventDefault(); this.toggleDMPanel(); return; }
+        if (!typing && this.closeTopOverlay()) e.preventDefault();
+        return;
+      }
+      if (typing) return;
+      if (e.key === '?' && !this.overlay.querySelector('#start-screen')) { e.preventDefault(); this.showHelp(); return; }
+      if ((e.code === 'Enter' || e.key === '/') && !this.overlay.querySelector('#start-screen') && !this.battleView.isVisible()) {
+        const bar = this.overlay.querySelector('#dm-bar') as HTMLElement;
+        if (bar.style.display === 'none' || !bar.style.display) { e.preventDefault(); this.toggleDMPanel(); }
+        else { e.preventDefault(); (bar.querySelector('#dm-input') as HTMLInputElement).focus(); }
+      }
+    });
+    this.watchModals();
     // Speed on the number keys, pause on space, when the hands are not typing.
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -751,6 +788,7 @@ export class HUD {
       this.showSettings();
     });
     this.overlay.querySelector('#btn-settings')!.addEventListener('click', () => this.showSettings());
+    audioPop.querySelector('#btn-keys')!.addEventListener('click', () => { audioPop.style.display = 'none'; this.showHelp(); });
 
     // The tale's chip opens the Chronicle.
     (this.overlay.querySelector('#story-chip') as HTMLElement).addEventListener('click', () => { sfx.click(); this.showChronicle(); });
@@ -796,7 +834,41 @@ export class HUD {
     const dmInput = this.overlay.querySelector('#dm-input') as HTMLInputElement;
     this.overlay.querySelector('#dm-send')!.addEventListener('click', () => this.sendDMCommand(dmInput));
     this.overlay.querySelector('#dm-model-chip')!.addEventListener('click', () => this.onModelToggle?.());
+    const suggest = this.overlay.querySelector('#dm-suggest') as HTMLElement;
+    let suggestIdx = -1;
+    const suggestions = (): string[] => {
+      const q = dmInput.value.trim().toLowerCase();
+      if (q.length < 2) return [];
+      const starts = HUD.ORDERS.filter(o => o.toLowerCase().startsWith(q));
+      const within = HUD.ORDERS.filter(o => !starts.includes(o) && o.toLowerCase().includes(q));
+      return [...starts, ...within].slice(0, 6);
+    };
+    const renderSuggest = () => {
+      const list = suggestions();
+      if (list.length === 0 || document.activeElement !== dmInput) { suggest.style.display = 'none'; suggestIdx = -1; return; }
+      if (suggestIdx >= list.length) suggestIdx = list.length - 1;
+      suggest.innerHTML = list.map((o, i) => `<div data-i="${i}" style="padding:5px 10px; cursor:pointer; ${i === suggestIdx ? `background:${T.rowHot}; color:${T.gold};` : `color:${T.text};`}">${o}<span style="float:right; color:${T.faint}; font-size:9px;">${i === suggestIdx ? 'Tab fills \u00b7 Enter sends' : ''}</span></div>`).join('');
+      suggest.style.display = 'block';
+      for (const row of Array.from(suggest.querySelectorAll<HTMLElement>('[data-i]'))) {
+        row.addEventListener('mousedown', ev => { ev.preventDefault(); dmInput.value = list[Number(row.dataset.i)]; suggest.style.display = 'none'; dmInput.focus(); });
+      }
+    };
+    dmInput.addEventListener('input', () => { suggestIdx = -1; renderSuggest(); });
+    dmInput.addEventListener('blur', () => { suggest.style.display = 'none'; });
+    this.overlay.querySelector('#dm-help')!.addEventListener('click', () => { sfx.click(); this.onDMCommand?.('help'); });
     dmInput.addEventListener('keydown', event => {
+      if (suggest.style.display !== 'none') {
+        const list = suggestions();
+        if (event.key === 'Tab' || (event.key === 'ArrowRight' && dmInput.selectionStart === dmInput.value.length)) {
+          event.preventDefault();
+          dmInput.value = list[Math.max(0, suggestIdx)] ?? dmInput.value;
+          suggest.style.display = 'none';
+          return;
+        }
+        if (event.key === 'ArrowDown') { event.preventDefault(); suggestIdx = Math.min(list.length - 1, suggestIdx + 1); renderSuggest(); return; }
+        if (event.key === 'ArrowUp' && suggestIdx >= 0) { event.preventDefault(); suggestIdx -= 1; renderSuggest(); return; }
+        if (event.key === 'Enter' && suggestIdx >= 0) { dmInput.value = list[suggestIdx]; suggest.style.display = 'none'; }
+      }
       if (event.key === 'Enter') this.sendDMCommand(dmInput);
       // Up and down recall earlier orders, newest first.
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -1038,6 +1110,9 @@ export class HUD {
     return 'world';
   }
 
+  /** Whether the log is scrolled to its newest line; a reader who scrolled up keeps their place. */
+  private logStuck = true;
+
   addCombatMessage(msg: string, color: string = '#ccc') {
     this.combatMessages.push(msg);
     if (this.combatMessages.length > 400) this.combatMessages = this.combatMessages.slice(-200);
@@ -1048,7 +1123,8 @@ export class HUD {
       this.logEl.removeChild(this.logEl.firstElementChild);
       this.logLineCount--;
     }
-    this.logEl.scrollTop = this.logEl.scrollHeight;
+    if (this.logStuck) this.logEl.scrollTop = this.logEl.scrollHeight;
+    else { const nb = this.overlay.querySelector('#log-newest') as HTMLElement | null; if (nb) nb.style.display = 'block'; }
   }
 
   /** Build the markup for one log line. Pure — also used by tests-by-eye. */
@@ -1528,7 +1604,118 @@ export class HUD {
     bar.style.display = opening ? 'block' : 'none';
     if (opening) {
       (bar.querySelector('#dm-input') as HTMLInputElement).focus();
+    } else {
+      const sg = bar.querySelector('#dm-suggest') as HTMLElement | null;
+      if (sg) sg.style.display = 'none';
+      (bar.querySelector('#dm-input') as HTMLInputElement).blur();
     }
+  }
+
+  /** Orders the suggestion list offers while typing. Phrasings the parser is known to read. */
+  private static readonly ORDERS: string[] = [
+    'go north', 'go south', 'go east', 'go west', 'attack', 'charge', 'flee', 'cautious', 'as you were',
+    'rest', 'camp', 'long rest', 'short rest', 'descend', 'deeper', 'wait until dawn', 'wait until night',
+    'calendar', 'journal', 'chronicle', 'summon owlbear', 'report', 'roll d20', 'roll 2d6+3', 'roll d20 adv',
+    'look', 'examine', 'formation 2x2', 'formation line', 'formation loose', 'formation', 'travel to ',
+    'go to town', 'enter', 'delve', 'leave', 'climb out', 'depart', 'leave town', 'shop', 'buy healing potion',
+    'sell ', 'tasks', 'accept task 1', 'accept quest 1', 'turn in', 'talk to ', 'list npcs', 'raid camp',
+    'report camp', 'list clues', 'pray at the altar', 'search the vault', 'free prisoners', 'barricade',
+    'search for traps', 'disarm trap', 'loot', 'inventory', 'pack', 'equip ', 'unequip ', 'gear',
+    'upcast always', 'upcast never', 'upcast auto', 'save', 'save to slot 1', 'save to slot 2', 'save to slot 3',
+    'rename party ', 'rename ', 'model on', 'model off', 'model status', 'pause', 'resume', 'help',
+    'stats', 'notes', 'note: ', 'narrate: ', 'export', 'hold ', 'release ', 'new name', 'dice classic',
+    'dice bone', 'dice brass', 'dice obsidian', 'photo', 'set a trap', 'new game plus', 'map',
+    'claim the ruins', 'track the beast', 'never pay tolls', 'always parley', 'loot only valuables',
+    'forget the standing orders', 'use potion on ', 'hire a guard', 'carouse',
+  ];
+
+  // ── Toasts, overlays and help ──
+
+  /** A short notice that fades: saved, paused, a setting changed. */
+  toast(text: string, tone: 'plain' | 'good' | 'warn' = 'plain'): void {
+    let host = this.overlay.querySelector('#toasts') as HTMLElement | null;
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'toasts';
+      host.style.cssText = 'position:absolute; left:50%; top:52px; transform:translateX(-50%); z-index:120; display:flex; flex-direction:column; gap:6px; align-items:center; pointer-events:none;';
+      this.overlay.appendChild(host);
+    }
+    const el = document.createElement('div');
+    const color = tone === 'good' ? T.good : tone === 'warn' ? T.warn : T.text;
+    el.style.cssText = `padding:5px 14px; border-radius:999px; border:1px solid ${T.goldDim}; background:rgba(16,13,9,0.95); color:${color}; font-family:${T.bodyFont}; font-size:11.5px; box-shadow:0 4px 16px rgba(0,0,0,0.5); opacity:0; transition:opacity .2s ease, transform .2s ease; transform:translateY(-6px);`;
+    el.textContent = text;
+    host.appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+    window.setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(-6px)'; window.setTimeout(() => el.remove(), 250); }, 2600);
+    while (host.children.length > 3) host.removeChild(host.firstChild!);
+  }
+
+  /** Whether a screen that should hold the world is up: a modal of any kind. */
+  modalOpen(): boolean {
+    const o = this.overlay;
+    if (o.querySelector('#world-map, #statistics, #chronicle, #settings-screen, #help-screen')) return true;
+    const comp = o.querySelector('#compendium-overlay') as HTMLElement | null;
+    if (comp && comp.style.display !== 'none') return true;
+    if (o.querySelector('#town-panel')) return true;
+    return false;
+  }
+
+  /** Told when a modal opens or every modal has closed; the game holds the world meanwhile. */
+  public onModalChange?: (open: boolean) => void;
+  private modalWas = false;
+
+  private watchModals(): void {
+    window.setInterval(() => {
+      const now = this.modalOpen();
+      if (now !== this.modalWas) {
+        this.modalWas = now;
+        this.onModalChange?.(now);
+      }
+    }, 200);
+  }
+
+  /**
+   * Close the topmost screen: a full-screen modal first, then the drawers.
+   * Returns whether anything was closed, so Escape can fall through.
+   */
+  closeTopOverlay(): boolean {
+    const o = this.overlay;
+    for (const id of ['#help-screen', '#world-map', '#statistics', '#chronicle']) {
+      const el = o.querySelector(id);
+      if (el) { el.remove(); sfx.click(); return true; }
+    }
+    const comp = o.querySelector('#compendium-overlay') as HTMLElement | null;
+    if (comp && comp.style.display !== 'none') { this.compendium.close(); sfx.click(); return true; }
+    if (o.querySelector('#town-panel')) { this.townPanel.hide(); sfx.click(); return true; }
+    const audio = o.querySelector('#audio-pop') as HTMLElement | null;
+    if (audio && audio.style.display !== 'none') { audio.style.display = 'none'; return true; }
+    const bar = o.querySelector('#dm-bar') as HTMLElement | null;
+    if (bar && bar.style.display === 'block') { this.toggleDMPanel(); return true; }
+    return false;
+  }
+
+  /** The keys and the mouse, on one card. */
+  showHelp(): void {
+    if (this.overlay.querySelector('#help-screen')) { this.overlay.querySelector('#help-screen')!.remove(); return; }
+    const screen = document.createElement('div');
+    screen.id = 'help-screen';
+    screen.style.cssText = `position:absolute; inset:0; z-index:105; background:rgba(5,4,5,0.72); display:flex; align-items:center; justify-content:center; font-family:${T.bodyFont}; color:${T.text};`;
+    const row = (k: string, v: string) => `<div style="display:flex; gap:10px; align-items:baseline; padding:3px 0;"><span class="dp-num" style="flex:0 0 118px; color:${T.gold}; font-size:11px;">${k}</span><span style="font-size:12px;">${v}</span></div>`;
+    const head = (t: string) => `<div class="dp-title" style="font-size:11px; color:${T.goldDim}; letter-spacing:0.14em; margin:10px 0 4px;">${t}</div>`;
+    screen.innerHTML = `
+      <div style="width:min(680px, 92%); max-height:86%; overflow:auto; background:${T.windowGrad}; border:1px solid ${T.frame}; border-radius:${T.r3}; box-shadow:0 0 0 1px ${T.rule} inset, 0 24px 60px rgba(0,0,0,0.75); padding:22px 28px 18px;">
+        <div class="dp-title" style="font-size:22px; color:${T.gold}; letter-spacing:0.12em;">KEYS AND MOUSE</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; column-gap:28px;">
+          <div>${head('THE WORLD')}${row('Space or P', 'pause and resume')}${row('1 \u2026 5', 'speed: quarter, half, full, double, fourfold')}${row('Enter or /', 'open the order bar; Esc closes it')}${row('Tab', 'fill the suggested order while typing')}${row('\u2191 \u2193', 'recall earlier orders')}${row('Click the map', 'set a waypoint the party walks to')}${row('M', 'mute and unmute')}${row('F11 or Alt+Enter', 'fullscreen')}${row('Esc', 'close whatever is on top')}${row('F1 or ?', 'this card')}</div>
+          <div>${head('IN A FIGHT')}${row('1 2 3 4', 'attack, spell, item, flee (remappable)')}${row('Q W E', 'formations: standard, careful, reckless')}${row('Tab', 'give the next hero their orders')}${row('Shift+2', 'recast the last spell')}${row('\u2191 \u2193 Enter', 'move the cursor and choose')}${row('Click a stand', 'aim at it; click again to fire')}${row('Click a party row', 'give that hero orders')}${row('Hover anything', 'its sheet in the Focus window')}${row('F1', 'controls and remapping, in a fight')}</div>
+        </div>
+        ${head('WORDS')}<div style="font-size:11.5px; color:${T.muted}; line-height:1.5;">Type <b style="color:${T.text}; font-weight:normal;">help</b> in the order bar for every order the party understands, or start typing and take a suggestion.</div>
+        <div style="display:flex; justify-content:flex-end; margin-top:16px;"><button id="help-close" class="dp-btn dp-title" style="padding:7px 20px; font-size:12px; letter-spacing:1px; border-radius:${T.r2};">Close</button></div>
+      </div>`;
+    this.overlay.appendChild(screen);
+    screen.querySelector('#help-close')!.addEventListener('click', () => { sfx.click(); screen.remove(); });
+    screen.addEventListener('click', e => { if (e.target === screen) screen.remove(); });
+    sfx.click();
   }
 
   /** Orders typed so far, oldest first; up-arrow walks back through them. */

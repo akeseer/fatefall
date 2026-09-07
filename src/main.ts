@@ -450,6 +450,8 @@ class Game {
   }
 
   private paused: boolean = false;
+  /** The pause was ours, for a modal; lifted when the modal goes. */
+  private modalPaused = false;
   private saveTimer: number = 0;
   /** Ticks until the party may try another auto-disarm (avoids spam). */
   private disarmCooldown: number = 0;
@@ -498,6 +500,17 @@ class Game {
       if (this.loadedIntentModel) this.handleModelToggle(this.intentPredictor ? 'off' : 'on');
     });
     this.hud.onSave = () => this.saveGame(false);
+    // A screen the player is reading holds the world; it resumes when the
+    // screen goes, unless the player had paused it themselves.
+    this.hud.onModalChange = (open) => {
+      if (!this.runStarted) return;
+      if (open) {
+        if (!this.paused) { this.modalPaused = true; this.setPaused(true); }
+      } else if (this.modalPaused) {
+        this.modalPaused = false;
+        if (this.paused) this.setPaused(false);
+      }
+    };
 
     // When a fated Luck die is spent, narrate the resolution.
     onLuckDieSpent((d, roller) => {
@@ -4230,6 +4243,7 @@ class Game {
     next.display.windowMode = next.display.windowMode === 'fullscreen' ? 'windowed' : 'fullscreen';
     this.applySettings(next);
     this.hud.settingsPanel.refresh();
+    this.hud.toast(next.display.windowMode === 'fullscreen' ? 'Fullscreen (F11 to leave)' : 'Windowed');
   }
 
   /** The window or the browser changed fullscreen on its own; keep the setting truthful. */
@@ -4829,6 +4843,7 @@ class Game {
         ok ? `💾 Saved to slot ${this.activeSlot + 1}.` : 'The quill snaps — the save fails!',
         ok ? '#8cf' : '#c44'
       );
+      this.hud.toast(ok ? `Saved to slot ${this.activeSlot + 1}` : 'The save failed', ok ? 'good' : 'warn');
     }
     return ok;
   }
@@ -5876,7 +5891,18 @@ class Game {
   }
 
   /** The ↻ button: a new dungeon floor, or a whole new world above ground. */
+  /** Until when a second press of New Dungeon counts as confirmation. */
+  private newWorldArmedUntil = 0;
+
   private handleNewWorldButton(): void {
+    // Both branches throw away where the party stands, so the button asks
+    // to be pressed twice: the first press says what the second will do.
+    if (this.runStarted && Date.now() > this.newWorldArmedUntil) {
+      this.newWorldArmedUntil = Date.now() + 5000;
+      this.hud.toast(this.mode === GameMode.Dungeon ? 'Press again to abandon this floor for a fresh dungeon' : 'Press again to leave this world for a new one', 'warn');
+      return;
+    }
+    this.newWorldArmedUntil = 0;
     if (this.mode === GameMode.Dungeon) {
       this.generateNewDungeon();
     } else {
